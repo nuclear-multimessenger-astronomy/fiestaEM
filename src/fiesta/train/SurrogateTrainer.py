@@ -89,9 +89,11 @@ class BullaSurrogateTrainer(SurrogateTrainer):
         # TODO: change this if doesn't turn out well later on?
         self.preprocessing_metadata = {filt: {} for filt in self.filters}
         
-        print("Reading data files")
+        print("Reading data files and interpolating NaNs")
         self.raw_data, self.parameter_values = self.read_files()
         self.raw_data = utils.interpolate_nans(self.raw_data, self.times)
+        
+        # TODO: put the preprocess here etc
         
         
     def __repr__(self) -> str:
@@ -135,7 +137,7 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                 
         return data, parameter_values
                 
-    def preprocess(self):
+    def preprocess(self) -> tuple[Float[Array, "n_files n_params"], dict[str, Float[Array, "n_files nsvd_coeff"]]]:
         # Scale inputs
         print("Preprocessing data")
         X_scaler = MinMaxScaler()
@@ -180,7 +182,7 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             self.preprocessing_metadata[filt]["cAstd"] = cAstd
             self.preprocessing_metadata[filt]["VA"] = VA
             
-            y[filt] = cAmat
+            y[filt] = cAmat.T # Transpose to get the shape (n_files, n_svd_coeff)
             
         self.X = X 
         self.y = y
