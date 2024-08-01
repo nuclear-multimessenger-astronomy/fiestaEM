@@ -3,7 +3,6 @@ import time
 
 import jax
 import jax.numpy as jnp
-
 from jaxtyping import Array, Float
 
 import flax
@@ -13,12 +12,6 @@ from ml_collections import ConfigDict
 import optax
 import pickle
 
-# from flax.training import train_state  # Useful dataclass to keep train state
-# from flax import struct                # Flax dataclasses
-
-
-# TODO: place the jits
-
 ###############
 ### CONFIGS ###
 ###############
@@ -27,41 +20,11 @@ class NeuralnetConfig(ConfigDict):
     """Configuration for a neural network model. For type hinting"""
     name: str = "MLP"
     layer_sizes: Sequence[int] = [64, 128, 64, 10]
-    act_func: Callable = nn.relu
-    optimizer: Callable = optax.adam
     learning_rate: float = 1e-3
     batch_size: int = 128
     nb_epochs: int = 1000
     nb_report: int = 100
     
-    # TODO: add support for schedulers in the future
-    
-    # fixed_lr: bool
-    # my_scheduler: ConfigDict
-    # nb_epochs_decay: int
-    # learning_rate_fn: Callable
-
-    # For the scheduler:
-    # config.nb_epochs_decay = int(round(config.nb_epochs / 10))
-    # config.learning_rate_fn = None
-    # ^ optax learning rate scheduler
-    # # Custom scheduler (work in progress...)
-    # config.fixed_lr = False
-    # config.my_scheduler = ConfigDict() # to gather parameters
-    # # In case of false fixed learning rate, will adapt lr based on following params for custom scheduler
-    # config.my_scheduler.counter = 0
-    # # ^ count epochs during training loop, in order to only reduce lr after x amount of steps
-    # config.my_scheduler.threshold = 0.995
-    # # ^ if best loss has not recently improved by this fraction, then reduce learning rate
-    # config.my_scheduler.multiplier = 0.5
-    # # ^ reduce lr by this factor if loss is not improving sufficiently
-    # config.my_scheduler.patience = 10
-    # # ^ amount of epochs to wait in loss curve before adapting lr if loss goes up
-    # # config.my_scheduler.burnin = 20
-    # # # ^ amount of epochs to wait at start before any adaptation is done
-    # config.my_scheduler.history = 10
-    # # ^ amount of epochs to "look back" in order to determine whether loss is improving or not
-
 #####################
 ### ARCHITECTURES ###
 #####################
@@ -69,24 +32,8 @@ class NeuralnetConfig(ConfigDict):
 class BaseNeuralnet(nn.Module):
     """Abstract base class. Needs layer sizes and activation function used"""
     layer_sizes: Sequence[int]
-    act_func: Callable
+    act_func: Callable = nn.relu
     
-    # def __init__(self, 
-    #              layer_sizes: Sequence[int],
-    #              act_func: Callable):
-    #     """
-    #     Initialize the neural network with the given layer sizes and activation function.
-
-    #     Args:
-    #         layer_sizes (Sequence[int]): List of integers representing the number of neurons in each layer.
-    #         act_func (Callable): Activation function to be used in the network.
-    #     """
-        
-    #     super().__init__()
-    #     assert len(layer_sizes) > 1, "Need at least two layers for a neural network"
-    #     self.layer_sizes = layer_sizes
-    #     self.act_func = act_func
-
     def setup(self):
         raise NotImplementedError
     
@@ -96,16 +43,9 @@ class BaseNeuralnet(nn.Module):
 class MLP(BaseNeuralnet):
     """Basic multi-layer perceptron: a feedforward neural network with multiple Dense layers."""
 
-    # def __init__(self, 
-    #              layer_sizes: Sequence[int] = [64, 128, 64, 10],
-    #              act_func: Callable = nn.relu):
-    #     super().__init__(layer_sizes, act_func)
-
     def setup(self):
         self.layers = [nn.Dense(n) for n in self.layer_sizes]
 
-    # TODO: to jit or not to jit?
-    # @functools.partial(jax.jit, static_argnums=(2, 3))
     @nn.compact
     def __call__(self, x: Array):
         """_summary_
@@ -123,27 +63,6 @@ class MLP(BaseNeuralnet):
 
         return x
     
-
-# TODO: can this be removed now?
-# class NeuralNetwork(nn.Module):
-#     """A very basic initial neural network used for testing the basic functionalities of Flax.
-
-#     Returns:
-#         NeuralNetwork: The architecture of the neural network
-#     """
-
-#     @nn.compact
-#     def __call__(self, x):
-#         x = nn.Dense(features=24)(x)
-#         x = nn.relu(x)
-#         x = nn.Dense(features=64)(x)
-#         x = nn.relu(x)
-#         x = nn.Dense(features=24)(x)
-#         x = nn.relu(x)
-#         x = nn.Dense(features=10)(x)
-#         return x
-
-
 ################
 ### TRAINING ###
 ################
@@ -165,8 +84,6 @@ def create_train_state(model: BaseNeuralnet,
         TrainState: TrainState object for training
     """
     params = model.init(rng, test_input)['params']
-    # TODO: this is broken
-    # tx = config.optimizer(float(config.learning_rate))
     tx = optax.adam(config.learning_rate)
     state = TrainState.create(apply_fn = model.apply, params = params, tx = tx)
     return state
@@ -195,7 +112,6 @@ def apply_model(state: TrainState,
     loss, grads = grad_fn(state.params)
     return loss, grads
 
-# TODO: what are dimensions?
 @jax.jit
 def train_step(state: TrainState, 
                train_X: Float[Array, "n_batch_train ndim_input"], 
@@ -219,7 +135,7 @@ def train_step(state: TrainState,
     # Compute losses
     train_loss, grads = apply_model(state, train_X, train_y)
     if val_X is not None:
-        # TODO: computing the gradient here is not necessary
+        # TODO: computing the gradient here is not necessary -- remove for speed?
         val_loss, _ = apply_model(state, val_X, val_y)
     else:
         val_loss = jnp.zeros_like(train_loss)
@@ -231,10 +147,10 @@ def train_step(state: TrainState,
 
 def train_loop(state: TrainState, 
                config: NeuralnetConfig,
-               train_X: Float[Array, "ndim_input"],
-               train_y: Float[Array, "ndim_output"],
-               val_X: Float[Array, "ndim_input"] = None, 
-               val_y: Float[Array, "ndim_output"] = None,
+               train_X: Float[Array, "n_batch_train ndim_input"], 
+               train_y: Float[Array, "n_batch_train ndim_output"], 
+               val_X: Float[Array, "n_batch_val ndim_output"] = None, 
+               val_y: Float[Array, "n_batch_val ndim_output"] = None,
                verbose: bool = True):
 
     train_losses, val_losses = [], []
@@ -276,10 +192,6 @@ def serialize(state: TrainState,
     
     # Get state dict, which has params
     params = flax.serialization.to_state_dict(state)["params"]
-    
-    # TODO: why is act func throwing errors?
-    # Quick hotfix for now:
-    del config["act_func"]
     
     serialized_dict = {"params": params,
                        "config": config,
@@ -330,22 +242,10 @@ def load_model(filename: str) -> TrainState:
         
     config: NeuralnetConfig = loaded_dict["config"]
     layer_sizes = config.layer_sizes
-    # TODO: support saving and loading the activation function
-    act_func = flax.linen.relu
-    # act_func = config["act_func"]
+    act_func = nn.relu
     params = loaded_dict["params"]
         
-    # TODO: support saving and loading different architectures
-    if config.name == "MLP":
-        model = MLP(layer_sizes, act_func)
-    else:
-        raise ValueError("Error loading model, architecture name not recognized.")
-    
-    # # Initialize train state
-    # # TODO cumbersome way to fetch the input dimension, is there a better way? I.e. save input ndim while saving model?
-    # params_keys = list(params.keys())
-    # first_layer = params[params_keys[0]]
-    # input_ndim = np.shape(first_layer)[0]
+    model = MLP(layer_sizes, act_func)
     
     # Create train state without optimizer
     state = TrainState.create(apply_fn = model.apply, params = params, tx = optax.adam(config.learning_rate))

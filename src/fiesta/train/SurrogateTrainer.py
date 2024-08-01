@@ -240,7 +240,7 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             input_ndim = len(self.parameter_names)
 
             # Create neural network and initialize the state
-            net = fiesta_nn.MLP(layer_sizes=config.layer_sizes, act_func=config.act_func)
+            net = fiesta_nn.MLP(layer_sizes=config.layer_sizes)
             key, subkey = jax.random.split(key)
             state = fiesta_nn.create_train_state(net, jnp.ones(input_ndim), subkey, config)
             
@@ -264,5 +264,4 @@ class BullaSurrogateTrainer(SurrogateTrainer):
 
             trained_states[filt] = state
             
-        # TODO: save the trained states or what?
-        return trained_states
+        self.trained_states = trained_states
