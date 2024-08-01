@@ -3,7 +3,7 @@ import time
 
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Int
 
 import flax
 from flax import linen as nn  # Linen API
@@ -18,12 +18,21 @@ import pickle
 
 class NeuralnetConfig(ConfigDict):
     """Configuration for a neural network model. For type hinting"""
-    name: str = "MLP"
-    layer_sizes: Sequence[int] = [64, 128, 64, 10]
-    learning_rate: float = 1e-3
-    batch_size: int = 128
-    nb_epochs: int = 1000
-    nb_report: int = 100
+    name: str
+    layer_sizes: list[int]
+    learning_rate: Float
+    batch_size: Int
+    nb_epochs: Int
+    nb_report: Int
+    
+    def __init__(self, **kwargs):
+        super().__init__()
+        self.name = kwargs.get("name", "MLP")
+        self.layer_sizes = kwargs.get("layer_sizes", [64, 128, 64, 10])
+        self.learning_rate = kwargs.get("learning_rate", 1e-3)
+        self.batch_size = kwargs.get("batch_size", 128)
+        self.nb_epochs = kwargs.get("nb_epochs", 1_000)
+        self.nb_report = kwargs.get("nb_report", 100)
     
 #####################
 ### ARCHITECTURES ###

@@ -3,21 +3,13 @@
 # TODO: improve them with jax treemaps, since dicts are essentially pytrees
 
 import os
-import numpy as np
-import pandas as pd
 import jax
-import jax.numpy as jnp 
-from jaxtyping import Array, Float, Int
+from jaxtyping import Array
+from functools import partial
 from beartype import beartype as typechecker
-import tqdm
 from flax.training.train_state import TrainState
 from fiesta.utils import MinMaxScalerJax, inverse_svd_transform
-from sklearn.model_selection import train_test_split
-from collections import defaultdict
-
-from fiesta.train import utils
 import fiesta.train.neuralnets as fiesta_nn
-import matplotlib.pyplot as plt
 import joblib
 
 class LightcurveModel:
@@ -68,6 +60,7 @@ class LightcurveModel:
         """
         return y
     
+    @partial(jax.jit, static_argnums=(0,))
     def predict(self, x: dict[str, Array]) -> dict[str, Array]:
         """
         Generate the lightcurve y from the unnormalized and untransformed input x.

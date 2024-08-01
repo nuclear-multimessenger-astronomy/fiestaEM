@@ -225,7 +225,8 @@ class BullaSurrogateTrainer(SurrogateTrainer):
     
     def fit(self,
             config: fiesta_nn.NeuralnetConfig = None,
-            key: jax.random.PRNGKey = jax.random.PRNGKey(0)):
+            key: jax.random.PRNGKey = jax.random.PRNGKey(0),
+            verbose: bool = True):
         """
         
         The config controls which architecture is built and therefore should not be specified here.
@@ -262,7 +263,7 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             state = fiesta_nn.create_train_state(net, jnp.ones(input_ndim), subkey, config)
             
             # Perform training loop
-            state, train_losses, val_losses = fiesta_nn.train_loop(state, config, train_X, train_y, val_X, val_y)
+            state, train_losses, val_losses = fiesta_nn.train_loop(state, config, train_X, train_y, val_X, val_y, verbose=verbose)
 
             # Plot and save the plot if so desired
             if self.plots_dir is not None:
@@ -277,7 +278,7 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                 plt.yscale('log')
                 plt.title("Learning curves")
                 plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{filt}.png"))
-                plt.show()
+                plt.close()
 
             trained_states[filt] = state
             
