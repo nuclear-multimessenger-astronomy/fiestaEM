@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import jax
 import jax.numpy as jnp 
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Int
 from beartype import beartype as typechecker
 import tqdm
 from sklearn.preprocessing import MinMaxScaler
@@ -13,12 +13,17 @@ from sklearn.model_selection import train_test_split
 from collections import defaultdict
 
 from fiesta.train import utils
+import fiesta.train.neuralnets as fiesta_nn
+import matplotlib.pyplot as plt
 
 class SurrogateTrainer:
     """Abstract class for training the surrogate models"""
     
-    name: str
-    parameter_names: list[str]
+    # TODO: change n_files to n_batch?
+    name: str # Name given to the model, e.g. Bu2022Ye
+    parameter_names: list[str] # Names of the input parameters
+    X: Float[Array, "n_batch ndim_input"] # input training data
+    y: dict[str, Float[Array, "n_batch ndim_output"]] # output training data, organized per filter
     
     def __init__(self, 
                  name: str) -> None:
@@ -28,13 +33,10 @@ class SurrogateTrainer:
     def __repr__(self) -> str:
         return f"SurrogateTrainer(name={self.name})"
     
-    # TODO: type hints
-    def fit(self, 
-            X: Array, 
-            y: Array):
+    def preprocess(self):
         raise NotImplementedError
     
-    def preprocess(self):
+    def fit(self):
         raise NotImplementedError
 
 class BullaSurrogateTrainer(SurrogateTrainer):
@@ -44,11 +46,13 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                  lc_dir: list[str],
                  outdir: str,
                  filters: list[str] = None,
-                 svd_ncoeff: int = 10
+                 svd_ncoeff: Int = 10, 
+                 validation_fraction: Float = 0.2,
+                 plots_dir: str = None
                  ):
         
         """
-        Initialize the surrogate model trainer
+        Initialize the surrogate model trainer. The initialization also takes care of reading data and preprocessing it, but does not automatically fit the model. Users may want to inspect the data before fitting the model.
         
         Note: currently, only models of Bulla type .dat files are supported
         
@@ -57,6 +61,8 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             lc_dir (list[str]): Directory where all the raw light curve files, to be read and processed into a surrogate model.
             outdir (str): Directory where the trained surrogate model has to be saved.
             filters (list[str], optional): List of all the filters used in the light curve files and for which surrogate has to be trained. If None, all the filters will be used. Defaults to None.
+            validation_fraction (Float, optional): Fraction of the data to be used for validation. Defaults to 0.2.
+            plots_dir (str, optional): Directory where the plots of the training process will be saved. Defaults to None.
         """
         
         # Check if supported
@@ -68,6 +74,12 @@ class BullaSurrogateTrainer(SurrogateTrainer):
         self.lc_dir = lc_dir
         self.outdir = outdir
         self.svd_ncoeff = svd_ncoeff
+        self.validation_fraction = validation_fraction
+        
+        # Check if directory exists, otherwise, create it:
+        self.plots_dir = plots_dir
+        if self.plots_dir is not None and not os.path.exists(self.plots_dir):
+            os.makedirs(self.plots_dir)
         
         self.lc_files = [os.path.join(lc_dir, f) for f in os.listdir(lc_dir) if f.endswith(".dat")]
 
@@ -89,12 +101,12 @@ class BullaSurrogateTrainer(SurrogateTrainer):
         # TODO: change this if doesn't turn out well later on?
         self.preprocessing_metadata = {filt: {} for filt in self.filters}
         
-        print("Reading data files and interpolating NaNs")
+        print("Reading data files and interpolating NaNs . . .")
         self.raw_data, self.parameter_values = self.read_files()
         self.raw_data = utils.interpolate_nans(self.raw_data, self.times)
         
-        # TODO: put the preprocess here etc
-        
+        print("Preprocessing data . . .")
+        self.preprocess()
         
     def __repr__(self) -> str:
         return f"BullaSurrogateTrainer(name={self.name}, lc_dir={self.lc_dir}, outdir={self.outdir}, filters={self.filters})"
@@ -129,6 +141,7 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                     data[filt] = np.vstack((data[filt], lc_data[filt]))
                     
             # Fetch the parameter values of this file
+            # TODO: make this more general than Bu2022Ye once I figured out how to do it
             params = utils.extract_Bu2022Ye_parameters(filename)
             if i == 0:
                 parameter_values = params
@@ -138,8 +151,10 @@ class BullaSurrogateTrainer(SurrogateTrainer):
         return data, parameter_values
                 
     def preprocess(self) -> tuple[Float[Array, "n_files n_params"], dict[str, Float[Array, "n_files nsvd_coeff"]]]:
+        """_summary_
+        Preprocess the data. This includes scaling the inputs and outputs, performing SVD decomposition, and saving the necessary metadata for later use.
+        """
         # Scale inputs
-        print("Preprocessing data")
         X_scaler = MinMaxScaler()
         X = X_scaler.fit_transform(self.parameter_values)
         
@@ -193,6 +208,61 @@ class BullaSurrogateTrainer(SurrogateTrainer):
     ### FITTING ###
     ###############
     
-    # TODO: implement fitting 
-    def fit(self, X, y):
-        pass
+    def fit(self,
+            config: fiesta_nn.NeuralnetConfig = None,
+            key: jax.random.PRNGKey = jax.random.PRNGKey(0)):
+        """
+        
+        The config controls which architecture is built and therefore should not be specified here.
+        # TODO: - make architecture also part of config, if changed later on?
+        
+        Args:
+            config (nn.NeuralnetConfig, optional): _description_. Defaults to None.
+        """
+        
+        # Get default choices if not given
+        if config is None:
+            config = fiesta_nn.NeuralnetConfig()
+            
+        trained_states = {filt: None for filt in self.filters}
+        
+        for filt in self.filters:
+            # Fetch the output data of this filter, and perform train-validation split on it
+            y = self.y[filt]
+            
+            # Finally, convert to jnp.arrays
+            X = jnp.array(self.X)
+            y = jnp.array(y)
+            
+            # TODO: do we want to fix the random seed?
+            train_X, val_X, train_y, val_y = train_test_split(X, y, test_size=self.validation_fraction) # random_state=42
+            
+            input_ndim = len(self.parameter_names)
+
+            # Create neural network and initialize the state
+            net = fiesta_nn.MLP(layer_sizes=config.layer_sizes, act_func=config.act_func)
+            key, subkey = jax.random.split(key)
+            state = fiesta_nn.create_train_state(net, jnp.ones(input_ndim), subkey, config)
+            
+            # Perform training loop
+            state, train_losses, val_losses = fiesta_nn.train_loop(state, config, train_X, train_y, val_X, val_y)
+
+            # Plot and save the plot if so desired
+            if self.plots_dir is not None:
+                plt.figure(figsize=(10, 5))
+                ls = "-o"
+                ms = 3
+                plt.plot([i+1 for i in range(len(train_losses))], train_losses, ls, markersize=ms, label="Train", color="red")
+                plt.plot([i+1 for i in range(len(val_losses))], val_losses, ls, markersize=ms, label="Validation", color="blue")
+                plt.legend()
+                plt.xlabel("Epoch")
+                plt.ylabel("MSE loss")
+                plt.yscale('log')
+                plt.title("Learning curves")
+                plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{filt}.png"))
+                plt.show()
+
+            trained_states[filt] = state
+            
+        # TODO: save the trained states or what?
+        return trained_states
