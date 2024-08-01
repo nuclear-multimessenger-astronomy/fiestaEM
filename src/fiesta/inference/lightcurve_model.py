@@ -1,0 +1,196 @@
+"""Store classes to load in trained models and give routines to let them generate lightcurves."""
+
+# TODO: improve them with jax treemaps, since dicts are essentially pytrees
+
+import os
+import numpy as np
+import pandas as pd
+import jax
+import jax.numpy as jnp 
+from jaxtyping import Array, Float, Int
+from beartype import beartype as typechecker
+import tqdm
+from flax.training.train_state import TrainState
+from fiesta.utils import MinMaxScalerJax, inverse_svd_transform
+from sklearn.model_selection import train_test_split
+from collections import defaultdict
+
+from fiesta.train import utils
+import fiesta.train.neuralnets as fiesta_nn
+import matplotlib.pyplot as plt
+import joblib
+
+class LightcurveModel:
+    """Abstract class"""
+    
+    name: str 
+    
+    def __init__(self, 
+                 name: str) -> None:
+        self.name = name
+        
+    def project_input(self, x: dict[str, Array]) -> dict[str, Array]:
+        """
+        Project the given input to whatever preprocessed input space we are in. 
+        By default (i.e., in this base class), the projection is the identity function.
+
+        Args:
+            x (Array): Input array
+
+        Returns:
+            Array: Input array transformed to the preprocessed space.
+        """
+        return x
+    
+    def compute_output(self, x: dict[str, Array]) -> dict[str, Array]:
+        """
+        Compute the output (untransformed) from the given, transformed input. 
+        This is the main method that needs to be implemented by subclasses.
+
+        Args:
+            x (Array): Input array
+
+        Returns:
+            Array: Output array
+        """
+        raise NotImplementedError
+        
+    def project_output(self, y: dict[str, Array]) -> dict[str, Array]:
+        """
+        Project the computed output to whatever preprocessed output space we are in. 
+        By default (i.e., in this base class), the projection is the identity function.
+
+        Args:
+            y (Array): Output array
+
+        Returns:
+            Array: Output array transformed to the preprocessed space.
+        """
+        return y
+    
+    def predict(self, x: dict[str, Array]) -> dict[str, Array]:
+        """
+        Generate the lightcurve y from the unnormalized and untransformed input x.
+        Chains the projections with the actual computation of the output. E.g. if the model is a trained
+        surrogate neural network, they represent the map from x tilde to y tilde. The mappings from
+        x to x tilde and y to y tilde take care of projections (e.g. SVD projections) and normalizations.
+
+        Args:
+            x (Array): Input array, unnormalized and untransformed.
+
+        Returns:
+            Array: Output array, i.e., the desired raw light curve.
+        """
+        x_tilde = self.project_input(x)
+        y_tilde = self.compute_output(x_tilde)
+        y = self.project_output(y_tilde)
+        return y
+    
+    def __repr__(self) -> str:
+        return self.name
+    
+class BullaLightcurveModel(LightcurveModel):
+    
+    directory: str
+    X_scaler: MinMaxScalerJax
+    y_scaler: dict[str, MinMaxScalerJax]
+    VA: dict[str, Array] # this is needed
+    # cAmat: dict[str, Array] # TODO: are these needed?
+    # cAstd: dict[str, Array]
+    models: dict[str, TrainState]
+    
+    def __init__(self, 
+                 name: str, 
+                 directory: str,
+                 filters: list[str] = None):
+        """
+        Initialize a class to generate lightcurves from a Bulla trained model.
+
+        Args:
+            name (str): Name of the model
+            directory (str): Directory with trained model states and projection metadata such as scalers.
+            filters (list[str]): List of all the filters for which the model should be loaded.
+        """
+        super().__init__(name=name)
+        self.directory = directory
+        
+        # Save those filters that were given and that were trained and store here already
+        filters = [f.replace(":", "_") for f in filters]
+        pkl_files = [file for file in os.listdir(self.directory) if file.endswith(".pkl") or file.endswith(".pickle")]
+        all_available_filters = [file.split(".")[0] for file in pkl_files]
+        
+        if filters is None:
+            filters = all_available_filters
+        else:
+            filters = [f for f in filters if f in all_available_filters]
+        self.filters = filters
+        
+        # TODO: this is a bit cumbersome...
+        # Load the metadata for projections etc
+        metadata = joblib.load(os.path.join(self.directory, f"{self.name}.joblib"))
+        # TODO: let this no longer depend on filter once fixed in surrogate trainer
+        min_val, max_val = metadata["X_scaler_min"][filters[0]], metadata["X_scaler_max"][filters[0]]
+        self.X_scaler = MinMaxScalerJax(min_val=min_val, max_val=max_val)
+        
+        min_val, max_val = metadata["y_scaler_min"], metadata["y_scaler_max"]
+        self.y_scaler = {}
+        for filt in self.filters:
+            self.y_scaler[filt] = MinMaxScalerJax(min_val=min_val[filt], max_val=max_val[filt])
+        
+        # TODO: do we have to explicitly convert to jnp.arrays?
+        self.VA = metadata["VA"]
+        # TODO: check if needed or not
+        # self.cAmat = metadata["cAmat"]
+        # self.cAstd = metadata["cAstd"]
+        self.nsvd_coeff = metadata["nsvd_coeff"]
+        
+        # TODO: need the config here?
+        # Load the trained model states
+        self.models = {}
+        for filter in filters:
+            filename = os.path.join(self.directory, f"{filter}.pkl")
+            state, _ = fiesta_nn.load_model(filename)
+            self.models[filter] = state
+            
+    def project_input(self, x: Array) -> Array:
+        """
+        Project the given input to whatever preprocessed input space we are in.
+
+        Args:
+            x (dict[str, Array]): Original input array
+
+        Returns:
+            dict[str, Array]: Transformed input array
+        """
+        x_tilde = {filter: self.X_scaler.transform(x) for filter in self.filters}
+        return x_tilde
+            
+    def compute_output(self, x: dict[str, Array]) -> dict[str, Array]:
+        """
+        Apply the trained flax neural network on the given input x.
+
+        Args:
+            x (dict[str, Array]): Input array of parameters
+
+        Returns:
+            dict[str, Array]: _description_
+        """
+        
+        # TODO: too convoluted, simplify
+        return {filter: self.models[filter].apply_fn({'params': self.models[filter].params}, x[filter]) for filter in self.filters}
+
+    def project_output(self, y: dict[str, Array]) -> dict[str, Array]:
+        """
+        Apply the trained flax neural network on the given input x.
+
+        Args:
+            x (dict[str, Array]): Input array of parameters
+
+        Returns:
+            dict[str, Array]: _description_
+        """
+        
+        output = {filter: inverse_svd_transform(y[filter], self.VA[filter], self.nsvd_coeff) for filter in self.filters}
+        output = {filter: self.y_scaler[filter].inverse_transform(output[filter]) for filter in self.filters}
+
+        return output
