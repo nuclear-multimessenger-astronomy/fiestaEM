@@ -87,9 +87,7 @@ class BullaLightcurveModel(LightcurveModel):
     directory: str
     X_scaler: MinMaxScalerJax
     y_scaler: dict[str, MinMaxScalerJax]
-    VA: dict[str, Array] # this is needed
-    # cAmat: dict[str, Array] # TODO: are these needed?
-    # cAstd: dict[str, Array]
+    VA: dict[str, Array]
     models: dict[str, TrainState]
     
     def __init__(self, 
@@ -118,11 +116,11 @@ class BullaLightcurveModel(LightcurveModel):
             filters = [f for f in filters if f in all_available_filters]
         self.filters = filters
         
-        # TODO: this is a bit cumbersome...
+        # TODO: this is a bit cumbersome... Is there a better way to do it?
+        
         # Load the metadata for projections etc
         metadata = joblib.load(os.path.join(self.directory, f"{self.name}.joblib"))
-        # TODO: let this no longer depend on filter once fixed in surrogate trainer
-        min_val, max_val = metadata["X_scaler_min"][filters[0]], metadata["X_scaler_max"][filters[0]]
+        min_val, max_val = metadata["X_scaler_min"], metadata["X_scaler_max"]
         self.X_scaler = MinMaxScalerJax(min_val=min_val, max_val=max_val)
         
         min_val, max_val = metadata["y_scaler_min"], metadata["y_scaler_max"]
@@ -132,12 +130,8 @@ class BullaLightcurveModel(LightcurveModel):
         
         # TODO: do we have to explicitly convert to jnp.arrays?
         self.VA = metadata["VA"]
-        # TODO: check if needed or not
-        # self.cAmat = metadata["cAmat"]
-        # self.cAstd = metadata["cAstd"]
         self.nsvd_coeff = metadata["nsvd_coeff"]
         
-        # TODO: need the config here?
         # Load the trained model states
         self.models = {}
         for filter in filters:

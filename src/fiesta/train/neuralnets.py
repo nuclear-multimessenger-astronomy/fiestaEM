@@ -144,7 +144,6 @@ def train_step(state: TrainState,
     # Compute losses
     train_loss, grads = apply_model(state, train_X, train_y)
     if val_X is not None:
-        # TODO: computing the gradient here is not necessary -- remove for speed?
         val_loss, _ = apply_model(state, val_X, val_y)
     else:
         val_loss = jnp.zeros_like(train_loss)

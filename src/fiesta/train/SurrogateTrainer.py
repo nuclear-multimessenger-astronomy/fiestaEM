@@ -20,7 +20,6 @@ import joblib
 class SurrogateTrainer:
     """Abstract class for training the surrogate models"""
     
-    # TODO: change n_files to n_batch?
     name: str # Name given to the model, e.g. Bu2022Ye
     parameter_names: list[str] # Names of the input parameters
     X: Float[Array, "n_batch ndim_input"] # input training data
@@ -42,11 +41,11 @@ class SurrogateTrainer:
 
 class BullaSurrogateTrainer(SurrogateTrainer):
     
-    X_raw: Float[Array, "n_files n_params"]
-    y_raw: dict[str, Float[Array, "n_files n_times"]]
+    X_raw: Float[Array, "n_batch n_params"]
+    y_raw: dict[str, Float[Array, "n_batch n_times"]]
     
-    X: Float[Array, "n_files n_params"]
-    y: dict[str, Float[Array, "n_files n_svd_coeff"]]
+    X: Float[Array, "n_batch n_params"]
+    y: dict[str, Float[Array, "n_batch n_svd_coeff"]]
     
     def __init__(self,
                  name: str,
@@ -105,13 +104,12 @@ class BullaSurrogateTrainer(SurrogateTrainer):
         # Fetch parameter names
         self.parameter_names = utils.BULLA_PARAMETER_NAMES[name]
         
-        # TODO: check if these have to be saved or not
-        # self.preprocessing_metadata = {"X_scaler": {}, "y_scaler": {}, "cAmat": {}, "cAstd": {}, "VA": {}}
         self.preprocessing_metadata = {"X_scaler_min": {}, 
                                        "X_scaler_max": {}, 
                                        "y_scaler_min": {},
                                        "y_scaler_max": {},
-                                       "VA": {}, "nsvd_coeff": self.svd_ncoeff}
+                                       "VA": {},
+                                       "nsvd_coeff": self.svd_ncoeff}
         
         print("Reading data files and interpolating NaNs . . .")
         self.X_raw, self.y_raw = self.read_files()
@@ -127,22 +125,20 @@ class BullaSurrogateTrainer(SurrogateTrainer):
     ### PREPROCESSING ###
     #####################
     
-    def read_files(self) -> tuple[dict[str, Float[Array, " n_files n_params"]], Float[Array, "n_files n_times"]]:
+    def read_files(self) -> tuple[dict[str, Float[Array, " n_batch n_params"]], Float[Array, "n_batch n_times"]]:
         """
         Read the photometry files and interpolate the NaNs. 
-        Output will be an array of shape (n_filters, n_files, n_times)
+        Output will be an array of shape (n_filters, n_batch, n_times)
 
         Args:
             lc_files (list[str]): List of all the raw light curve files, to be read and processed into a surrogate model.
             
         Returns:
-            tuple[dict[str, Float[Array, " n_files n_times"]], Float[Array, "n_files n_params"]]: First return value is an array of all the parameter values extracted from the files. Second return value is a dictionary containing the filters and corresponding light curve data which has shape (n_files, n_times).
+            tuple[dict[str, Float[Array, " n_batch n_times"]], Float[Array, "n_batch n_params"]]: First return value is an array of all the parameter values extracted from the files. Second return value is a dictionary containing the filters and corresponding light curve data which has shape (n_batch, n_times).
         """
         
-        # TODO: figure out how to save?
-        data = {filt: [] for filt in self.filters}
-
         # Fetch the result for each filter and add it to already existing dataset
+        data = {filt: [] for filt in self.filters}
         for i, filename in enumerate(tqdm.tqdm(self.lc_files)):
             # Get a dictionary with keys being the filters and values being the light curve data
             lc_data = utils.read_single_bulla_file(filename)
@@ -153,7 +149,7 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                     data[filt] = np.vstack((data[filt], lc_data[filt]))
                     
             # Fetch the parameter values of this file
-            # TODO: make this more general than Bu2022Ye once I figured out how to do it
+            # TODO: make this more general than Bu2022Ye once I figured out best way to do it
             params = utils.extract_Bu2022Ye_parameters(filename)
             if i == 0:
                 parameter_values = params
@@ -162,7 +158,7 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                 
         return parameter_values, data
                 
-    def preprocess(self) -> tuple[Float[Array, "n_files n_params"], dict[str, Float[Array, "n_files nsvd_coeff"]]]:
+    def preprocess(self) -> tuple[Float[Array, "n_batch n_params"], dict[str, Float[Array, "n_batch nsvd_coeff"]]]:
         """_summary_
         Preprocess the data. This includes scaling the inputs and outputs, performing SVD decomposition, and saving the necessary metadata for later use.
         """
@@ -170,12 +166,12 @@ class BullaSurrogateTrainer(SurrogateTrainer):
         X_scaler = MinMaxScalerJax()
         X = X_scaler.fit_transform(self.X_raw)
         
+        self.preprocessing_metadata["X_scaler_min"] = X_scaler.min_val
+        self.preprocessing_metadata["X_scaler_max"] = X_scaler.max_val
+        
         # Scale outputs, do SVD and save into y
         y = {filt: [] for filt in self.filters}
         for filt in tqdm.tqdm(self.filters):
-            # TODO: this is now duplicate in each filter. Remove this, not used in the LC generators
-            self.preprocessing_metadata["X_scaler_min"][filt] = X_scaler.min_val
-            self.preprocessing_metadata["X_scaler_max"][filt] = X_scaler.max_val
             
             data_scaler = MinMaxScalerJax()
             data = data_scaler.fit_transform(self.y_raw[filt])
@@ -183,7 +179,7 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             self.preprocessing_metadata["y_scaler_max"][filt] = data_scaler.max_val
             
             # Do SVD decomposition
-            # TODO: generalize this so that people can also easily train on the full lightcurve if they want to
+            # TODO: make SVD decomposition optional so that people can also easily train on the full lightcurve if they want to
             UA, _, VA = np.linalg.svd(data, full_matrices=True)
             VA = VA.T
 
@@ -205,14 +201,13 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                         np.dot(np.diag(np.power(errors, 2.0)), VA[:, : self.svd_ncoeff]),
                     )
                 )
-            cAstd = np.sqrt(cAvar)
+            # TODO: do we want some cAstd saved in the future?
+            # cAstd = np.sqrt(cAvar)
             
             self.preprocessing_metadata["VA"][filt] = VA
-            # TODO: check if these have to be saved or not
-            # self.preprocessing_metadata["cAmat"][filt] = cAmat
-            # self.preprocessing_metadata["cAstd"][filt] = cAstd
             
-            y[filt] = cAmat.T # Transpose to get the shape (n_files, n_svd_coeff)
+            # Transpose to get the shape (n_batch, n_svd_coeff)
+            y[filt] = cAmat.T 
             
         self.X = X 
         self.y = y
@@ -230,20 +225,17 @@ class BullaSurrogateTrainer(SurrogateTrainer):
         """
         
         The config controls which architecture is built and therefore should not be specified here.
-        # TODO: - make architecture also part of config, if changed later on?
         
         Args:
             config (nn.NeuralnetConfig, optional): _description_. Defaults to None.
         """
         
-        # Get default choices if not given
+        # Get default choices if no config is given
         if config is None:
             config = fiesta_nn.NeuralnetConfig()
-            
         self.config = config
             
         trained_states = {filt: None for filt in self.filters}
-        
         for filt in self.filters:
             # Fetch the output data of this filter, and perform train-validation split on it
             y = self.y[filt]
@@ -252,8 +244,7 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             X = jnp.array(self.X)
             y = jnp.array(y)
             
-            # TODO: do we want to fix the random seed?
-            train_X, val_X, train_y, val_y = train_test_split(X, y, test_size=self.validation_fraction) # random_state=42
+            train_X, val_X, train_y, val_y = train_test_split(X, y, test_size=self.validation_fraction)
             
             input_ndim = len(self.parameter_names)
 
@@ -298,21 +289,3 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             
         # TODO: improve saving of the scalers: saving the objects is not the best way to do it and breaks pickle
         joblib.dump(self.preprocessing_metadata, self.outdir + f"{self.name}.joblib")
-        
-        
-### TODO: move to another space
-# def load_model_all_filts(svd_model: SVDTrainingModel, model_dir: str):
-#     # Iterate over all the filters that are present in the SVD model
-#     filters = list(svd_model.keys())
-#     for filt in filters:
-#         # Check whether we have a saved model for this filter
-#         # TODO what if file extension changes?
-#         filenames = [file for file in os.listdir(model_dir) if f"{filt}.pkl" in file]
-#         if len(filenames) == 0:
-#             raise ValueError(f"Error loading flax model: filter {filt} does not seem to be saved in directory {model_dir}")
-#         elif len(filenames) > 1:
-#             print(f"Warning: there are several matches with filter {filt} in directory {model_dir}, loading first")
-#         # If we have a saved model, load in and save into our object
-#         filename = filenames[0]
-#         state = load_model(model_dir + filename)
-#         svd_model[filt]["model"] = state
