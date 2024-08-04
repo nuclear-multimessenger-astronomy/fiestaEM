@@ -1,6 +1,6 @@
 # fiesta
 
-`fiesta`: Fast inference of electromagnetic signals with JAX
+`fiesta`: **F**ast **I**nference of **E**lectromagnetic **S**ignals and **T**ransients with j**A**x
 
 
 **NOTE:** `fiesta` is currently under development -- stay tuned!
