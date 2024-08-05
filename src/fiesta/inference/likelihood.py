@@ -72,7 +72,7 @@ class EMLikelihood:
             
         self.fixed_params = fixed_params
         
-    def log_likelihood(self, 
+    def evaluate(self, 
                        theta: dict[str, Array]):
         
         # # Make sure the fixed parameters have the same PyTree structure
