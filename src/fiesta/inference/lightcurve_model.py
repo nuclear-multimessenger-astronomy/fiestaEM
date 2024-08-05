@@ -4,11 +4,12 @@
 
 import os
 import jax
+import jax.numpy as jnp
 from jaxtyping import Array
 from functools import partial
 from beartype import beartype as typechecker
 from flax.training.train_state import TrainState
-from fiesta.utils import MinMaxScalerJax, inverse_svd_transform
+from fiesta.utils import MinMaxScalerJax, inverse_svd_transform, BULLA_PARAMETER_NAMES
 import fiesta.train.neuralnets as fiesta_nn
 import joblib
 
@@ -16,10 +17,16 @@ class LightcurveModel:
     """Abstract class"""
     
     name: str 
+    filters: list[str]
+    parameter_names: list[str]
+    times: Array
     
     def __init__(self, 
                  name: str) -> None:
         self.name = name
+        self.filters = []
+        self.parameter_names = []
+        self.times = jnp.array([])
         
     def project_input(self, x: dict[str, Array]) -> dict[str, Array]:
         """
@@ -74,7 +81,7 @@ class LightcurveModel:
         Returns:
             Array: Output array, i.e., the desired raw light curve.
         """
-        x_tilde = self.project_input(x)
+        x_tilde = self.project_input(jnp.array([x[name] for name in self.parameter_names]))
         y_tilde = self.compute_output(x_tilde)
         y = self.project_output(y_tilde)
         return y
@@ -138,6 +145,12 @@ class BullaLightcurveModel(LightcurveModel):
             filename = os.path.join(self.directory, f"{filter}.pkl")
             state, _ = fiesta_nn.load_model(filename)
             self.models[filter] = state
+            
+        # Also save the parameter names and times
+        self.parameter_names = BULLA_PARAMETER_NAMES[name]
+        self.times = jnp.array(metadata["times"])
+        self.tmin = self.times[0]
+        self.tmax = self.times[-1]
             
     def project_input(self, x: Array) -> Array:
         """

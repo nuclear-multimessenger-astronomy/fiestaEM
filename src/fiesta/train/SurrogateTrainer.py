@@ -12,7 +12,7 @@ from fiesta.utils import MinMaxScalerJax
 from sklearn.model_selection import train_test_split
 from collections import defaultdict
 
-from fiesta.train import utils
+from fiesta import utils
 import fiesta.train.neuralnets as fiesta_nn
 import matplotlib.pyplot as plt
 import joblib
@@ -109,7 +109,8 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                                        "y_scaler_min": {},
                                        "y_scaler_max": {},
                                        "VA": {},
-                                       "nsvd_coeff": self.svd_ncoeff}
+                                       "nsvd_coeff": self.svd_ncoeff,
+                                       "times": self.times}
         
         print("Reading data files and interpolating NaNs . . .")
         self.X_raw, self.y_raw = self.read_files()
