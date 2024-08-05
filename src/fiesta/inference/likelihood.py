@@ -73,7 +73,8 @@ class EMLikelihood:
         self.fixed_params = fixed_params
         
     def evaluate(self, 
-                       theta: dict[str, Array]):
+                 theta: dict[str, Array],
+                 data: dict = None):
         
         # # Make sure the fixed parameters have the same PyTree structure
         # example_tree = theta[theta.keys()[0]]
@@ -103,10 +104,10 @@ class EMLikelihood:
         chisq = jax.tree.map(lambda mag_est, mag_det, data_sigma: self.get_chisq_filt(mag_est, mag_det, data_sigma), 
                              mag_app_interp, self.mag_det, self.data_sigma)
         chisq_flatten, _ = jax.flatten_util.ravel_pytree(chisq)
-        chisq_total = jnp.sum(chisq_flatten)
+        chisq_total = jnp.sum(chisq_flatten).astype(jnp.float64)
         
         # TODO: implement the non-detections part of the likelihood
-        gaussprob_total = jnp.array([0.0])
+        gaussprob_total = 0.0
         
         return chisq_total + gaussprob_total
     
