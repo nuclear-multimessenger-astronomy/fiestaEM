@@ -1,4 +1,4 @@
-# fiesta
+# fiesta 🎉
 
 `fiesta`: **F**ast **I**nference of **E**lectromagnetic **S**ignals and **T**ransients with j**A**x
 
