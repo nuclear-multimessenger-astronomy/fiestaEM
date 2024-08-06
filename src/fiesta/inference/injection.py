@@ -30,7 +30,9 @@ class InjectionRecovery:
                  tmin: Float = 0.1,
                  tmax: Float = 14.0,
                  N_datapoints: int = 10,
-                 error_budget: Float = 1.0,):
+                 error_budget: Float = 1.0,
+                 randomize_nondetections: bool = False,
+                 randomize_nondetections_fraction: Float = 0.2):
         
         self.model = model
         # Ensure given filters are also in the trained model
@@ -44,6 +46,8 @@ class InjectionRecovery:
         self.tmax = tmax
         self.N_datapoints = N_datapoints
         self.error_budget = error_budget
+        self.randomize_nondetections = randomize_nondetections
+        self.randomize_nondetections_fraction = randomize_nondetections_fraction
         
     def create_injection(self):
         """Create a synthetic injection from the given model and parameters."""
@@ -56,6 +60,14 @@ class InjectionRecovery:
             all_mag_app = mag_app_from_mag_abs(all_mag_abs[filt], self.injection_dict["luminosity_distance"])
             mag_app = np.interp(times, self.model.times, all_mag_app)
             mag_err = self.error_budget * np.ones_like(times)
+            
+            # Randomize to get some non-detections if so desired:
+            if self.randomize_nondetections:
+                n_nondetections = int(self.randomize_nondetections_fraction * len(times))
+                nondet_indices = np.random.choice(len(times), size = n_nondetections, replace = False)
+                
+                mag_app[nondet_indices] -= 5.0 # randomly bump down the magnitude
+                mag_err[nondet_indices] = np.inf
             
             array = np.array([times, mag_app, mag_err]).T
             self.data[filt] = array
