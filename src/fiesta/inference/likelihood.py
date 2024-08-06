@@ -3,11 +3,11 @@
 import copy
 import numpy as np
 import jax
-import jax.numpy as jnp
 from jaxtyping import Float, Array
+import jax.numpy as jnp
 
 from fiesta.inference.lightcurve_model import LightcurveModel
-from fiesta.utils import mag_app_from_mag_abs
+from fiesta.utils import mag_app_from_mag_abs, truncated_gaussian
 
 class EMLikelihood:
     
@@ -17,13 +17,14 @@ class EMLikelihood:
     tmin: Float
     tmax: Float
     ignore_nondetections: bool
-    detection_limit: Float
-    error_budget: Float
+    
+    detection_limit: dict[str, Array]
+    error_budget: dict[str, Array]
     
     times_det: dict[str, Array]
     mag_det: dict[str, Array]
-    mag_err_det: dict[str, Array]
-    data_sigma: dict[str, Array]
+    mag_err: dict[str, Array]
+    sigma: dict[str, Array]
     
     times_nondet: dict[str, Array]
     mag_nondet: dict[str, Array]
@@ -37,8 +38,8 @@ class EMLikelihood:
                  tmax: Float = 14.0,
                  error_budget: Float = 1.0,
                  fixed_params: dict[str, Float] = {},
-                 ignore_nondetections: bool = True):
-        # detection_limit: Float = 9999.0 # TODO: add detection limit as an argument
+                 ignore_nondetections: bool = True,
+                 detection_limit: Float = None):
         
         # Save as attributes
         self.model = model
@@ -47,13 +48,28 @@ class EMLikelihood:
         self.tmin = tmin
         self.tmax = tmax
         self.ignore_nondetections = ignore_nondetections
-        self.error_budget = error_budget # TODO: generalize this to be a dictionary of errors for each filter?
-        # self.detection_limit = detection_limit # TODO: generalize this to be a dictionary of detection limits for each filter?
         
+        # Process error budget
+        if isinstance(error_budget, (int, float)) and not isinstance(error_budget, dict):
+            print("Converting error budget to dictionary.")
+            error_budget = dict(zip(filters, [error_budget] * len(filters)))
+        self.error_budget = error_budget
+        
+        # Process detection limit
+        if isinstance(detection_limit, (int, float)) and not isinstance(detection_limit, dict):
+            print("Converting detection limit to dictionary.")
+            detection_limit = dict(zip(filters, [detection_limit] * len(filters)))
+        
+        if detection_limit is None:
+            print("NOTE: No detection limit is given. Putting it to infinity.")
+            detection_limit = dict(zip(filters, [jnp.inf] * len(filters)))
+            
+        self.detection_limit = detection_limit
+            
         # Process the given data
         self.times_det = {}
         self.mag_det = {}
-        self.mag_err_det = {}
+        self.mag_err = {}
         
         self.times_nondet = {}
         self.mag_nondet = {}
@@ -65,34 +81,28 @@ class EMLikelihood:
             self.ignore_nondetections = True
         
         # Create auxiliary data structures used in calculations
-        self.data_sigma = {}
+        self.sigma = {}
         for filt in self.filters:
-            # TODO: generalize to dict for error_budget
-            self.data_sigma[filt] = jnp.sqrt(self.mag_err_det[filt] ** 2 + self.error_budget ** 2)
+            self.sigma[filt] = jnp.sqrt(self.mag_err[filt] ** 2 + self.error_budget[filt] ** 2)
             
         self.fixed_params = fixed_params
         
     def evaluate(self, 
                  theta: dict[str, Array],
-                 data: dict = None):
+                 data: dict = None) -> Float:
+        """
+        Evaluate the log-likelihood of the data given the model and the parameters theta, at a single point.
+
+        Args:
+            theta (dict[str, Array]): _description_
+            data (dict, optional): Unused, but kept to comply with flowMC likelihood function signature. Defaults to None.
+
+        Returns:
+            Float: The log-likelihood value at this point.
+        """
         
-        # # Make sure the fixed parameters have the same PyTree structure
-        # example_tree = theta[theta.keys()[0]]
-        # treevals, treedef = jax.tree.flatten(example_tree)
-        # for key, value in self.fixed_params.items():
-        #     self.fixed_params[key] = jax.tree_util.tree_unflatten(treedef, jax.tree_util.tree_flatten(value)[0])
-        
-        # # Update theta dict with the fixed parameters as well
-        # fixed_params_dict = {}
-        # for key, value in self.fixed_params.items():
-        #     # TODO: this is cumbersome...
-        #     example_key = list(theta.keys())[0]
-        #     fixed_params_dict[key] = value * jnp.ones_like(theta[example_key])
-            
         theta = {**theta, **self.fixed_params}
-        
-        mag_abs = self.model.predict(theta) # dict[str, Array] comes out
-        
+        mag_abs: dict[str, Array] = self.model.predict(theta)
         mag_app = jax.tree.map(lambda x: mag_app_from_mag_abs(x, theta["luminosity_distance"]),
                                mag_abs)
         
@@ -101,18 +111,31 @@ class EMLikelihood:
                                         self.times_det, mag_app)
         
         # Get chisq
-        chisq = jax.tree.map(lambda mag_est, mag_det, data_sigma: self.get_chisq_filt(mag_est, mag_det, data_sigma), 
-                             mag_app_interp, self.mag_det, self.data_sigma)
+        chisq = jax.tree.map(lambda mag_est, mag_det, sigma, lim: self.get_chisq_filt(mag_est, mag_det, sigma, lim), 
+                             mag_app_interp, self.mag_det, self.sigma, self.detection_limit)
         chisq_flatten, _ = jax.flatten_util.ravel_pytree(chisq)
         chisq_total = jnp.sum(chisq_flatten).astype(jnp.float64)
         
-        # TODO: implement the non-detections part of the likelihood
+        # print("chisq_total")
+        # print(chisq_total)
+        
+        ### Gaussprob:
+        
+        # # TODO: implement the non-detections part of the likelihood
+        # gaussprob = jax.tree.map(lambda mag_est, mag_nondet, error_budget: self.get_gaussprob_filt(mag_est, mag_nondet, error_budget), 
+        #                      mag_app_interp, self.mag_nondet, self.error_budget)
+        # gaussprob_flatten, _ = jax.flatten_util.ravel_pytree(gaussprob)
+        # gaussprob_total = jnp.sum(gaussprob_flatten).astype(jnp.float64)
+        
         gaussprob_total = 0.0
+
+        # print("gaussprob_total")
+        # print(gaussprob_total)
         
         return chisq_total + gaussprob_total
     
     def __call__(self, theta):
-        return self.log_likelihood(theta)
+        return self.evaluate(theta)
     
     def process_data(self, data: dict[str, Array]):
         """
@@ -146,7 +169,7 @@ class EMLikelihood:
             
             self.times_det[filt] = times[idx_no_inf]
             self.mag_det[filt] = mag[idx_no_inf]
-            self.mag_err_det[filt] = mag_err[idx_no_inf]
+            self.mag_err[filt] = mag_err[idx_no_inf]
             
             self.times_nondet[filt] = times[~idx_no_inf]
             self.mag_nondet[filt] = mag[~idx_no_inf]
@@ -156,35 +179,63 @@ class EMLikelihood:
     def get_chisq_filt(self,
                        mag_est: Array,
                        mag_det: Array,
-                       data_sigma: Array,
-                       timeshift: Float = 0.0,
-                    #    upper_lim: Float = 9999.0, # TODO: implement this!
-                    #    lower_lim: Float = -9999.0
-                    ) -> Float:
+                       sigma: Array,
+                       lim: Float) -> Float:
         """
-        Return the log likelihood of the chisquare part of the likelihood function.
+        Return the log likelihood of the chisquare part of the likelihood function for a single filter.
+        Branch off based on provided detection limit (lim). If the limit is infinite, the likelihood is calculated without truncation and without resorting to scipy for faster evaluation. If the limit is finite, the likelihood is calculated with truncation and with scipy. 
+        TODO: can we circumvent using scipy and implement this ourselves to speed up?
 
         Args:
-            mag_est (Array): Estimated magnitudes for this filter
-            timeshift (Float, optional): Timeshift to be applied. Defaults to 0.0. TODO: has to be implemented properly
+            TODO:
 
         Returns:
             Float: The chi-square value for this filter
         """
         
-        arg = - 0.5 * jnp.sum(
-            (mag_det - mag_est) ** 2 / data_sigma ** 2
+        return jax.lax.cond(lim == jnp.inf,
+                           lambda x: self.compute_chisq(*x),
+                           lambda x: self.compute_chisq_trunc(*x),
+                           (mag_est, mag_det, sigma, lim))
+    
+    @staticmethod
+    def compute_chisq(mag_est: Array,
+                      mag_det: Array,
+                      sigma: Array,
+                      lim: Float) -> Float:
+        """
+        Return the log likelihood of the chisquare part of the likelihood function, without truncation (no detection limit is given). See get_chisq_filt for more details.
+        """
+        val = - 0.5 * jnp.sum(
+            (mag_det - mag_est) ** 2 / sigma ** 2
         )
-        return arg
+        return val
+    
+    @staticmethod
+    def compute_chisq_trunc(mag_est: Array,
+                            mag_det: Array,
+                            sigma: Array,
+                            lim: Float) -> Float:
+        """
+        Return the log likelihood of the chisquare part of the likelihood function, with truncation (detection limit is given). See get_chisq_filt for more details.
+        """
+        return jnp.sum(truncated_gaussian(mag_det, sigma, mag_est, lim))
         
-        # TODO: implement this!
-        # minus_chisquare = jnp.sum(
-        #     truncated_gaussian(
-        #         data_mag,
-        #         data_sigma,
-        #         mag_est,
-        #         upper_lim=upper_lim,
-        #         lower_lim=lower_lim,
-        #     )
-        # )
-        # return minus_chisquare
+    def get_gaussprob_filt(self,
+                           mag_est: Array,
+                           mag_nondet: Array,
+                           error_budget: Float) -> Float:
+        
+        return jax.lax.cond(len(mag_est) == 0,
+                           lambda x: 0.0,
+                           lambda x: self.compute_gaussprob(*x),
+                           (mag_est, mag_nondet, error_budget))
+        
+    @staticmethod
+    def compute_gaussprob(mag_est: Array,
+                          mag_nondet: Array,
+                          error_budget: Float) -> Float:
+        gausslogsf = jax.scipy.stats.norm.logsf(
+                    mag_nondet, mag_est, error_budget
+                    )
+        return jnp.sum(gausslogsf)

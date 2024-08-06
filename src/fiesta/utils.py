@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+from jax.scipy.stats import truncnorm
 from jaxtyping import Array, Float
 import numpy as np
 import pandas as pd
@@ -233,9 +234,23 @@ def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
     
     return data
 
-###
-### EVENTS ###
-###
+def truncated_gaussian(mag_det: Array, 
+                       mag_err: Array, 
+                       mag_est: Array, 
+                       lim: Float = jnp.inf):
+    
+    """
+    Evaluate log PDF of a truncated Gaussian with loc at mag_est and scale mag_err, truncated at lim above.
+
+    Returns:
+        _type_: _description_
+    """
+    
+    loc, scale = mag_est, mag_err
+    a_trunc = -999 # TODO: OK if we just fix this to a large number, to avoid infs?
+    a, b = (a_trunc - loc) / scale, (lim - loc) / scale
+    logpdf = truncnorm.logpdf(mag_det, a, b, loc=loc, scale=scale)
+    return logpdf
 
 def load_event_data(filename):
     # TODO: polish?
@@ -263,3 +278,4 @@ def load_event_data(filename):
         data[filt] = np.append(data[filt], np.array([[mjd, mag, dmag]]), axis=0)
 
     return data
+
