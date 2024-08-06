@@ -86,8 +86,10 @@ class EMLikelihood:
                 continue
             
             # Preprocess times before data selection
-            times, mag, mag_err = processed_data[filt][:, 0], processed_data[filt][:, 1], processed_data[filt][:, 2]
+            times, mag, mag_err = processed_data[filt].T
+            
             times -= self.trigger_time
+            
             idx = np.where((times > self.tmin) * (times < self.tmax))[0]
             times, mag, mag_err = times[idx], mag[idx], mag_err[idx]
             
@@ -113,6 +115,10 @@ class EMLikelihood:
             self.sigma[filt] = jnp.sqrt(self.mag_err[filt] ** 2 + self.error_budget[filt] ** 2)
             
         self.fixed_params = fixed_params
+        
+        # Sanity check:
+        detection_present = any([len(self.times_det[filt]) > 0 for filt in self.filters])
+        assert detection_present, "No detections found in the data. Please check your data."
         
     def __call__(self, theta):
         return self.evaluate(theta)
