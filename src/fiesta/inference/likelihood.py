@@ -107,12 +107,15 @@ class EMLikelihood:
                                mag_abs)
         
         # Interpolate the mags to the times of the detections
-        mag_app_interp = jax.tree.map(lambda t, m: jnp.interp(t, self.model.times, m),
-                                        self.times_det, mag_app)
+        mag_app_interp_det = jax.tree.map(lambda t, m: jnp.interp(t, self.model.times, m),
+                                          self.times_det, mag_app)
+        
+        mag_app_interp_nondet = jax.tree.map(lambda t, m: jnp.interp(t, self.model.times, m),
+                                          self.times_nondet, mag_app)
         
         # Get chisq
         chisq = jax.tree.map(lambda mag_est, mag_det, sigma, lim: self.get_chisq_filt(mag_est, mag_det, sigma, lim), 
-                             mag_app_interp, self.mag_det, self.sigma, self.detection_limit)
+                             mag_app_interp_det, self.mag_det, self.sigma, self.detection_limit)
         chisq_flatten, _ = jax.flatten_util.ravel_pytree(chisq)
         chisq_total = jnp.sum(chisq_flatten).astype(jnp.float64)
         
@@ -121,14 +124,17 @@ class EMLikelihood:
         
         ### Gaussprob:
         
-        # # TODO: implement the non-detections part of the likelihood
-        # gaussprob = jax.tree.map(lambda mag_est, mag_nondet, error_budget: self.get_gaussprob_filt(mag_est, mag_nondet, error_budget), 
-        #                      mag_app_interp, self.mag_nondet, self.error_budget)
-        # gaussprob_flatten, _ = jax.flatten_util.ravel_pytree(gaussprob)
-        # gaussprob_total = jnp.sum(gaussprob_flatten).astype(jnp.float64)
+        # print("mag_app_interp_nondet")
+        # print(mag_app_interp_nondet)
         
-        gaussprob_total = 0.0
-
+        # # TODO: implement the non-detections part of the likelihood
+        gaussprob = jax.tree.map(lambda mag_est, mag_nondet, error_budget: self.get_gaussprob_filt(mag_est, mag_nondet, error_budget), 
+                             mag_app_interp_nondet, self.mag_nondet, self.error_budget)
+        gaussprob_flatten, _ = jax.flatten_util.ravel_pytree(gaussprob)
+        gaussprob_total = jnp.sum(gaussprob_flatten).astype(jnp.float64)
+        
+        # gaussprob_total = 0.0
+        
         # print("gaussprob_total")
         # print(gaussprob_total)
         
@@ -159,20 +165,22 @@ class EMLikelihood:
                 self.filters.remove(filt)
                 continue
             
+            # Preprocess times before data selection
             times, mag, mag_err = processed_data[filt][:, 0], processed_data[filt][:, 1], processed_data[filt][:, 2]
             times -= self.trigger_time
             idx = np.where((times > self.tmin) * (times < self.tmax))[0]
             times, mag, mag_err = times[idx], mag[idx], mag_err[idx]
             
-            # TODO: Apply the detection limit here?
+            # Get detections
             idx_no_inf = np.where(mag_err != np.inf)[0]
-            
             self.times_det[filt] = times[idx_no_inf]
             self.mag_det[filt] = mag[idx_no_inf]
             self.mag_err[filt] = mag_err[idx_no_inf]
             
-            self.times_nondet[filt] = times[~idx_no_inf]
-            self.mag_nondet[filt] = mag[~idx_no_inf]
+            # Get non-detections
+            idx_is_inf = np.where(mag_err == np.inf)[0]
+            self.times_nondet[filt] = times[idx_is_inf]
+            self.mag_nondet[filt] = mag[idx_is_inf]
             
     ### LIKELIHOOD FUNCTIONS ###
     
