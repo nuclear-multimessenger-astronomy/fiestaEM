@@ -35,7 +35,7 @@ class EMLikelihood:
                  data: dict[str, Float[Array, "ntimes 3"]],
                  trigger_time: Float = 0.0,
                  tmin: Float = 0.0,
-                 tmax: Float = 14.0,
+                 tmax: Float = 999.0,
                  error_budget: Float = 1.0,
                  fixed_params: dict[str, Float] = {},
                  ignore_nondetections: bool = True,
@@ -73,88 +73,8 @@ class EMLikelihood:
         
         self.times_nondet = {}
         self.mag_nondet = {}
-        self.process_data(data)
         
-        # If there are no non-detections, automatically ignore them below
-        if len(self.times_nondet) == 0:
-            print("NOTE: No non-detections found in the data. Ignoring non-detections.")
-            self.ignore_nondetections = True
-        
-        # Create auxiliary data structures used in calculations
-        self.sigma = {}
-        for filt in self.filters:
-            self.sigma[filt] = jnp.sqrt(self.mag_err[filt] ** 2 + self.error_budget[filt] ** 2)
-            
-        self.fixed_params = fixed_params
-        
-    def evaluate(self, 
-                 theta: dict[str, Array],
-                 data: dict = None) -> Float:
-        """
-        Evaluate the log-likelihood of the data given the model and the parameters theta, at a single point.
-
-        Args:
-            theta (dict[str, Array]): _description_
-            data (dict, optional): Unused, but kept to comply with flowMC likelihood function signature. Defaults to None.
-
-        Returns:
-            Float: The log-likelihood value at this point.
-        """
-        
-        theta = {**theta, **self.fixed_params}
-        mag_abs: dict[str, Array] = self.model.predict(theta)
-        mag_app = jax.tree.map(lambda x: mag_app_from_mag_abs(x, theta["luminosity_distance"]),
-                               mag_abs)
-        
-        # Interpolate the mags to the times of the detections
-        mag_app_interp_det = jax.tree.map(lambda t, m: jnp.interp(t, self.model.times, m),
-                                          self.times_det, mag_app)
-        
-        mag_app_interp_nondet = jax.tree.map(lambda t, m: jnp.interp(t, self.model.times, m),
-                                          self.times_nondet, mag_app)
-        
-        # Get chisq
-        chisq = jax.tree.map(lambda mag_est, mag_det, sigma, lim: self.get_chisq_filt(mag_est, mag_det, sigma, lim), 
-                             mag_app_interp_det, self.mag_det, self.sigma, self.detection_limit)
-        chisq_flatten, _ = jax.flatten_util.ravel_pytree(chisq)
-        chisq_total = jnp.sum(chisq_flatten).astype(jnp.float64)
-        
-        # print("chisq_total")
-        # print(chisq_total)
-        
-        ### Gaussprob:
-        
-        # print("mag_app_interp_nondet")
-        # print(mag_app_interp_nondet)
-        
-        # # TODO: implement the non-detections part of the likelihood
-        gaussprob = jax.tree.map(lambda mag_est, mag_nondet, error_budget: self.get_gaussprob_filt(mag_est, mag_nondet, error_budget), 
-                             mag_app_interp_nondet, self.mag_nondet, self.error_budget)
-        gaussprob_flatten, _ = jax.flatten_util.ravel_pytree(gaussprob)
-        gaussprob_total = jnp.sum(gaussprob_flatten).astype(jnp.float64)
-        
-        # gaussprob_total = 0.0
-        
-        # print("gaussprob_total")
-        # print(gaussprob_total)
-        
-        return chisq_total + gaussprob_total
-    
-    def __call__(self, theta):
-        return self.evaluate(theta)
-    
-    def process_data(self, data: dict[str, Array]):
-        """
-        Separate the data into the "detections" and "non-detections" categories and apply necessary masking and other desired preprocessing steps.
-
-        Args:
-            data (np.array): Input array of shape (n, 3) where n is the number of data points and the columns are times, magnitude, and magnitude error.
-
-        Returns:
-            None. Sets the desired attributes. See source code for details.
-        """
-        
-        print("Loading and preprocessing observations . . .")
+        print("Loading and preprocessing observations in likelihood . . .")
         
         processed_data = copy.deepcopy(data)
         processed_data = {k.replace(":", "_"): v for k, v in processed_data.items()}
@@ -181,7 +101,62 @@ class EMLikelihood:
             idx_is_inf = np.where(mag_err == np.inf)[0]
             self.times_nondet[filt] = times[idx_is_inf]
             self.mag_nondet[filt] = mag[idx_is_inf]
+        
+        # If there are no non-detections, automatically ignore them below
+        if len(self.times_nondet) == 0:
+            print("NOTE: No non-detections found in the data. Ignoring non-detections.")
+            self.ignore_nondetections = True
+        
+        # Create auxiliary data structures used in calculations
+        self.sigma = {}
+        for filt in self.filters:
+            self.sigma[filt] = jnp.sqrt(self.mag_err[filt] ** 2 + self.error_budget[filt] ** 2)
             
+        self.fixed_params = fixed_params
+        
+    def __call__(self, theta):
+        return self.evaluate(theta)
+        
+    def evaluate(self, 
+                 theta: dict[str, Array],
+                 data: dict = None) -> Float:
+        """
+        Evaluate the log-likelihood of the data given the model and the parameters theta, at a single point.
+
+        Args:
+            theta (dict[str, Array]): _description_
+            data (dict, optional): Unused, but kept to comply with flowMC likelihood function signature. Defaults to None.
+
+        Returns:
+            Float: The log-likelihood value at this point.
+        """
+        
+        theta = {**theta, **self.fixed_params}
+        mag_abs: dict[str, Array] = self.model.predict(theta)
+        mag_app = jax.tree.map(lambda x: mag_app_from_mag_abs(x, theta["luminosity_distance"]),
+                               mag_abs)
+        
+        # Interpolate the mags to the times of interest
+        mag_est_det = jax.tree.map(lambda t, m: jnp.interp(t, self.model.times, m),
+                                          self.times_det, mag_app)
+        
+        mag_est_nondet = jax.tree.map(lambda t, m: jnp.interp(t, self.model.times, m),
+                                          self.times_nondet, mag_app)
+        
+        # Get chisq
+        chisq = jax.tree.map(self.get_chisq_filt, 
+                             mag_est_det, self.mag_det, self.sigma, self.detection_limit)
+        chisq_flatten, _ = jax.flatten_util.ravel_pytree(chisq)
+        chisq_total = jnp.sum(chisq_flatten).astype(jnp.float64)
+        
+        # Get gaussprob:
+        gaussprob = jax.tree.map(self.get_gaussprob_filt, 
+                                 mag_est_nondet, self.mag_nondet, self.error_budget)
+        gaussprob_flatten, _ = jax.flatten_util.ravel_pytree(gaussprob)
+        gaussprob_total = jnp.sum(gaussprob_flatten).astype(jnp.float64)
+        
+        return chisq_total + gaussprob_total
+    
     ### LIKELIHOOD FUNCTIONS ###
     
     def get_chisq_filt(self,
@@ -191,11 +166,14 @@ class EMLikelihood:
                        lim: Float) -> Float:
         """
         Return the log likelihood of the chisquare part of the likelihood function for a single filter.
-        Branch off based on provided detection limit (lim). If the limit is infinite, the likelihood is calculated without truncation and without resorting to scipy for faster evaluation. If the limit is finite, the likelihood is calculated with truncation and with scipy. 
+        Branch-off of jax.lax.cond is based on provided detection limit (lim). If the limit is infinite, the likelihood is calculated without truncation and without resorting to scipy for faster evaluation. If the limit is finite, the likelihood is calculated with truncation and with scipy. 
         TODO: can we circumvent using scipy and implement this ourselves to speed up?
 
         Args:
-            TODO:
+            mag_est (Array): The estimated apparent magnitudes at the detection times
+            mag_det (Array): The detected apparent magnitudes
+            sigma (Array): The uncertainties on the detected apparent magnitudes, including the error budget.
+            lim (Float): The detection limit for this filter
 
         Returns:
             Float: The chi-square value for this filter
@@ -212,7 +190,7 @@ class EMLikelihood:
                       sigma: Array,
                       lim: Float) -> Float:
         """
-        Return the log likelihood of the chisquare part of the likelihood function, without truncation (no detection limit is given). See get_chisq_filt for more details.
+        Return the log likelihood of the chisquare part of the likelihood function, without truncation (no detection limit is given), i.e. a Gaussian pdf. See get_chisq_filt for more details.
         """
         val = - 0.5 * jnp.sum(
             (mag_det - mag_est) ** 2 / sigma ** 2
@@ -225,7 +203,7 @@ class EMLikelihood:
                             sigma: Array,
                             lim: Float) -> Float:
         """
-        Return the log likelihood of the chisquare part of the likelihood function, with truncation (detection limit is given). See get_chisq_filt for more details.
+        Return the log likelihood of the chisquare part of the likelihood function, with truncation of the Gaussian (detection limit is given). See get_chisq_filt for more details.
         """
         return jnp.sum(truncated_gaussian(mag_det, sigma, mag_est, lim))
         
