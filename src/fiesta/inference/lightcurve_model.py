@@ -82,7 +82,7 @@ class LightcurveModel:
             x (Array): Input array, unnormalized and untransformed.
 
         Returns:
-            Array: Output array, i.e., the desired raw light curve.
+            Array: Output dict[str, Array], i.e., the desired raw light curve per filter
         """
         x_tilde = self.project_input(jnp.array([x[name] for name in self.parameter_names]))
         y_tilde = self.compute_output(x_tilde)

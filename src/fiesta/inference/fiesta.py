@@ -1,6 +1,8 @@
 import copy
 import json
+import os
 import numpy as np
+import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array, PRNGKeyArray
@@ -15,6 +17,8 @@ from flowMC.sampler.MALA import MALA
 from flowMC.sampler.Gaussian_random_walk import GaussianRandomWalk
 from flowMC.nfmodel.rqSpline import MaskedCouplingRQSpline
 from flowMC.utils.PRNG_keys import initialize_rng_keys
+
+import time # TODO: remove me!
 
 default_hyperparameters = {
         "seed": 0,
@@ -42,7 +46,6 @@ class Fiesta(object):
         "which_local_sampler": "(str) Name of the local sampler to use",
     """
     
-    model: LightcurveModel
     likelihood: EMLikelihood
     prior: Prior
 
@@ -205,5 +208,89 @@ class Fiesta(object):
             print(f"Error occurred saving jim hyperparameters, are all hyperparams JSON compatible?: {e}")
             
 
-    def plot(self):
-        pass
+    def plot_lightcurves(self,
+                         N_curves: int = 200):
+        
+        """
+        Plot the data and the posterior lightcurves and the best fit lightcurve more visible on top
+        """
+
+        production_state = self.Sampler.get_sampler_state(training=False)
+        samples, log_prob = production_state["chains"], production_state["log_prob"]
+        
+        # Reshape both
+        samples = samples.reshape(-1, self.prior.n_dim).T
+        log_prob = log_prob.reshape(-1)
+        
+        # Get the best fit lightcurve
+        best_fit_idx = np.argmax(log_prob)
+        best_fit_params = samples[:, best_fit_idx]
+        best_fit_params_named = self.prior.add_name(best_fit_params)
+        
+        # Limit N_curves if necessary
+        total_nb_samples = samples.shape[1]
+        N_curves = min(N_curves, total_nb_samples)
+        
+        # Randomly sample N_curves samples
+        idx = np.random.choice(total_nb_samples, N_curves, replace=False)
+        samples = samples[:, idx]
+        log_prob = log_prob[idx]
+        
+        filters = self.likelihood.filters
+        tmin, tmax = self.likelihood.tmin, self.likelihood.tmax
+        
+        ### Plot the data
+        height = len(filters) * 2.5
+        plt.subplots(nrows = len(filters), ncols = 1, figsize = (8, height))
+        zorder = 3
+        for i, filt in enumerate(filters):
+            ax = plt.subplot(len(filters), 1, i + 1)
+            
+            # Detections
+            t, mag, err = self.likelihood.times_det[filt], self.likelihood.mag_det[filt], self.likelihood.mag_err[filt]
+            ax.errorbar(t, mag, yerr=err, fmt = "o", color = "red", label = "Data")
+            
+            # Non-detections
+            t, mag = self.likelihood.times_nondet[filt], self.likelihood.mag_nondet[filt]
+            ax.scatter(t, mag, marker = "v", color = "red", zorder = zorder)
+            
+        ### Plot bestfit LC
+        best_fit_params_named.update(self.likelihood.fixed_params)
+        
+        zorder = 2
+        # Predict and convert to apparent magnitudes
+        mag_bestfit = self.likelihood.model.predict(best_fit_params_named)
+        d = best_fit_params_named["luminosity_distance"]
+        for filt in filters:
+            mag_bestfit[filt] = mag_app_from_mag_abs(mag_bestfit[filt], d)
+        for i, filter_name in enumerate(filters):
+            ax = plt.subplot(len(filters), 1, i + 1)
+            mag = mag_bestfit[filter_name]
+            t = self.likelihood.model.times
+            mask = (t >= tmin) & (t <= tmax)
+            ax.plot(t[mask], mag[mask], color = "blue", label = "Best fit", zorder = zorder)
+            
+        # Other samples
+        zorder = 1
+        for sample in samples.T:
+            sample_named = self.prior.add_name(sample)
+            sample_named.update(self.likelihood.fixed_params)
+            mag = self.likelihood.model.predict(sample_named)
+            d = sample_named["luminosity_distance"]
+            for filt in filters:
+                mag[filt] = mag_app_from_mag_abs(mag[filt], d)
+            for i, filter_name in enumerate(filters):
+                ax = plt.subplot(len(filters), 1, i + 1)
+                ax.plot(self.likelihood.model.times[mask], mag[filter_name][mask], color = "gray", alpha = 0.05, zorder = zorder)
+        
+        ### Make pretty
+        for i, filter_name in enumerate(filters):
+            ax = plt.subplot(len(filters), 1, i + 1)
+            ax.set_xlabel("Time [days]")
+            ax.set_ylabel(filter_name)
+            ax.set_xlim(right = self.likelihood.tmax + 1)
+            ax.invert_yaxis()  
+        
+        # Save
+        plt.savefig(os.path.join(self.Sampler.outdir, "lightcurves.png"), bbox_inches = 'tight')
+        plt.close()

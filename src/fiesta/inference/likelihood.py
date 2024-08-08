@@ -89,7 +89,6 @@ class EMLikelihood:
             
             # Preprocess times before data selection
             times, mag, mag_err = processed_data[filt].T
-            
             times -= self.trigger_time
             
             idx = np.where((times > self.tmin) * (times < self.tmax))[0]
