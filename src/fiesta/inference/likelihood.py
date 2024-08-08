@@ -16,7 +16,6 @@ class EMLikelihood:
     trigger_time: Float
     tmin: Float
     tmax: Float
-    ignore_nondetections: bool
     
     detection_limit: dict[str, Array]
     error_budget: dict[str, Array]
@@ -38,7 +37,6 @@ class EMLikelihood:
                  tmax: Float = 999.0,
                  error_budget: Float = 1.0,
                  fixed_params: dict[str, Float] = {},
-                 ignore_nondetections: bool = True,
                  detection_limit: Float = None):
         
         # Save as attributes
@@ -49,7 +47,6 @@ class EMLikelihood:
         self.trigger_time = trigger_time
         self.tmin = tmin
         self.tmax = tmax
-        self.ignore_nondetections = ignore_nondetections
         
         # Process error budget
         if isinstance(error_budget, (int, float)) and not isinstance(error_budget, dict):
@@ -106,11 +103,6 @@ class EMLikelihood:
             idx_is_inf = np.where(mag_err == np.inf)[0]
             self.times_nondet[filt] = times[idx_is_inf]
             self.mag_nondet[filt] = mag[idx_is_inf]
-        
-        # If there are no non-detections, automatically ignore them below
-        if len(self.times_nondet) == 0:
-            print("NOTE: No non-detections found in the data. Ignoring non-detections.")
-            self.ignore_nondetections = True
         
         # Create auxiliary data structures used in calculations
         self.sigma = {}

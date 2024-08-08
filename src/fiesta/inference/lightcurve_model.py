@@ -104,6 +104,7 @@ class BullaLightcurveModel(LightcurveModel):
     def __init__(self, 
                  name: str, 
                  directory: str,
+                 times: Array = None,
                  filters: list[str] = None):
         """
         Initialize a class to generate lightcurves from a Bulla trained model.
@@ -138,7 +139,11 @@ class BullaLightcurveModel(LightcurveModel):
         # Load the metadata for projections etc
         metadata = joblib.load(os.path.join(self.directory, f"{self.name}.joblib"))
         
-        self.times = jnp.array(metadata["times"])
+        # TODO: check for time range and trained model time range
+        if times is not None:
+            times = jnp.array(metadata["times"])
+            
+        self.times = times
         
         min_val, max_val = metadata["X_scaler_min"], metadata["X_scaler_max"]
         self.X_scaler = MinMaxScalerJax(min_val=min_val, max_val=max_val)

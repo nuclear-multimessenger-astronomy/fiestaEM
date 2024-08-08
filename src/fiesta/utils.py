@@ -129,8 +129,7 @@ def read_single_bulla_file(filename: str) -> dict:
 
 def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
                      times: Array, 
-                     diagnose: bool = False,
-                     debug: bool = True) -> dict[str, Float[Array, " n_files n_times"]]:
+                     output_times: Array) -> dict[str, Float[Array, " n_files n_times"]]:
     """
     Interpolate NaNs and infs in the raw light curve data. 
 
@@ -142,13 +141,11 @@ def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
         dict[str, Float[Array, 'n_files n_times']]: Raw light curve data but with NaNs and infs interpolated
     """
     
-    data = copy.deepcopy(data)
+    # TODO: improve this function overall!
+    copy_data = copy.deepcopy(data)
+    output = {}
     
-    if diagnose:
-        percentages_nans = []
-        percentages_infs = []
-    
-    for filt, lc_array in data.items():
+    for filt, lc_array in copy_data.items():
         
         n_files = np.shape(lc_array)[0]
         
@@ -163,30 +160,24 @@ def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
             bad_idx = nan_idx | inf_idx
             good_idx = ~bad_idx
             
-            # TODO: the diagnose for inf is broken, it seems
-            if diagnose:
-                percentages_nans.append(100 * (np.sum(nan_idx) / len(lc)))
-                percentages_infs.append(100 * (np.sum(inf_idx) / len(lc))) # broken?
-            
-            # Skip LC if there is no NaNs or infs
-            if not any(bad_idx):
-                continue
-
-            # Do an interpolation for the bad values and replace it in the data
+            # Interpolate through good values on given time grid
             if len(good_idx) > 1:
                 # Make interpolation routine at the good idx
                 good_times = times[good_idx]
                 good_mags = lc[good_idx]
                 interpolator = interp.interp1d(good_times, good_mags, fill_value="extrapolate")
                 # Apply it to all times to interpolate
-                data[filt][i] = interpolator(times)
+                mag_interp = interpolator(output_times)
+                
+            else:
+                raise ValueError("No good values to interpolate from")
+            
+            if filt in output:
+                output[filt] = np.vstack((output[filt], mag_interp))
+            else:
+                output[filt] = np.array(mag_interp)
 
-        if diagnose:
-            print(f"Filter: {filt}")
-            print(f"Mean percentage of NaNs: {np.mean(percentages_nans)}")
-            print(f"Mean percentage of Infs: {np.mean(percentages_infs)}")
-    
-    return data
+    return output
 
 def truncated_gaussian(mag_det: Array, 
                        mag_err: Array, 

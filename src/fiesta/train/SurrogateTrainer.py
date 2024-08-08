@@ -55,8 +55,9 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                  filters: list[str] = None,
                  svd_ncoeff: Int = 10, 
                  validation_fraction: Float = 0.2,
-                 tmin: Float = 0.05,
-                 tmax: Float = 14.0,
+                 tmin: Float = None,
+                 tmax: Float = None,
+                 dt: Float = None,
                  plots_dir: str = None,
                  save_raw_data: bool = False
                  ):
@@ -72,8 +73,9 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             outdir (str): Directory where the trained surrogate model has to be saved.
             filters (list[str], optional): List of all the filters used in the light curve files and for which surrogate has to be trained. If None, all the filters will be used. Defaults to None.
             validation_fraction (Float, optional): Fraction of the data to be used for validation. Defaults to 0.2.
-            tmin (Float, optional): Minimum time to consider in the light curve, all data before is discarded. Defaults to 0.05.
-            tmax (Float, optional): Maximum time to consider in the light curve, all data after is discarded. Defaults to 14.0.
+            tmin (Float, optional): Minimum time of the light curve, all data before is discarded. Defaults to 0.05.
+            tmax (Float, optional): Maximum time of the light curve, all data after is discarded. Defaults to 14.0.
+            dt (Float, optional): Time step in the light curve. Defaults to 0.1.
             plots_dir (str, optional): Directory where the plots of the training process will be saved. Defaults to None, which means no plots will be generated.
             save_raw_data (bool, optional): If True, the raw data will be saved in the outdir. Defaults to False.
         """
@@ -102,13 +104,15 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             filters = utils.get_filters_bulla_file(self.lc_files[0], drop_times=True)
         self.filters = filters
         
-        # Fetch times and preprocess them
-        times = utils.get_times_bulla_file(self.lc_files[0])
-        mask = (times >= tmin) & (times <= tmax)
-        self.times = times[mask]
-        self.tmin = tmin 
-        self.tmax = tmax
-        self._time_mask = mask
+        # Fetch the time grid and mask it to the desired time range
+        _times_grid = utils.get_times_bulla_file(self.lc_files[0])
+        
+        # Create time grid for interpolation and output
+        if tmin is None or tmax is None or dt is None:
+            print("No time range given, using grid times")
+            self.times = _times_grid
+        else:
+            self.times = np.arange(tmin, tmax + dt, dt)
         
         # Fetch parameter names
         self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[name]
@@ -122,11 +126,11 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                                        "times": self.times}
         
         print("Reading data files and interpolating NaNs . . .")
-        self.X_raw, self.y_raw = self.read_files()
-        self.y_raw = utils.interpolate_nans(self.y_raw, self.times)
+        self.X_raw, y = self.read_files()
+        self.y_raw = utils.interpolate_nans(y, _times_grid, self.times)
 
         if save_raw_data:
-            np.savez(os.path.join(outdir, "raw_data.npz"), X=self.X_raw, y_raw=self.y_raw, times=self.times)
+            np.savez(os.path.join(outdir, "raw_data.npz"), X_raw=self.X_raw, y_raw=self.y_raw, times=self.times, times_grid=_times_grid)
         
         print("Preprocessing data . . .")
         self.preprocess()
@@ -156,13 +160,16 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             # Get a dictionary with keys being the filters and values being the light curve data
             lc_data = utils.read_single_bulla_file(filename)
             for filt in self.filters:
+                # TODO: improve this cumbersome thing
+                this_data = lc_data[filt]
                 if i == 0:
-                    data[filt] = lc_data[filt][self._time_mask]
+                    data[filt] = this_data
                 else:
-                    data[filt] = np.vstack((data[filt], lc_data[filt][self._time_mask]))
+                    data[filt] = np.vstack((data[filt], this_data))
                     
             # Fetch the parameter values of this file
             params = self.extract_parameters_function(filename)
+            # TODO: improve this cumbersome thing
             if i == 0:
                 parameter_values = params
             else:
