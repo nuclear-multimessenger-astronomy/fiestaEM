@@ -99,6 +99,7 @@ class BullaLightcurveModel(LightcurveModel):
     y_scaler: dict[str, MinMaxScalerJax]
     VA: dict[str, Array]
     models: dict[str, TrainState]
+    times: Array
     
     def __init__(self, 
                  name: str, 
@@ -136,6 +137,9 @@ class BullaLightcurveModel(LightcurveModel):
         
         # Load the metadata for projections etc
         metadata = joblib.load(os.path.join(self.directory, f"{self.name}.joblib"))
+        
+        self.times = jnp.array(metadata["times"])
+        
         min_val, max_val = metadata["X_scaler_min"], metadata["X_scaler_max"]
         self.X_scaler = MinMaxScalerJax(min_val=min_val, max_val=max_val)
         

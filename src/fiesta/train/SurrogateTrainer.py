@@ -55,6 +55,8 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                  filters: list[str] = None,
                  svd_ncoeff: Int = 10, 
                  validation_fraction: Float = 0.2,
+                 tmin: Float = 0.05,
+                 tmax: Float = 14.0,
                  plots_dir: str = None,
                  save_raw_data: bool = False
                  ):
@@ -70,6 +72,8 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             outdir (str): Directory where the trained surrogate model has to be saved.
             filters (list[str], optional): List of all the filters used in the light curve files and for which surrogate has to be trained. If None, all the filters will be used. Defaults to None.
             validation_fraction (Float, optional): Fraction of the data to be used for validation. Defaults to 0.2.
+            tmin (Float, optional): Minimum time to consider in the light curve, all data before is discarded. Defaults to 0.05.
+            tmax (Float, optional): Maximum time to consider in the light curve, all data after is discarded. Defaults to 14.0.
             plots_dir (str, optional): Directory where the plots of the training process will be saved. Defaults to None, which means no plots will be generated.
             save_raw_data (bool, optional): If True, the raw data will be saved in the outdir. Defaults to False.
         """
@@ -98,13 +102,14 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             filters = utils.get_filters_bulla_file(self.lc_files[0], drop_times=True)
         self.filters = filters
         
-        # Fetch times
-        self.times = utils.get_times_bulla_file(self.lc_files[0])
+        # Fetch times and preprocess them
+        times = utils.get_times_bulla_file(self.lc_files[0])
+        mask = (times >= tmin) & (times <= tmax)
+        self.times = times[mask]
+        self.tmin = tmin 
+        self.tmax = tmax
+        self._time_mask = mask
         
-        # Assert all times are same
-        for filename in self.lc_files:
-            assert np.allclose(self.times, utils.get_times_bulla_file(filename)), "All the times should be same"
-            
         # Fetch parameter names
         self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[name]
         
@@ -152,9 +157,9 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             lc_data = utils.read_single_bulla_file(filename)
             for filt in self.filters:
                 if i == 0:
-                    data[filt] = lc_data[filt]
+                    data[filt] = lc_data[filt][self._time_mask]
                 else:
-                    data[filt] = np.vstack((data[filt], lc_data[filt]))
+                    data[filt] = np.vstack((data[filt], lc_data[filt][self._time_mask]))
                     
             # Fetch the parameter values of this file
             params = self.extract_parameters_function(filename)

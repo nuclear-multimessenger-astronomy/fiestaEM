@@ -68,6 +68,8 @@ class EMLikelihood:
             
         self.detection_limit = detection_limit
             
+        # TODO: for times, need to do some cross-checking against the times of the model and raise warnings
+            
         # Process the given data
         self.times_det = {}
         self.mag_det = {}
