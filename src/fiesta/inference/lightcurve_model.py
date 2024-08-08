@@ -116,14 +116,20 @@ class BullaLightcurveModel(LightcurveModel):
         self.directory = directory
         
         # Save those filters that were given and that were trained and store here already
-        filters = [f.replace(":", "_") for f in filters]
         pkl_files = [file for file in os.listdir(self.directory) if file.endswith(".pkl") or file.endswith(".pickle")]
         all_available_filters = [file.split(".")[0] for file in pkl_files]
         
         if filters is None:
+            # Use all filters that the surrogate model supports
             filters = all_available_filters
         else:
+            # Fetch those filters specified by the user that are available
+            filters = [f.replace(":", "_") for f in filters]
             filters = [f for f in filters if f in all_available_filters]
+        
+        if len(filters) == 0:
+            raise ValueError(f"No filters found in {self.directory} that match the given filters {filters}")
+        print(f"Loaded BullaLightcurveModel with filters {filters}")
         self.filters = filters
         
         # TODO: this is a bit cumbersome... Is there a better way to do it?

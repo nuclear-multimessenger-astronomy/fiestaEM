@@ -31,8 +31,8 @@ class EMLikelihood:
     
     def __init__(self, 
                  model: LightcurveModel, 
-                 filters: list[str],
                  data: dict[str, Float[Array, "ntimes 3"]],
+                 filters: list[str] = None,
                  trigger_time: Float = 0.0,
                  tmin: Float = 0.0,
                  tmax: Float = 999.0,
@@ -43,6 +43,8 @@ class EMLikelihood:
         
         # Save as attributes
         self.model = model
+        if filters is None:
+            filters = model.filters
         self.filters = filters
         self.trigger_time = trigger_time
         self.tmin = tmin
