@@ -121,53 +121,7 @@ def read_single_bulla_file(filename: str) -> dict:
     
     return lc_data
 
-### Models
 
-# TODO: move models to a separate file, like in NMMA?
-
-BU2022YE_PARAMS = ["log10_mej_dyn",
-                   "vej_dyn",
-                   "Yedyn",
-                   "log10_mej_wind",
-                   "vej_wind",
-                   "KNtheta"
-]
-
-BULLA_PARAMETER_NAMES = {"Bu2022Ye": BU2022YE_PARAMS}
-
-### Bu2022Ye
-
-def extract_Bu2022Ye_parameters(filename: str) -> np.array:
-    """
-    Extract the parameter values from the filename of a Bulla file
-
-    Args:
-        filename (str): Bu2022Ye filename, e.g. `./nph1.0e+06_dyn0.005-0.12-0.30_wind0.050-0.03_theta25.84_dMpc0.dat`
-
-    Returns:
-        dict: Dictionary with the parameter values
-    """
-    # Extract the name like in the example above from the filename
-    name = filename.split("/")[-1].replace(".dat", "")
-
-    # Skip the first nph value
-    parameters_idx = [1, 2, 3, 4, 5, 6]
-    
-    # Use regex to extract the values
-    rr = [
-        np.abs(float(x))
-        for x in re.findall(
-            r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", name
-        )
-    ]
-
-    # Best to interpolate mass in log10 space
-    rr[1] = np.log10(rr[1])
-    rr[4] = np.log10(rr[4])
-
-    parameter_values = np.array([rr[idx] for idx in parameters_idx])
-
-    return parameter_values
 
 #########################
 ### GENERAL UTILITIES ###

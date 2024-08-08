@@ -13,6 +13,7 @@ from sklearn.model_selection import train_test_split
 from collections import defaultdict
 
 from fiesta import utils
+from fiesta import models_utilities
 import fiesta.train.neuralnets as fiesta_nn
 import matplotlib.pyplot as plt
 import joblib
@@ -54,7 +55,8 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                  filters: list[str] = None,
                  svd_ncoeff: Int = 10, 
                  validation_fraction: Float = 0.2,
-                 plots_dir: str = None
+                 plots_dir: str = None,
+                 save_raw_data: bool = False
                  ):
         
         """
@@ -69,14 +71,16 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             filters (list[str], optional): List of all the filters used in the light curve files and for which surrogate has to be trained. If None, all the filters will be used. Defaults to None.
             validation_fraction (Float, optional): Fraction of the data to be used for validation. Defaults to 0.2.
             plots_dir (str, optional): Directory where the plots of the training process will be saved. Defaults to None, which means no plots will be generated.
+            save_raw_data (bool, optional): If True, the raw data will be saved in the outdir. Defaults to False.
         """
         
         # Check if supported
-        supported_models = list(utils.BULLA_PARAMETER_NAMES.keys())
+        supported_models = list(models_utilities.SUPPORTED_BULLA_MODELS)
         if name not in supported_models:
             raise ValueError(f"Model {name} is not supported yet. Supported models are: {supported_models}")
         
         super().__init__(name)
+        self.extract_parameters_function = models_utilities.EXTRACT_PARAMETERS_FUNCTIONS[name]
         self.lc_dir = lc_dir
         self.outdir = outdir
         self.svd_ncoeff = svd_ncoeff
@@ -102,7 +106,7 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             assert np.allclose(self.times, utils.get_times_bulla_file(filename)), "All the times should be same"
             
         # Fetch parameter names
-        self.parameter_names = utils.BULLA_PARAMETER_NAMES[name]
+        self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[name]
         
         self.preprocessing_metadata = {"X_scaler_min": {}, 
                                        "X_scaler_max": {}, 
@@ -115,6 +119,9 @@ class BullaSurrogateTrainer(SurrogateTrainer):
         print("Reading data files and interpolating NaNs . . .")
         self.X_raw, self.y_raw = self.read_files()
         self.y_raw = utils.interpolate_nans(self.y_raw, self.times)
+
+        if save_raw_data:
+            np.savez(os.path.join(outdir, "raw_data.npz"), X=self.X_raw, y_raw=self.y_raw, times=self.times)
         
         print("Preprocessing data . . .")
         self.preprocess()
@@ -150,8 +157,7 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                     data[filt] = np.vstack((data[filt], lc_data[filt]))
                     
             # Fetch the parameter values of this file
-            # TODO: make this more general than Bu2022Ye once I figured out best way to do it
-            params = utils.extract_Bu2022Ye_parameters(filename)
+            params = self.extract_parameters_function(filename)
             if i == 0:
                 parameter_values = params
             else:
@@ -202,9 +208,6 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                         np.dot(np.diag(np.power(errors, 2.0)), VA[:, : self.svd_ncoeff]),
                     )
                 )
-            # TODO: do we want some cAstd saved in the future?
-            # cAstd = np.sqrt(cAvar)
-            
             self.preprocessing_metadata["VA"][filt] = VA
             
             # Transpose to get the shape (n_batch, n_svd_coeff)

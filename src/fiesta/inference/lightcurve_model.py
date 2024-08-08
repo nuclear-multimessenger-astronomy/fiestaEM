@@ -9,9 +9,12 @@ from jaxtyping import Array
 from functools import partial
 from beartype import beartype as typechecker
 from flax.training.train_state import TrainState
-from fiesta.utils import MinMaxScalerJax, inverse_svd_transform, BULLA_PARAMETER_NAMES
-import fiesta.train.neuralnets as fiesta_nn
 import joblib
+
+import fiesta.train.neuralnets as fiesta_nn
+from fiesta.utils import MinMaxScalerJax, inverse_svd_transform
+from fiesta import models_utilities
+
 
 class LightcurveModel:
     """Abstract class"""
@@ -147,7 +150,7 @@ class BullaLightcurveModel(LightcurveModel):
             self.models[filter] = state
             
         # Also save the parameter names and times
-        self.parameter_names = BULLA_PARAMETER_NAMES[name]
+        self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[name]
         self.times = jnp.array(metadata["times"])
         self.tmin = self.times[0]
         self.tmax = self.times[-1]
