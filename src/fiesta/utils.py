@@ -129,7 +129,7 @@ def read_single_bulla_file(filename: str) -> dict:
 
 def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
                      times: Array, 
-                     output_times: Array) -> dict[str, Float[Array, " n_files n_times"]]:
+                     output_times: Array = None) -> dict[str, Float[Array, " n_files n_times"]]:
     """
     Interpolate NaNs and infs in the raw light curve data. 
 
@@ -140,6 +140,9 @@ def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
     Returns:
         dict[str, Float[Array, 'n_files n_times']]: Raw light curve data but with NaNs and infs interpolated
     """
+    
+    if output_times is None:
+        output_times = times
     
     # TODO: improve this function overall!
     copy_data = copy.deepcopy(data)
