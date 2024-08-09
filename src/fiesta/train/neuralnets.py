@@ -32,7 +32,8 @@ class NeuralnetConfig(ConfigDict):
         self.learning_rate = kwargs.get("learning_rate", 1e-3)
         self.batch_size = kwargs.get("batch_size", 128)
         self.nb_epochs = kwargs.get("nb_epochs", 1_000)
-        self.nb_report = kwargs.get("nb_report", 100)
+        default_nb_report = self.nb_epochs // 10
+        self.nb_report = kwargs.get("nb_report", default_nb_report)
     
 #####################
 ### ARCHITECTURES ###

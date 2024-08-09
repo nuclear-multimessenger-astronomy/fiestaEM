@@ -25,8 +25,8 @@ class InjectionRecovery:
     
     def __init__(self, 
                  model: LightcurveModel,
-                 filters: list[str],
                  injection_dict: dict[str, Float],
+                 filters: list[str] = None,
                  tmin: Float = 0.1,
                  tmax: Float = 14.0,
                  N_datapoints: int = 10,
@@ -36,10 +36,16 @@ class InjectionRecovery:
         
         self.model = model
         # Ensure given filters are also in the trained model
-        for filt in filters:
-            if filt not in model.filters:
-                print(f"Filter {filt} not in model filters. Removing from list")
-                filters.remove(filt)
+        
+        if filters is None:
+            filters = model.filters
+        else:
+            for filt in filters:
+                if filt not in model.filters:
+                    print(f"Filter {filt} not in model filters. Removing from list")
+                    filters.remove(filt)
+        
+        print(f"Creating injection with filters: {filters}")
         self.filters = filters
         self.injection_dict = injection_dict
         self.tmin = tmin
