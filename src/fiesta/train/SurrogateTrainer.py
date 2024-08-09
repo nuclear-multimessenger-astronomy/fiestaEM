@@ -127,13 +127,12 @@ class BullaSurrogateTrainer(SurrogateTrainer):
         
         print("Reading data files and interpolating NaNs . . .")
         self.X_raw, y = self.read_files()
-        # TODO: delete me:
-        yy = utils.interpolate_nans(y, _times_grid, _times_grid)
-        np.savez(os.path.join(outdir, "true_lcs.npz"), **yy)
         self.y_raw = utils.interpolate_nans(y, _times_grid, self.times)
 
         if save_raw_data:
+            print("Saving raw data")
             np.savez(os.path.join(outdir, "raw_data.npz"), X_raw=self.X_raw, times=self.times, times_grid=_times_grid, **self.y_raw)
+            print("Saving raw data done")
         
         print("Preprocessing data . . .")
         self.preprocess()

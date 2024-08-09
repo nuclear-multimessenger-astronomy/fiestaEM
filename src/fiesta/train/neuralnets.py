@@ -28,8 +28,7 @@ class NeuralnetConfig(ConfigDict):
     def __init__(self, **kwargs):
         super().__init__()
         self.name = kwargs.get("name", "MLP")
-        # self.layer_sizes = kwargs.get("layer_sizes", [64, 128, 64, 10])
-        self.layer_sizes = kwargs.get("layer_sizes", [2048, 10])
+        self.layer_sizes = kwargs.get("layer_sizes", [64, 128, 64, 10])
         self.learning_rate = kwargs.get("learning_rate", 1e-3)
         self.batch_size = kwargs.get("batch_size", 128)
         self.nb_epochs = kwargs.get("nb_epochs", 1_000)
