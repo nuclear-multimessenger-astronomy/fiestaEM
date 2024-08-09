@@ -121,53 +121,7 @@ def read_single_bulla_file(filename: str) -> dict:
     
     return lc_data
 
-### Models
 
-# TODO: move models to a separate file, like in NMMA?
-
-BU2022YE_PARAMS = ["log10_mej_dyn",
-                   "vej_dyn",
-                   "Yedyn",
-                   "log10_mej_wind",
-                   "vej_wind",
-                   "KNtheta"
-]
-
-BULLA_PARAMETER_NAMES = {"Bu2022Ye": BU2022YE_PARAMS}
-
-### Bu2022Ye
-
-def extract_Bu2022Ye_parameters(filename: str) -> np.array:
-    """
-    Extract the parameter values from the filename of a Bulla file
-
-    Args:
-        filename (str): Bu2022Ye filename, e.g. `./nph1.0e+06_dyn0.005-0.12-0.30_wind0.050-0.03_theta25.84_dMpc0.dat`
-
-    Returns:
-        dict: Dictionary with the parameter values
-    """
-    # Extract the name like in the example above from the filename
-    name = filename.split("/")[-1].replace(".dat", "")
-
-    # Skip the first nph value
-    parameters_idx = [1, 2, 3, 4, 5, 6]
-    
-    # Use regex to extract the values
-    rr = [
-        np.abs(float(x))
-        for x in re.findall(
-            r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", name
-        )
-    ]
-
-    # Best to interpolate mass in log10 space
-    rr[1] = np.log10(rr[1])
-    rr[4] = np.log10(rr[4])
-
-    parameter_values = np.array([rr[idx] for idx in parameters_idx])
-
-    return parameter_values
 
 #########################
 ### GENERAL UTILITIES ###
@@ -175,8 +129,7 @@ def extract_Bu2022Ye_parameters(filename: str) -> np.array:
 
 def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
                      times: Array, 
-                     diagnose: bool = False,
-                     debug: bool = True) -> dict[str, Float[Array, " n_files n_times"]]:
+                     output_times: Array = None) -> dict[str, Float[Array, " n_files n_times"]]:
     """
     Interpolate NaNs and infs in the raw light curve data. 
 
@@ -188,13 +141,14 @@ def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
         dict[str, Float[Array, 'n_files n_times']]: Raw light curve data but with NaNs and infs interpolated
     """
     
-    data = copy.deepcopy(data)
+    if output_times is None:
+        output_times = times
     
-    if diagnose:
-        percentages_nans = []
-        percentages_infs = []
+    # TODO: improve this function overall!
+    copy_data = copy.deepcopy(data)
+    output = {}
     
-    for filt, lc_array in data.items():
+    for filt, lc_array in copy_data.items():
         
         n_files = np.shape(lc_array)[0]
         
@@ -209,30 +163,24 @@ def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
             bad_idx = nan_idx | inf_idx
             good_idx = ~bad_idx
             
-            # TODO: the diagnose for inf is broken, it seems
-            if diagnose:
-                percentages_nans.append(100 * (np.sum(nan_idx) / len(lc)))
-                percentages_infs.append(100 * (np.sum(inf_idx) / len(lc))) # broken?
-            
-            # Skip LC if there is no NaNs or infs
-            if not any(bad_idx):
-                continue
-
-            # Do an interpolation for the bad values and replace it in the data
+            # Interpolate through good values on given time grid
             if len(good_idx) > 1:
                 # Make interpolation routine at the good idx
                 good_times = times[good_idx]
                 good_mags = lc[good_idx]
                 interpolator = interp.interp1d(good_times, good_mags, fill_value="extrapolate")
                 # Apply it to all times to interpolate
-                data[filt][i] = interpolator(times)
+                mag_interp = interpolator(output_times)
+                
+            else:
+                raise ValueError("No good values to interpolate from")
+            
+            if filt in output:
+                output[filt] = np.vstack((output[filt], mag_interp))
+            else:
+                output[filt] = np.array(mag_interp)
 
-        if diagnose:
-            print(f"Filter: {filt}")
-            print(f"Mean percentage of NaNs: {np.mean(percentages_nans)}")
-            print(f"Mean percentage of Infs: {np.mean(percentages_infs)}")
-    
-    return data
+    return output
 
 def truncated_gaussian(mag_det: Array, 
                        mag_err: Array, 

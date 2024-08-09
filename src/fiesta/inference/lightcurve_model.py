@@ -9,9 +9,12 @@ from jaxtyping import Array
 from functools import partial
 from beartype import beartype as typechecker
 from flax.training.train_state import TrainState
-from fiesta.utils import MinMaxScalerJax, inverse_svd_transform, BULLA_PARAMETER_NAMES
-import fiesta.train.neuralnets as fiesta_nn
 import joblib
+
+import fiesta.train.neuralnets as fiesta_nn
+from fiesta.utils import MinMaxScalerJax, inverse_svd_transform
+from fiesta import models_utilities
+
 
 class LightcurveModel:
     """Abstract class"""
@@ -79,7 +82,7 @@ class LightcurveModel:
             x (Array): Input array, unnormalized and untransformed.
 
         Returns:
-            Array: Output array, i.e., the desired raw light curve.
+            Array: Output dict[str, Array], i.e., the desired raw light curve per filter
         """
         x_tilde = self.project_input(jnp.array([x[name] for name in self.parameter_names]))
         y_tilde = self.compute_output(x_tilde)
@@ -96,10 +99,12 @@ class BullaLightcurveModel(LightcurveModel):
     y_scaler: dict[str, MinMaxScalerJax]
     VA: dict[str, Array]
     models: dict[str, TrainState]
+    times: Array
     
     def __init__(self, 
                  name: str, 
                  directory: str,
+                 times: Array = None,
                  filters: list[str] = None):
         """
         Initialize a class to generate lightcurves from a Bulla trained model.
@@ -113,20 +118,33 @@ class BullaLightcurveModel(LightcurveModel):
         self.directory = directory
         
         # Save those filters that were given and that were trained and store here already
-        filters = [f.replace(":", "_") for f in filters]
         pkl_files = [file for file in os.listdir(self.directory) if file.endswith(".pkl") or file.endswith(".pickle")]
         all_available_filters = [file.split(".")[0] for file in pkl_files]
         
         if filters is None:
+            # Use all filters that the surrogate model supports
             filters = all_available_filters
         else:
+            # Fetch those filters specified by the user that are available
+            filters = [f.replace(":", "_") for f in filters]
             filters = [f for f in filters if f in all_available_filters]
+        
+        if len(filters) == 0:
+            raise ValueError(f"No filters found in {self.directory} that match the given filters {filters}")
+        print(f"Loaded BullaLightcurveModel with filters {filters}")
         self.filters = filters
         
         # TODO: this is a bit cumbersome... Is there a better way to do it?
         
         # Load the metadata for projections etc
         metadata = joblib.load(os.path.join(self.directory, f"{self.name}.joblib"))
+        
+        # TODO: check for time range and trained model time range
+        if times is not None:
+            times = jnp.array(metadata["times"])
+            
+        self.times = times
+        
         min_val, max_val = metadata["X_scaler_min"], metadata["X_scaler_max"]
         self.X_scaler = MinMaxScalerJax(min_val=min_val, max_val=max_val)
         
@@ -147,7 +165,7 @@ class BullaLightcurveModel(LightcurveModel):
             self.models[filter] = state
             
         # Also save the parameter names and times
-        self.parameter_names = BULLA_PARAMETER_NAMES[name]
+        self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[name]
         self.times = jnp.array(metadata["times"])
         self.tmin = self.times[0]
         self.tmax = self.times[-1]

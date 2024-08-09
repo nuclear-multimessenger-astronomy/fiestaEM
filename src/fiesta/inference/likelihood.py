@@ -16,7 +16,6 @@ class EMLikelihood:
     trigger_time: Float
     tmin: Float
     tmax: Float
-    ignore_nondetections: bool
     
     detection_limit: dict[str, Array]
     error_budget: dict[str, Array]
@@ -31,23 +30,23 @@ class EMLikelihood:
     
     def __init__(self, 
                  model: LightcurveModel, 
-                 filters: list[str],
                  data: dict[str, Float[Array, "ntimes 3"]],
+                 filters: list[str] = None,
                  trigger_time: Float = 0.0,
                  tmin: Float = 0.0,
                  tmax: Float = 999.0,
                  error_budget: Float = 1.0,
                  fixed_params: dict[str, Float] = {},
-                 ignore_nondetections: bool = True,
                  detection_limit: Float = None):
         
         # Save as attributes
         self.model = model
+        if filters is None:
+            filters = model.filters
         self.filters = filters
         self.trigger_time = trigger_time
         self.tmin = tmin
         self.tmax = tmax
-        self.ignore_nondetections = ignore_nondetections
         
         # Process error budget
         if isinstance(error_budget, (int, float)) and not isinstance(error_budget, dict):
@@ -65,6 +64,8 @@ class EMLikelihood:
             detection_limit = dict(zip(filters, [jnp.inf] * len(filters)))
             
         self.detection_limit = detection_limit
+            
+        # TODO: for times, need to do some cross-checking against the times of the model and raise warnings
             
         # Process the given data
         self.times_det = {}
@@ -87,7 +88,6 @@ class EMLikelihood:
             
             # Preprocess times before data selection
             times, mag, mag_err = processed_data[filt].T
-            
             times -= self.trigger_time
             
             idx = np.where((times > self.tmin) * (times < self.tmax))[0]
@@ -103,11 +103,6 @@ class EMLikelihood:
             idx_is_inf = np.where(mag_err == np.inf)[0]
             self.times_nondet[filt] = times[idx_is_inf]
             self.mag_nondet[filt] = mag[idx_is_inf]
-        
-        # If there are no non-detections, automatically ignore them below
-        if len(self.times_nondet) == 0:
-            print("NOTE: No non-detections found in the data. Ignoring non-detections.")
-            self.ignore_nondetections = True
         
         # Create auxiliary data structures used in calculations
         self.sigma = {}
