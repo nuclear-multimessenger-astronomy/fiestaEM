@@ -2,6 +2,7 @@
 
 import os
 import numpy as np
+import itertools
 import pandas as pd
 import jax
 import jax.numpy as jnp 
@@ -13,10 +14,13 @@ from sklearn.model_selection import train_test_split
 from collections import defaultdict
 
 from fiesta import utils
+from fiesta import conversions
+from fiesta.constants import days_to_seconds, c
 from fiesta import models_utilities
 import fiesta.train.neuralnets as fiesta_nn
 import matplotlib.pyplot as plt
 import joblib
+import afterglowpy as grb
 
 class SurrogateTrainer:
     """Abstract class for training the surrogate models"""
@@ -25,6 +29,7 @@ class SurrogateTrainer:
     parameter_names: list[str] # Names of the input parameters
     X: Float[Array, "n_batch ndim_input"] # input training data
     y: dict[str, Float[Array, "n_batch ndim_output"]] # output training data, organized per filter
+    filters: list[str]
     
     def __init__(self, 
                  name: str) -> None:
@@ -252,6 +257,302 @@ class BullaSurrogateTrainer(SurrogateTrainer):
         if config is None:
             config = fiesta_nn.NeuralnetConfig()
         self.config = config
+            
+        trained_states = {filt: None for filt in self.filters}
+        for filt in self.filters:
+            # Fetch the output data of this filter, and perform train-validation split on it
+            y = self.y[filt]
+            
+            # Finally, convert to jnp.arrays
+            X = jnp.array(self.X)
+            y = jnp.array(y)
+            
+            train_X, val_X, train_y, val_y = train_test_split(X, y, test_size=self.validation_fraction)
+            
+            input_ndim = len(self.parameter_names)
+
+            # Create neural network and initialize the state
+            net = fiesta_nn.MLP(layer_sizes=config.layer_sizes)
+            key, subkey = jax.random.split(key)
+            state = fiesta_nn.create_train_state(net, jnp.ones(input_ndim), subkey, config)
+            
+            # Perform training loop
+            state, train_losses, val_losses = fiesta_nn.train_loop(state, config, train_X, train_y, val_X, val_y, verbose=verbose)
+
+            # Plot and save the plot if so desired
+            if self.plots_dir is not None:
+                plt.figure(figsize=(10, 5))
+                ls = "-o"
+                ms = 3
+                plt.plot([i+1 for i in range(len(train_losses))], train_losses, ls, markersize=ms, label="Train", color="red")
+                plt.plot([i+1 for i in range(len(val_losses))], val_losses, ls, markersize=ms, label="Validation", color="blue")
+                plt.legend()
+                plt.xlabel("Epoch")
+                plt.ylabel("MSE loss")
+                plt.yscale('log')
+                plt.title("Learning curves")
+                plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{filt}.png"))
+                plt.close()
+
+            trained_states[filt] = state
+            
+        self.trained_states = trained_states
+        
+    def save(self):
+        """
+        Save the trained model and all the used metadata to the outdir.
+        """
+        
+        if not os.path.exists(self.outdir):
+            os.makedirs(self.outdir)
+            
+        for filt in self.filters:
+            model = self.trained_states[filt]
+            fiesta_nn.save_model(model, self.config, out_name=self.outdir + f"{filt}.pkl")
+            
+        # TODO: improve saving of the scalers: saving the objects is not the best way to do it and breaks pickle
+        joblib.dump(self.preprocessing_metadata, self.outdir + f"{self.name}.joblib")
+        
+        
+        
+# TODO: perhaps rename to *_1D, since it is only for 1D light curves, and we might want to get support for 2D by incorporating the frequencies... Unsure about the approach here
+
+# TODO: add support for providing filters, and take the nu range from there?
+class AfterglowpyTrainer(SurrogateTrainer):
+    
+    times: Float[Array, "n_times"]
+    X: Float[Array, "n_batch n_params"]
+    y: dict[str, Float[Array, "n_batch n_times"]]
+    
+    def __init__(self,
+                 name: str,
+                 outdir: str,
+                 prior_ranges: dict[str, list[Float, Float]],
+                 filters: list[str],
+                 n_grid: Int = 3,
+                 jet_type: Int = -1,
+                 tmin: Float = 0.1,
+                 tmax: Float = 1000,
+                 n_times: Int = 100,
+                 use_log_spacing: bool = True,
+                 validation_fraction: float = 0.2,
+                 fixed_parameters: dict[str, Float] = {},
+                 plots_dir: str = None,
+                 save_data: bool = True,
+                 load_data: bool = False,
+                 ):
+        """
+        TODO: add documentation
+        Initialize the surrogate model trainer. The initialization also takes care of reading data and preprocessing it, but does not automatically fit the model. Users may want to inspect the data before fitting the model.
+        
+        Args:
+            name (str): Name given to the model
+            outdir (str): Output directory to save the trained model
+            prior_ranges (dict[str, list[Float, Float]]): Dictionary containing the prior ranges for each parameter, i.e., the range on which the surrogate must be trained. The keys should be the parameter names and the values should be a list containing the minimum and maximum values of the prior range. NOTE: frequency (nu) should be included, or given to fixed parameters.
+        """
+        
+        super().__init__(name)
+        
+        self.plots_dir = plots_dir
+        self.prior_ranges = prior_ranges
+        self.parameter_names = list(prior_ranges.keys())
+        self.filters = filters
+        self.n_grid = n_grid
+        self.save_data = save_data
+        self.validation_fraction = validation_fraction
+        self.fixed_parameters = fixed_parameters
+        self.outdir = outdir
+        if not os.path.exists(self.outdir):
+            os.makedirs(self.outdir)
+            
+        # TODO: need to check if supported ids are correct?
+        # Check jet type before saving
+        supported_jet_types = [-1, 0, 1, 4]
+        if jet_type not in supported_jet_types:
+            raise ValueError(f"Jet type {jet_type} is not supported. Supported jet types are: {supported_jet_types}")
+        self.jet_type = jet_type
+        
+        # Construct times
+        self.tmin = tmin
+        self.tmax = tmax
+        self.n_times = n_times
+        if use_log_spacing:
+            times = np.logspace(np.log10(tmin), np.log10(tmax), num=n_times)
+        else:
+            times = np.linspace(tmin, tmax, num=n_times)
+        self.times = times
+        self._times_afterglowpy = self.times * days_to_seconds # afterglowpy takes seconds as input
+        
+        # Create the nus for the given filters
+        filts, lambdas = utils.get_default_filts_lambdas(filters)
+        self.filters = filts
+        nus = c / lambdas
+        self.nus = dict(zip(filts, nus))
+        
+        self.preprocessing_metadata = {"X_scaler_min": {}, 
+                                       "X_scaler_max": {}, 
+                                       "y_scaler_min": {},
+                                       "y_scaler_max": {},
+                                       "times": self.times,
+                                       "nus": self.nus,
+                                       "jet_type": self.jet_type,
+                                       "parameter_names": self.parameter_names}
+        
+        # Load data
+        if load_data:
+            data = np.load(os.path.join(self.outdir, "data.npz"))
+            self.X_raw = data["X_raw"]
+            self.y_raw = {} 
+            for filt in self.filters:
+                if filt in data.keys():
+                    self.y_raw[filt] = data[filt]
+                else:
+                    print(f"Filter {filt} is not in the data, removing from list")
+                    self.filters.remove(filt)
+        else:
+            self.create_training_data()
+        
+        self.preprocess()
+        
+        if save_data and not load_data:
+            np.savez(os.path.join(self.outdir, "data.npz"), X_raw=self.X_raw, times=self.times, nus=self.nus, **self.y_raw)
+            
+        
+        
+    def create_training_data(self):
+        """
+        Create a grid of training data with specified settings and generate the output files for them. 
+        """
+
+        # Generate a grid of parameters
+        param_values = [np.linspace(v[0], v[1], self.n_grid) for v in self.prior_ranges.values()]
+
+        # Generate a grid of all parameter combinations
+        X_raw = list(itertools.product(*param_values))
+        X_raw = [list(combination) for combination in X_raw]
+        X_raw = np.array(X_raw)
+        
+        parameter_names = list(self.prior_ranges.keys())
+
+        # TODO: for now we train per filter, but best to change this!
+        # Create the output dataset
+        print("Creating the output dataset . . .")
+        y_raw = {}
+        
+        for filt in self.filters:
+            output = np.empty((len(X_raw), len(self.times)))
+            counter = 0
+            nu = self.nus[filt]
+            for param in tqdm.tqdm(X_raw):
+                param_dict = dict(zip(parameter_names, param))
+                
+                # Update with parameters that afterglowpy needs and frequency for this filter
+                param_dict.update(self.fixed_parameters)
+                param_dict["nu"] = nu
+                
+                mJys = self.call_afterglowpy(param_dict)
+                output[counter] = mJys
+                counter += 1
+            
+            y_raw[filt] = output
+        
+        self.X_raw = X_raw
+        self.y_raw = y_raw
+        
+    def preprocess(self):
+    
+        # Preprocessing: apply minmax-scaling
+        self.X_scaler = MinMaxScalerJax()
+        self.X = self.X_scaler.fit_transform(self.X_raw)
+        
+        self.y_scalers: dict[str, MinMaxScalerJax] = {}
+        self.y = {}
+        for filt in self.filters:
+            y_scaler = MinMaxScalerJax()
+            self.y[filt] = y_scaler.fit_transform(self.y_raw[filt])
+            self.y_scalers[filt] = y_scaler
+            
+        # Save the metadata
+        self.preprocessing_metadata["X_scaler_min"] = self.X_scaler.min_val 
+        self.preprocessing_metadata["X_scaler_max"] = self.X_scaler.max_val
+        self.preprocessing_metadata["y_scaler_min"] = {filt: self.y_scalers[filt].min_val for filt in self.filters}
+        self.preprocessing_metadata["y_scaler_max"] = {filt: self.y_scalers[filt].max_val for filt in self.filters}
+        
+        
+    def call_afterglowpy(self,
+                         params_dict: dict[str, Float]) -> Float[Array, "n_times"]:
+        """
+        Call afterglowpy to generate a single flux density output, for a given set of parameters. Note that the parameters_dict should contain all the parameters that the model requires, as well as the nu value.
+        The output will be a set of mJys.
+
+        Args:
+            Float[Array, "n_times"]: The flux density in mJys at the given times.
+        """
+        
+        # TODO: move to lightcurvemodel?
+        # # Create the time grid
+        # t = np.empty((self.n_times, self.N_nu))
+        # t[:, :] = np.logspace(np.log10(self.tmin), np.log10(self.tmax), num=self.n_times)[:, None]
+        
+        # # Create the nu grid
+        # nu = np.empty((self.n_times, self.N_nu))
+        # for idx in range(self.N_nu):
+        #     nu[:, idx] = self.nus[self.filters[idx]]
+        
+        # Preprocess the params_dict into the format that afterglowpy expects, which is usually called Z
+        Z = {}
+        
+        Z["jetType"]  = params_dict.get("jetType", self.jet_type)
+        Z["specType"] = params_dict.get("specType", 0)
+        Z["z"] = params_dict.get("z", 0.0)
+        Z["xi_N"] = params_dict.get("xi_N", 1.0)
+            
+        Z["E0"]        = 10 ** params_dict["log10_E0"]
+        Z["thetaCore"] = params_dict["thetaCore"]
+        Z["n0"]        = 10 ** params_dict["log10_n0"]
+        Z["p"]         = params_dict["p"]
+        Z["epsilon_e"] = 10 ** params_dict["log10_epsilon_e"]
+        Z["epsilon_B"] = 10 ** params_dict["log10_epsilon_B"]
+        Z["d_L"]       = conversions.Mpc_to_cm(params_dict["luminosity_distance"])
+        if "inclination_EM" in list(params_dict.keys()):
+            Z["thetaObs"]  = params_dict["inclination_EM"]
+        else:
+            Z["thetaObs"]  = params_dict["thetaObs"]
+        if self.jet_type == 1 or self.jet_type == 4:
+            Z["b"] = params_dict["b"]
+        if "thetaWing" in list(params_dict.keys()):
+            Z["thetaWing"] = params_dict["thetaWing"]
+        
+        # Call afterglowpy, get the flux
+        
+        mJys = grb.fluxDensity(self._times_afterglowpy, params_dict["nu"], **Z)
+        return mJys
+    
+    
+    # TODO: there might be some code duplication here. Check how much is shared between this and Bulla and see if we can easily move it into the abstract class
+    
+    ###############
+    ### FITTING ###
+    ###############
+    
+    def fit(self,
+            config: fiesta_nn.NeuralnetConfig = None,
+            key: jax.random.PRNGKey = jax.random.PRNGKey(0),
+            verbose: bool = True):
+        """
+        The config controls which architecture is built and therefore should not be specified here.
+        
+        Args:
+            config (nn.NeuralnetConfig, optional): _description_. Defaults to None.
+        """
+        
+        # Get default choices if no config is given
+        if config is None:
+            config = fiesta_nn.NeuralnetConfig()
+        self.config = config
+        
+        print("config")
+        print(config)
             
         trained_states = {filt: None for filt in self.filters}
         for filt in self.filters:
