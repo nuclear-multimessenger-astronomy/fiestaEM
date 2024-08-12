@@ -329,7 +329,7 @@ class AfterglowpyTrainer(SurrogateTrainer):
                  outdir: str,
                  prior_ranges: dict[str, list[Float, Float]],
                  filters: list[str],
-                 n_grid: Int = 3,
+                 n_training_data: Int = 10_000,
                  jet_type: Int = -1,
                  tmin: Float = 0.1,
                  tmax: Float = 1000,
@@ -357,7 +357,7 @@ class AfterglowpyTrainer(SurrogateTrainer):
         self.prior_ranges = prior_ranges
         self.parameter_names = list(prior_ranges.keys())
         self.filters = filters
-        self.n_grid = n_grid
+        self.n_training_data = n_training_data
         self.save_data = save_data
         self.validation_fraction = validation_fraction
         self.fixed_parameters = fixed_parameters
@@ -424,14 +424,8 @@ class AfterglowpyTrainer(SurrogateTrainer):
         Create a grid of training data with specified settings and generate the output files for them. 
         """
 
-        # Generate a grid of parameters
-        param_values = [np.linspace(v[0], v[1], self.n_grid) for v in self.prior_ranges.values()]
-
-        # Generate a grid of all parameter combinations
-        X_raw = list(itertools.product(*param_values))
-        X_raw = [list(combination) for combination in X_raw]
-        X_raw = np.array(X_raw)
-        
+        # Generate a grid of parameters by random sampling, will be saved later on
+        X_raw = np.empty((self.n_training_data, len(self.parameter_names)))
         parameter_names = list(self.prior_ranges.keys())
 
         # TODO: for now we train per filter, but best to change this!
@@ -440,17 +434,25 @@ class AfterglowpyTrainer(SurrogateTrainer):
         y_raw = {}
         
         for filt in self.filters:
-            output = np.empty((len(X_raw), len(self.times)))
+            output = np.empty((self.n_training_data, len(self.times)))
             counter = 0
             nu = self.nus[filt]
-            for param in tqdm.tqdm(X_raw):
-                param_dict = dict(zip(parameter_names, param))
+            for i in tqdm.tqdm(range(self.n_training_data)):
+                # Generate values by random sampling:
+                param_values = [np.random.uniform(self.prior_ranges[p][0], self.prior_ranges[p][1]) for p in parameter_names]
+                param_dict = dict(zip(parameter_names, param_values))
                 
                 # Update with parameters that afterglowpy needs and frequency for this filter
                 param_dict.update(self.fixed_parameters)
                 param_dict["nu"] = nu
                 
+                # Create and save output
                 mJys = self.call_afterglowpy(param_dict)
+                
+                # TODO: DEBUG: there might be an issue with the returned results...
+                if np.isnan(mJys).any() or np.isinf(mJys).any():
+                    print("NANs in the afterglowpy output")
+                
                 output[counter] = mJys
                 counter += 1
             

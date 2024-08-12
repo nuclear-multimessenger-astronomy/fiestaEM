@@ -13,6 +13,7 @@ import joblib
 
 import fiesta.train.neuralnets as fiesta_nn
 from fiesta.utils import MinMaxScalerJax, inverse_svd_transform
+from fiesta.conversions import mJys_to_mag_jnp
 from fiesta import models_utilities
 
 ########################
@@ -248,9 +249,6 @@ class BullaLightcurveModel(SurrogateLightcurveModel):
     def load_parameter_names(self) -> None:
         self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[self.name]
             
-    # def compute_output(self, x: dict[str, Array]) -> dict[str, Array]:
-    #     return super().compute_output(x)
-
     def project_output(self, y: dict[str, Array]) -> dict[str, Array]:
         """
         Apply the trained flax neural network on the given input x.
@@ -278,19 +276,6 @@ class AfterglowpyLightcurvemodel(SurrogateLightcurveModel):
     def load_parameter_names(self) -> None:
         self.parameter_names = self.metadata["parameter_names"]
         
-    # def project_input(self, x: Array) -> dict[str, Array]:
-    #     # Add nu parameter to the input before doing the scaling
-    #     x_tilde = {filt: x for filt in self.filters}
-    #     for filt in self.filters:
-    #         x_tilde = jnp.append(x_tilde[filt], self.nus[filt])
-    #         x_tilde = self.X_scaler.transform(x_tilde)
-            
-    #     return x_tilde
-        
-    # def compute_output(self, x: dict[str, Array]) -> dict[str, Array]:
-    #     # Add nu parameter to the input before computing the output
-    #     for filt in self.filters:
-    #         x[filt]["nu"] = self.nus[filt]
-    #     return super().compute_output(x)
-    
-    
+    def project_output(self, y: dict[str, Array]) -> dict[str, Array]:
+        output = super().project_output(y)
+        return {filt: mJys_to_mag_jnp(output[filt]) for filt in self.filters}
