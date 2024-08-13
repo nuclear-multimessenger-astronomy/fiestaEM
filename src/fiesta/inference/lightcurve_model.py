@@ -13,7 +13,7 @@ import joblib
 
 import fiesta.train.neuralnets as fiesta_nn
 from fiesta.utils import MinMaxScalerJax, inverse_svd_transform
-from fiesta.conversions import mJys_to_mag_jnp
+import fiesta.conversions as conversions
 from fiesta import models_utilities
 
 ########################

@@ -588,7 +588,7 @@ class AfterglowpyTrainer(SVDSurrogateTrainer):
         Z["p"]         = params_dict["p"]
         Z["epsilon_e"] = 10 ** params_dict["log10_epsilon_e"]
         Z["epsilon_B"] = 10 ** params_dict["log10_epsilon_B"]
-        Z["d_L"]       = conversions.Mpc_to_cm(params_dict["luminosity_distance"])
+        Z["d_L"]       = 3.086e19 # fix at 10 pc, so that AB magnitude equals absolute magnitude
         if "inclination_EM" in list(params_dict.keys()):
             Z["thetaObs"]  = params_dict["inclination_EM"]
         else:
