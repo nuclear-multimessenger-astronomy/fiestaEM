@@ -226,7 +226,7 @@ class SurrogateLightcurveModel(LightcurveModel):
         return {filter: self.y_scaler[filter].inverse_transform(y[filter]) for filter in self.filters}
         
     
-class BullaLightcurveModel(SurrogateLightcurveModel):
+class SVDSurrogateLightcurveModel(SurrogateLightcurveModel):
     
     VA: dict[str, Array]
     nsvd_coeff: int
@@ -242,12 +242,11 @@ class BullaLightcurveModel(SurrogateLightcurveModel):
         """
         super().__init__(name=name, directory=directory, filters=filters, times=times)
         
-        # TODO: do we have to explicitly convert to jnp.arrays?
         self.VA = self.metadata["VA"]
         self.nsvd_coeff = self.metadata["nsvd_coeff"]
         
     def load_parameter_names(self) -> None:
-        self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[self.name]
+        raise NotImplementedError
             
     def project_output(self, y: dict[str, Array]) -> dict[str, Array]:
         """
@@ -261,16 +260,27 @@ class BullaLightcurveModel(SurrogateLightcurveModel):
         """
         output = {filter: inverse_svd_transform(y[filter], self.VA[filter], self.nsvd_coeff) for filter in self.filters}
         return super().project_output(output)
-        
+       
+class BullaLightcurveModel(SVDSurrogateLightcurveModel):
     
-class AfterglowpyLightcurvemodel(SurrogateLightcurveModel):
+    def __init__(self, 
+                 name: str, 
+                 directory: str,
+                 times: Array = None,
+                 filters: list[str] = None):
+        
+        super().__init__(name=name, directory=directory, times=times, filters=filters) 
+        
+    def load_parameter_names(self) -> None:
+        self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[self.name]
+    
+class AfterglowpyLightcurvemodel(SVDSurrogateLightcurveModel):
     
     def __init__(self,
                  name: str,
                  directory: str,
                  filters: list[str] = None,
                  times: Array = None):
-        
         super().__init__(name=name, directory=directory, filters=filters, times=times)
         
     def load_parameter_names(self) -> None:

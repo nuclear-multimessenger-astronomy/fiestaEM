@@ -1,18 +1,15 @@
 """Method to train the surrogate models"""
 
 import os
-import copy
 import numpy as np
-import itertools
-import pandas as pd
 import jax
 import jax.numpy as jnp 
 from jaxtyping import Array, Float, Int
+from typing import Callable
 from beartype import beartype as typechecker
 import tqdm
 from fiesta.utils import MinMaxScalerJax
 from sklearn.model_selection import train_test_split
-from collections import defaultdict
 
 from fiesta import utils
 from fiesta import conversions
@@ -24,39 +21,153 @@ import joblib
 import afterglowpy as grb
 
 class SurrogateTrainer:
-    """Abstract class for training the surrogate models"""
+    """Abstract class for training a collection of surrogate models per filter"""
     
-    name: str # Name given to the model, e.g. Bu2022Ye
-    parameter_names: list[str] # Names of the input parameters
-    X: Float[Array, "n_batch ndim_input"] # input training data
-    y: dict[str, Float[Array, "n_batch ndim_output"]] # output training data, organized per filter
+    name: str
+    outdir: str
     filters: list[str]
+    parameter_names: list[str]
+    
+    validation_fraction: Float
+    preprocessing_metadata: dict[str, dict[str, float]]
+    
+    X_raw: Float[Array, "n_batch n_params"]
+    y_raw: dict[str, Float[Array, "n_batch n_times"]]
+    
+    X: Float[Array, "n_batch n_input_surrogate"]
+    y: dict[str, Float[Array, "n_batch n_output_surrogate"]]
+    
+    trained_states: dict[str, fiesta_nn.TrainState]
     
     def __init__(self, 
-                 name: str) -> None:
+                 name: str,
+                 outdir: str,
+                 validation_fraction: Float = 0.2) -> None:
         self.name = name
-        self.parameter_names = []
+        self.outdir = outdir
+        # Check if directories exists, otherwise, create:
+        if not os.path.exists(self.outdir):
+            os.makedirs(self.outdir)
+        self.filters = None
+        self.parameter_names = None
+        
+        self.validation_fraction = validation_fraction
+        self.preprocessing_metadata = {"X_scaler_min": {}, 
+                                       "X_scaler_max": {}, 
+                                       "y_scaler_min": {},
+                                       "y_scaler_max": {}}
+        
+        self.X_raw = None
+        self.y_raw = None
+        
+        self.X = None
+        self.y = None
+        
+        self.trained_states = None
         
     def __repr__(self) -> str:
         return f"SurrogateTrainer(name={self.name})"
     
     def preprocess(self):
-        raise NotImplementedError
+        
+        print("Preprocessing data by minmax scaling . . .")
+        self.X_scaler = MinMaxScalerJax()
+        self.X = self.X_scaler.fit_transform(self.X_raw)
+        
+        self.y_scalers: dict[str, MinMaxScalerJax] = {}
+        self.y = {}
+        for filt in self.filters:
+            y_scaler = MinMaxScalerJax()
+            self.y[filt] = y_scaler.fit_transform(self.y_raw[filt])
+            self.y_scalers[filt] = y_scaler
+            
+        # Save the metadata
+        self.preprocessing_metadata["X_scaler_min"] = self.X_scaler.min_val 
+        self.preprocessing_metadata["X_scaler_max"] = self.X_scaler.max_val
+        self.preprocessing_metadata["y_scaler_min"] = {filt: self.y_scalers[filt].min_val for filt in self.filters}
+        self.preprocessing_metadata["y_scaler_max"] = {filt: self.y_scalers[filt].max_val for filt in self.filters}
+        print("Preprocessing data . . . done")
     
-    def fit(self):
-        raise NotImplementedError
+    def fit(self,
+            config: fiesta_nn.NeuralnetConfig = None,
+            key: jax.random.PRNGKey = jax.random.PRNGKey(0),
+            verbose: bool = True):
+        """
+        The config controls which architecture is built and therefore should not be specified here.
+        
+        Args:
+            config (nn.NeuralnetConfig, optional): _description_. Defaults to None.
+        """
+        
+        # Get default choices if no config is given
+        if config is None:
+            config = fiesta_nn.NeuralnetConfig()
+        self.config = config
+            
+        trained_states = {}
+        X = jnp.array(self.X)
+        input_ndim = len(self.parameter_names)
+        for filt in self.filters:
+            # Fetch the output data of this filter, and perform train-validation split on it
+            y = jnp.array(self.y[filt])
+            train_X, val_X, train_y, val_y = train_test_split(X, y, test_size=self.validation_fraction)
+            
+            # Create neural network and initialize the state
+            net = fiesta_nn.MLP(layer_sizes=config.layer_sizes)
+            key, subkey = jax.random.split(key)
+            state = fiesta_nn.create_train_state(net, jnp.ones(input_ndim), subkey, config)
+            
+            # Perform training loop
+            state, train_losses, val_losses = fiesta_nn.train_loop(state, config, train_X, train_y, val_X, val_y, verbose=verbose)
 
-class BullaSurrogateTrainer(SurrogateTrainer):
+            # Plot and save the plot if so desired
+            if self.plots_dir is not None:
+                plt.figure(figsize=(10, 5))
+                ls = "-o"
+                ms = 3
+                plt.plot([i+1 for i in range(len(train_losses))], train_losses, ls, markersize=ms, label="Train", color="red")
+                plt.plot([i+1 for i in range(len(val_losses))], val_losses, ls, markersize=ms, label="Validation", color="blue")
+                plt.legend()
+                plt.xlabel("Epoch")
+                plt.ylabel("MSE loss")
+                plt.yscale('log')
+                plt.title("Learning curves")
+                plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{filt}.png"))
+                plt.close()
+
+            trained_states[filt] = state
+            
+        self.trained_states = trained_states
+        
+    def save(self):
+        """
+        Save the trained model and all the used metadata to the outdir.
+        """
+        
+        if not os.path.exists(self.outdir):
+            os.makedirs(self.outdir)
+            
+        for filt in self.filters:
+            model = self.trained_states[filt]
+            fiesta_nn.save_model(model, self.config, out_name=self.outdir + f"{filt}.pkl")
+            
+        # TODO: improve saving of the scalers: saving the objects is not the best way to do it and breaks pickle
+        joblib.dump(self.preprocessing_metadata, self.outdir + f"{self.name}.joblib")
     
-    X_raw: Float[Array, "n_batch n_params"]
-    y_raw: dict[str, Float[Array, "n_batch n_times"]]
+class SVDSurrogateTrainer(SurrogateTrainer):
     
-    X: Float[Array, "n_batch n_params"]
-    y: dict[str, Float[Array, "n_batch n_svd_coeff"]]
+    outdir: str 
+    svd_ncoeff: Int
+    tmin: Float
+    tmax: Float
+    dt: Float
+    times: Float[Array, "n_times"]
+    plots_dir: str
+    save_raw_data: bool
+    save_preprocessed_data: bool
     
     def __init__(self,
                  name: str,
-                 lc_dir: list[str],
                  outdir: str,
                  filters: list[str] = None,
                  svd_ncoeff: Int = 10, 
@@ -65,11 +176,12 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                  tmax: Float = None,
                  dt: Float = None,
                  plots_dir: str = None,
-                 save_raw_data: bool = False
+                 save_raw_data: bool = False,
+                 save_preprocessed_data: bool = False
                  ):
         
         """
-        Initialize the surrogate model trainer. The initialization also takes care of reading data and preprocessing it, but does not automatically fit the model. Users may want to inspect the data before fitting the model.
+        Initialize the surrogate model trainer that uses an SVD. The initialization also takes care of reading data and preprocessing it, but does not automatically fit the model. Users may want to inspect the data before fitting the model.
         
         Note: currently, only models of Bulla type .dat files are supported
         
@@ -86,71 +198,179 @@ class BullaSurrogateTrainer(SurrogateTrainer):
             save_raw_data (bool, optional): If True, the raw data will be saved in the outdir. Defaults to False.
         """
         
-        # Check if supported
-        supported_models = list(models_utilities.SUPPORTED_BULLA_MODELS)
-        if name not in supported_models:
-            raise ValueError(f"Model {name} is not supported yet. Supported models are: {supported_models}")
-        
-        super().__init__(name)
-        self.extract_parameters_function = models_utilities.EXTRACT_PARAMETERS_FUNCTIONS[name]
-        self.lc_dir = lc_dir
-        self.outdir = outdir
-        self.svd_ncoeff = svd_ncoeff
-        self.validation_fraction = validation_fraction
-        
-        # Check if directory exists, otherwise, create it:
+        super().__init__(name=name, outdir=outdir, validation_fraction=validation_fraction)
         self.plots_dir = plots_dir
+        
         if self.plots_dir is not None and not os.path.exists(self.plots_dir):
             os.makedirs(self.plots_dir)
+            
+        self.svd_ncoeff = svd_ncoeff
+        self.tmin = tmin
+        self.tmax = tmax
+        self.dt = dt
+        self.plots_dir = plots_dir
+        self.save_raw_data = save_raw_data
+        self.save_preprocessed_data = save_preprocessed_data
         
-        self.lc_files = [os.path.join(lc_dir, f) for f in os.listdir(lc_dir) if f.endswith(".dat")]
-
-        # If no filters are given, we will read the filters from the first file and assume all files have the same filters
-        if filters is None:
-            filters = utils.get_filters_bulla_file(self.lc_files[0], drop_times=True)
-        self.filters = filters
-        
-        # Fetch the time grid and mask it to the desired time range
-        _times_grid = utils.get_times_bulla_file(self.lc_files[0])
-        
-        # Create time grid for interpolation and output
-        if tmin is None or tmax is None or dt is None:
-            print("No time range given, using grid times")
-            self.times = _times_grid
-        else:
-            self.times = np.arange(tmin, tmax + dt, dt)
-        
-        # Fetch parameter names
-        self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[name]
-        
+        self.load_filters(filters)
+        self.load_times()
+        self.load_parameter_names()
+            
+        self.initialize_metadata()
+        self.load_raw_data()
+        self.preprocess()
+    
+    # TODO: more elegant way to do this?    
+    def initialize_metadata(self):
         self.preprocessing_metadata = {"X_scaler_min": {}, 
                                        "X_scaler_max": {}, 
                                        "y_scaler_min": {},
                                        "y_scaler_max": {},
+                                       "times": self.times,
                                        "VA": {},
-                                       "nsvd_coeff": self.svd_ncoeff,
-                                       "times": self.times}
+                                       "nsvd_coeff": self.svd_ncoeff}
         
-        print("Reading data files and interpolating NaNs . . .")
-        self.X_raw, y = self.read_files()
-        self.y_raw = utils.interpolate_nans(y, _times_grid, self.times)
+    def load_parameter_names(self):
+        raise NotImplementedError
+        
+    def load_times(self):
+        raise NotImplementedError
+    
+    def load_filters(self, filters: list[str] = None):
+        raise NotImplementedError
+    
+    def load_raw_data(self):
+        raise NotImplementedError
+    
+    def preprocess(self):
+        """
+        Preprocess the data. This includes scaling the inputs and outputs, performing SVD decomposition, and saving the necessary metadata for later use.
+        """
+        # Scale inputs
+        X_scaler = MinMaxScalerJax()
+        X = X_scaler.fit_transform(self.X_raw)
+        
+        self.preprocessing_metadata["X_scaler_min"] = X_scaler.min_val
+        self.preprocessing_metadata["X_scaler_max"] = X_scaler.max_val
+        
+        # Scale outputs, do SVD and save into y
+        y = {filt: [] for filt in self.filters}
+        for filt in tqdm.tqdm(self.filters):
+            
+            data_scaler = MinMaxScalerJax()
+            data = data_scaler.fit_transform(self.y_raw[filt])
+            self.preprocessing_metadata["y_scaler_min"][filt] = data_scaler.min_val
+            self.preprocessing_metadata["y_scaler_max"][filt] = data_scaler.max_val
+            
+            # Do SVD decomposition
+            UA, _, VA = np.linalg.svd(data, full_matrices=True)
+            VA = VA.T
 
-        if save_raw_data:
-            print("Saving raw data")
-            np.savez(os.path.join(outdir, "raw_data.npz"), X_raw=self.X_raw, times=self.times, times_grid=_times_grid, **self.y_raw)
-            print("Saving raw data done")
-        
-        print("Preprocessing data . . .")
-        self.preprocess()
+            n, n = UA.shape
+            m, m = VA.shape
+
+            # This is taken over from NMMA
+            cAmat = np.zeros((self.svd_ncoeff, n))
+            cAvar = np.zeros((self.svd_ncoeff, n))
+            for i in range(n):
+                ErrorLevel = 1.0
+                cAmat[:, i] = np.dot(
+                    data[i, :], VA[:, : self.svd_ncoeff]
+                )
+                errors = ErrorLevel * np.ones_like(data[i, :])
+                cAvar[:, i] = np.diag(
+                    np.dot(
+                        VA[:, : self.svd_ncoeff].T,
+                        np.dot(np.diag(np.power(errors, 2.0)), VA[:, : self.svd_ncoeff]),
+                    )
+                )
+            self.preprocessing_metadata["VA"][filt] = VA
+            
+            # Transpose to get the shape (n_batch, n_svd_coeff)
+            y[filt] = cAmat.T 
+            
+        self.X = X 
+        self.y = y
         
     def __repr__(self) -> str:
-        return f"BullaSurrogateTrainer(name={self.name}, lc_dir={self.lc_dir}, outdir={self.outdir}, filters={self.filters})"
+        return f"SVDSurrogateTrainer(name={self.name}, lc_dir={self.lc_dir}, outdir={self.outdir}, filters={self.filters})"
     
-    #####################
-    ### PREPROCESSING ###
-    #####################
+        
+class BullaSurrogateTrainer(SVDSurrogateTrainer):
     
-    def read_files(self) -> tuple[dict[str, Float[Array, " n_batch n_params"]], Float[Array, "n_batch n_times"]]:
+    _times_grid: Float[Array, "n_times"]
+    extract_parameters_function: Callable
+    data_dir: str
+    
+    # Check if supported
+    def __init__(self,
+                 name: str,
+                 outdir: str,
+                 filters: list[str] = None,
+                 data_dir: list[str] = None,
+                 svd_ncoeff: Int = 10, 
+                 validation_fraction: Float = 0.2,
+                 tmin: Float = None,
+                 tmax: Float = None,
+                 dt: Float = None,
+                 plots_dir: str = None,
+                 save_raw_data: bool = False,
+                 save_preprocessed_data: bool = False):
+        
+        # Check if this version of Bulla is supported
+        supported_models = list(models_utilities.SUPPORTED_BULLA_MODELS)
+        if name not in supported_models:
+            raise ValueError(f"Bulla model version {name} is not supported yet. Supported models are: {supported_models}")
+        
+        # Get the function to extract parameters
+        self.extract_parameters_function = models_utilities.EXTRACT_PARAMETERS_FUNCTIONS[name]
+        self.data_dir=data_dir
+        
+        super().__init__(name=name, 
+                         outdir=outdir, 
+                         filters=filters, 
+                         svd_ncoeff=svd_ncoeff, 
+                         validation_fraction=validation_fraction, 
+                         tmin=tmin, 
+                         tmax=tmax, 
+                         dt=dt, 
+                         plots_dir=plots_dir, 
+                         save_raw_data=save_raw_data,
+                         save_preprocessed_data=save_preprocessed_data)
+        
+        
+    def load_times(self):
+        """
+        Fetch the time grid from the Bulla .dat files or create from given input
+        """
+        _times_grid = utils.get_times_bulla_file(self.lc_files[0])
+        if self.tmin is None or self.tmax is None or self.dt is None:
+            print("No time range given, using grid times")
+            self.times = _times_grid
+            self.tmin = self.times[0]
+            self.tmax = self.times[-1]
+            self.dt = self.times[1] - self.times[0]
+        else:
+            self.times = np.arange(self.tmin, self.tmax + self.dt, self.dt)
+        
+    def load_parameter_names(self):
+        self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[self.name]
+        
+    def load_filters(self, 
+                     filters: list[str] = None):
+        """
+        If no filters are given, we will read the filters from the first Bulla lightcurve file and assume all files have the same filters
+
+        Args:
+            filters (list[str], optional): List of filters to be used in the training. Defaults to None.
+        """
+        filenames: list[str] = os.listdir(self.data_dir)
+        self.lc_files = [os.path.join(self.data_dir, f) for f in filenames if f.endswith(".dat")]
+        if filters is None:
+            filters = utils.get_filters_bulla_file(self.lc_files[0], drop_times=True)
+        self.filters = filters
+        
+    def _read_files(self) -> tuple[dict[str, Float[Array, " n_batch n_params"]], Float[Array, "n_batch n_times"]]:
         """
         Read the photometry files and interpolate the NaNs. 
         Output will be an array of shape (n_filters, n_batch, n_times)
@@ -184,162 +404,44 @@ class BullaSurrogateTrainer(SurrogateTrainer):
                 parameter_values = np.vstack((parameter_values, params))
                 
         return parameter_values, data
-                
-    def preprocess(self) -> tuple[Float[Array, "n_batch n_params"], dict[str, Float[Array, "n_batch nsvd_coeff"]]]:
-        """_summary_
-        Preprocess the data. This includes scaling the inputs and outputs, performing SVD decomposition, and saving the necessary metadata for later use.
-        """
-        # Scale inputs
-        X_scaler = MinMaxScalerJax()
-        X = X_scaler.fit_transform(self.X_raw)
-        
-        self.preprocessing_metadata["X_scaler_min"] = X_scaler.min_val
-        self.preprocessing_metadata["X_scaler_max"] = X_scaler.max_val
-        
-        # Scale outputs, do SVD and save into y
-        y = {filt: [] for filt in self.filters}
-        for filt in tqdm.tqdm(self.filters):
-            
-            data_scaler = MinMaxScalerJax()
-            data = data_scaler.fit_transform(self.y_raw[filt])
-            self.preprocessing_metadata["y_scaler_min"][filt] = data_scaler.min_val
-            self.preprocessing_metadata["y_scaler_max"][filt] = data_scaler.max_val
-            
-            # Do SVD decomposition
-            # TODO: make SVD decomposition optional so that people can also easily train on the full lightcurve if they want to
-            UA, _, VA = np.linalg.svd(data, full_matrices=True)
-            VA = VA.T
-
-            n, n = UA.shape
-            m, m = VA.shape
-
-            # This is taken over from NMMA
-            cAmat = np.zeros((self.svd_ncoeff, n))
-            cAvar = np.zeros((self.svd_ncoeff, n))
-            for i in range(n):
-                ErrorLevel = 1.0
-                cAmat[:, i] = np.dot(
-                    data[i, :], VA[:, : self.svd_ncoeff]
-                )
-                errors = ErrorLevel * np.ones_like(data[i, :])
-                cAvar[:, i] = np.diag(
-                    np.dot(
-                        VA[:, : self.svd_ncoeff].T,
-                        np.dot(np.diag(np.power(errors, 2.0)), VA[:, : self.svd_ncoeff]),
-                    )
-                )
-            self.preprocessing_metadata["VA"][filt] = VA
-            
-            # Transpose to get the shape (n_batch, n_svd_coeff)
-            y[filt] = cAmat.T 
-            
-        self.X = X 
-        self.y = y
-        
-        return X, y
     
-    ###############
-    ### FITTING ###
-    ###############
-    
-    def fit(self,
-            config: fiesta_nn.NeuralnetConfig = None,
-            key: jax.random.PRNGKey = jax.random.PRNGKey(0),
-            verbose: bool = True):
-        """
-        
-        The config controls which architecture is built and therefore should not be specified here.
-        
-        Args:
-            config (nn.NeuralnetConfig, optional): _description_. Defaults to None.
-        """
-        
-        # Get default choices if no config is given
-        if config is None:
-            config = fiesta_nn.NeuralnetConfig()
-        self.config = config
-            
-        trained_states = {filt: None for filt in self.filters}
-        for filt in self.filters:
-            # Fetch the output data of this filter, and perform train-validation split on it
-            y = self.y[filt]
-            
-            # Finally, convert to jnp.arrays
-            X = jnp.array(self.X)
-            y = jnp.array(y)
-            
-            train_X, val_X, train_y, val_y = train_test_split(X, y, test_size=self.validation_fraction)
-            
-            input_ndim = len(self.parameter_names)
-
-            # Create neural network and initialize the state
-            net = fiesta_nn.MLP(layer_sizes=config.layer_sizes)
-            key, subkey = jax.random.split(key)
-            state = fiesta_nn.create_train_state(net, jnp.ones(input_ndim), subkey, config)
-            
-            # Perform training loop
-            state, train_losses, val_losses = fiesta_nn.train_loop(state, config, train_X, train_y, val_X, val_y, verbose=verbose)
-
-            # Plot and save the plot if so desired
-            if self.plots_dir is not None:
-                plt.figure(figsize=(10, 5))
-                ls = "-o"
-                ms = 3
-                plt.plot([i+1 for i in range(len(train_losses))], train_losses, ls, markersize=ms, label="Train", color="red")
-                plt.plot([i+1 for i in range(len(val_losses))], val_losses, ls, markersize=ms, label="Validation", color="blue")
-                plt.legend()
-                plt.xlabel("Epoch")
-                plt.ylabel("MSE loss")
-                plt.yscale('log')
-                plt.title("Learning curves")
-                plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{filt}.png"))
-                plt.close()
-
-            trained_states[filt] = state
-            
-        self.trained_states = trained_states
-        
-    def save(self):
-        """
-        Save the trained model and all the used metadata to the outdir.
-        """
-        
-        if not os.path.exists(self.outdir):
-            os.makedirs(self.outdir)
-            
-        for filt in self.filters:
-            model = self.trained_states[filt]
-            fiesta_nn.save_model(model, self.config, out_name=self.outdir + f"{filt}.pkl")
-            
-        # TODO: improve saving of the scalers: saving the objects is not the best way to do it and breaks pickle
-        joblib.dump(self.preprocessing_metadata, self.outdir + f"{self.name}.joblib")
-        
-        
+    def load_raw_data(self):
+        print("Reading data files and interpolating NaNs . . .")
+        self.X_raw, y = self._read_files()
+        self.y_raw = utils.interpolate_nans(y, self._times_grid, self.times)
+        if self.save_raw_data:
+            np.savez(os.path.join(self.outdir, "raw_data.npz"), X_raw=self.X_raw, times=self.times, times_grid=self._times_grid, **self.y_raw)
         
 # TODO: perhaps rename to *_1D, since it is only for 1D light curves, and we might want to get support for 2D by incorporating the frequencies... Unsure about the approach here
 
-class AfterglowpyTrainer(SurrogateTrainer):
+class AfterglowpyTrainer(SVDSurrogateTrainer):
     
-    times: Float[Array, "n_times"]
-    X: Float[Array, "n_batch n_params"]
-    y: dict[str, Float[Array, "n_batch n_times"]]
+    prior_ranges: dict[str, list[Float, Float]]
+    n_training_data: Int
+    fixed_parameters: dict[str, Float]
+    jet_type: Int
+    use_log_spacing: bool
+    
+    _times_afterglowpy: Float[Array, "n_times"]
+    nus: dict[str, Float]
     
     def __init__(self,
                  name: str,
                  outdir: str,
-                 prior_ranges: dict[str, list[Float, Float]],
                  filters: list[str],
+                 prior_ranges: dict[str, list[Float, Float]],
                  n_training_data: Int = 10_000,
                  jet_type: Int = -1,
+                 fixed_parameters: dict[str, Float] = {},
                  tmin: Float = 0.1,
                  tmax: Float = 1000,
                  n_times: Int = 100,
                  use_log_spacing: bool = True,
                  validation_fraction: float = 0.2,
-                 fixed_parameters: dict[str, Float] = {},
                  plots_dir: str = None,
-                 save_data: bool = True,
-                 load_data: bool = False,
+                 svd_ncoeff: Int = 10,
+                 save_raw_data: bool = False,
+                 save_preprocessed_data: bool = False,
                  ):
         """
         TODO: add documentation
@@ -351,87 +453,75 @@ class AfterglowpyTrainer(SurrogateTrainer):
             prior_ranges (dict[str, list[Float, Float]]): Dictionary containing the prior ranges for each parameter, i.e., the range on which the surrogate must be trained. The keys should be the parameter names and the values should be a list containing the minimum and maximum values of the prior range. NOTE: frequency (nu) should be included, or given to fixed parameters.
         """
         
-        super().__init__(name)
-        
-        self.plots_dir = plots_dir
+        self.n_times = n_times
+        dt = (tmax - tmin) / n_times
         self.prior_ranges = prior_ranges
-        self.parameter_names = list(prior_ranges.keys())
-        self.filters = filters
         self.n_training_data = n_training_data
-        self.save_data = save_data
-        self.validation_fraction = validation_fraction
         self.fixed_parameters = fixed_parameters
-        self.outdir = outdir
-        if not os.path.exists(self.outdir):
-            os.makedirs(self.outdir)
-            
-        # TODO: need to check if supported ids are correct?
-        # Check jet type before saving
+        self.use_log_spacing = use_log_spacing
+        
+        # Check jet type before saving # TODO: need to check if supported ids are correct?
         supported_jet_types = [-1, 0, 1, 4]
         if jet_type not in supported_jet_types:
             raise ValueError(f"Jet type {jet_type} is not supported. Supported jet types are: {supported_jet_types}")
         self.jet_type = jet_type
+            
+        super().__init__(name=name,
+                         outdir=outdir,
+                         filters=filters,
+                         svd_ncoeff=svd_ncoeff,
+                         validation_fraction=validation_fraction,
+                         tmin=tmin,
+                         tmax=tmax,
+                         dt=dt,
+                         plots_dir=plots_dir,
+                         save_raw_data=save_raw_data,
+                         save_preprocessed_data=save_preprocessed_data)
         
-        # Construct times
-        self.tmin = tmin
-        self.tmax = tmax
-        self.n_times = n_times
-        if use_log_spacing:
-            times = np.logspace(np.log10(tmin), np.log10(tmax), num=n_times)
-        else:
-            times = np.linspace(tmin, tmax, num=n_times)
-        self.times = times
-        self._times_afterglowpy = self.times * days_to_seconds # afterglowpy takes seconds as input
-        
-        # Create the nus for the given filters
-        filts, lambdas = utils.get_default_filts_lambdas(filters)
-        self.filters = filts
-        nus = c / lambdas
-        self.nus = dict(zip(filts, nus))
-        
+       
+    def initialize_metadata(self):
         self.preprocessing_metadata = {"X_scaler_min": {}, 
                                        "X_scaler_max": {}, 
                                        "y_scaler_min": {},
                                        "y_scaler_max": {},
                                        "times": self.times,
+                                       "VA": {},
+                                       "nsvd_coeff": self.svd_ncoeff,
                                        "nus": self.nus,
                                        "jet_type": self.jet_type,
                                        "parameter_names": self.parameter_names}
         
-        # Load data
-        if load_data:
-            data = np.load(os.path.join(self.outdir, "data.npz"))
-            self.X_raw = data["X_raw"]
-            self.y_raw = {} 
-            for filt in self.filters:
-                if filt in data.keys():
-                    self.y_raw[filt] = data[filt]
-                else:
-                    print(f"Filter {filt} is not in the data, removing from list")
-                    self.filters.remove(filt)
+    def load_filters(self, filters: list[str]):
+        self.filters = filters
+        filts, lambdas = utils.get_default_filts_lambdas(filters)
+        self.filters = filts
+        nus = c / lambdas
+        self.nus = dict(zip(filts, nus))
+        
+    def load_times(self):
+        if self.use_log_spacing:
+            times = np.logspace(np.log10(self.tmin), np.log10(self.tmax), num=self.n_times)
         else:
-            self.create_training_data()
+            times = np.linspace(self.tmin, self.tmax, num=self.n_times)
+        self.times = times
+        self._times_afterglowpy = self.times * days_to_seconds # afterglowpy takes seconds as input
         
-        self.preprocess()
+    def load_parameter_names(self):
+        self.parameter_names = list(self.prior_ranges.keys())
         
-        if save_data and not load_data:
-            np.savez(os.path.join(self.outdir, "data.npz"), X_raw=self.X_raw, times=self.times, nus=self.nus, **self.y_raw)
-        
-        
-    def create_training_data(self):
+    def load_raw_data(self):
         """
         Create a grid of training data with specified settings and generate the output files for them. 
+        TODO: for now we train per filter, but best to change this!
         """
         
-        # TODO: for now we train per filter, but best to change this!
-
         # Initialize the output values
         X_raw = np.empty((self.n_training_data, len(self.parameter_names)))
         y_raw = {filt: np.empty((self.n_training_data, len(self.times))) for filt in self.filters}
 
         parameter_names = list(self.prior_ranges.keys())
         
-        print("Creating the output dataset . . .")
+        print("Creating the afterglowpy dataset . . .")
         for i in tqdm.tqdm(range(self.n_training_data)):
             # Generate "intrinsic" parameter values by random sampling:
             param_values = [np.random.uniform(self.prior_ranges[p][0], self.prior_ranges[p][1]) for p in parameter_names]
@@ -444,35 +534,14 @@ class AfterglowpyTrainer(SurrogateTrainer):
                 param_dict["nu"] = self.nus[filt]
                 
                 # Create and save output
-                mJys = self.call_afterglowpy(param_dict)
+                mJys = self._call_afterglowpy(param_dict)
                 y_raw[filt][i] = conversions.mJys_to_mag_np(mJys)
                 
         self.X_raw = X_raw
         self.y_raw = y_raw
         
-    def preprocess(self):
         
-        print("Preprocessing data . . .")
-        # Preprocessing: apply minmax-scaling
-        self.X_scaler = MinMaxScalerJax()
-        self.X = self.X_scaler.fit_transform(self.X_raw)
-        
-        self.y_scalers: dict[str, MinMaxScalerJax] = {}
-        self.y = {}
-        for filt in self.filters:
-            y_scaler = MinMaxScalerJax()
-            self.y[filt] = y_scaler.fit_transform(self.y_raw[filt])
-            self.y_scalers[filt] = y_scaler
-            
-        # Save the metadata
-        self.preprocessing_metadata["X_scaler_min"] = self.X_scaler.min_val 
-        self.preprocessing_metadata["X_scaler_max"] = self.X_scaler.max_val
-        self.preprocessing_metadata["y_scaler_min"] = {filt: self.y_scalers[filt].min_val for filt in self.filters}
-        self.preprocessing_metadata["y_scaler_max"] = {filt: self.y_scalers[filt].max_val for filt in self.filters}
-        print("Preprocessing data . . . done")
-        
-        
-    def call_afterglowpy(self,
+    def _call_afterglowpy(self,
                          params_dict: dict[str, Float]) -> Float[Array, "n_times"]:
         """
         Call afterglowpy to generate a single flux density output, for a given set of parameters. Note that the parameters_dict should contain all the parameters that the model requires, as well as the nu value.
@@ -481,16 +550,6 @@ class AfterglowpyTrainer(SurrogateTrainer):
         Args:
             Float[Array, "n_times"]: The flux density in mJys at the given times.
         """
-        
-        # TODO: move to lightcurvemodel?
-        # # Create the time grid
-        # t = np.empty((self.n_times, self.N_nu))
-        # t[:, :] = np.logspace(np.log10(self.tmin), np.log10(self.tmax), num=self.n_times)[:, None]
-        
-        # # Create the nu grid
-        # nu = np.empty((self.n_times, self.N_nu))
-        # for idx in range(self.N_nu):
-        #     nu[:, idx] = self.nus[self.filters[idx]]
         
         # Preprocess the params_dict into the format that afterglowpy expects, which is usually called Z
         Z = {}
@@ -516,88 +575,6 @@ class AfterglowpyTrainer(SurrogateTrainer):
         if "thetaWing" in list(params_dict.keys()):
             Z["thetaWing"] = params_dict["thetaWing"]
         
-        # Call afterglowpy, get the flux
-        
+        # Afterglowpy returns flux in mJys
         mJys = grb.fluxDensity(self._times_afterglowpy, params_dict["nu"], **Z)
         return mJys
-    
-    
-    # TODO: there might be some code duplication here. Check how much is shared between this and Bulla and see if we can easily move it into the abstract class
-    
-    ###############
-    ### FITTING ###
-    ###############
-    
-    def fit(self,
-            config: fiesta_nn.NeuralnetConfig = None,
-            key: jax.random.PRNGKey = jax.random.PRNGKey(0),
-            verbose: bool = True):
-        """
-        The config controls which architecture is built and therefore should not be specified here.
-        
-        Args:
-            config (nn.NeuralnetConfig, optional): _description_. Defaults to None.
-        """
-        
-        # Get default choices if no config is given
-        if config is None:
-            config = fiesta_nn.NeuralnetConfig()
-        self.config = config
-        
-        print("config")
-        print(config)
-            
-        trained_states = {filt: None for filt in self.filters}
-        for filt in self.filters:
-            # Fetch the output data of this filter, and perform train-validation split on it
-            y = self.y[filt]
-            
-            # Finally, convert to jnp.arrays
-            X = jnp.array(self.X)
-            y = jnp.array(y)
-            
-            train_X, val_X, train_y, val_y = train_test_split(X, y, test_size=self.validation_fraction)
-            
-            input_ndim = len(self.parameter_names)
-
-            # Create neural network and initialize the state
-            net = fiesta_nn.MLP(layer_sizes=config.layer_sizes)
-            key, subkey = jax.random.split(key)
-            state = fiesta_nn.create_train_state(net, jnp.ones(input_ndim), subkey, config)
-            
-            # Perform training loop
-            state, train_losses, val_losses = fiesta_nn.train_loop(state, config, train_X, train_y, val_X, val_y, verbose=verbose)
-
-            # Plot and save the plot if so desired
-            if self.plots_dir is not None:
-                plt.figure(figsize=(10, 5))
-                ls = "-o"
-                ms = 3
-                plt.plot([i+1 for i in range(len(train_losses))], train_losses, ls, markersize=ms, label="Train", color="red")
-                plt.plot([i+1 for i in range(len(val_losses))], val_losses, ls, markersize=ms, label="Validation", color="blue")
-                plt.legend()
-                plt.xlabel("Epoch")
-                plt.ylabel("MSE loss")
-                plt.yscale('log')
-                plt.title("Learning curves")
-                plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{filt}.png"))
-                plt.close()
-
-            trained_states[filt] = state
-            
-        self.trained_states = trained_states
-        
-    def save(self):
-        """
-        Save the trained model and all the used metadata to the outdir.
-        """
-        
-        if not os.path.exists(self.outdir):
-            os.makedirs(self.outdir)
-            
-        for filt in self.filters:
-            model = self.trained_states[filt]
-            fiesta_nn.save_model(model, self.config, out_name=self.outdir + f"{filt}.pkl")
-            
-        # TODO: improve saving of the scalers: saving the objects is not the best way to do it and breaks pickle
-        joblib.dump(self.preprocessing_metadata, self.outdir + f"{self.name}.joblib")
