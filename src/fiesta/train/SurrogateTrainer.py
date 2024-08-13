@@ -42,12 +42,20 @@ class SurrogateTrainer:
     def __init__(self, 
                  name: str,
                  outdir: str,
-                 validation_fraction: Float = 0.2) -> None:
+                 validation_fraction: Float = 0.2,
+                 save_raw_data: bool = False,
+                 save_preprocessed_data: bool = False) -> None:
+        
         self.name = name
         self.outdir = outdir
         # Check if directories exists, otherwise, create:
         if not os.path.exists(self.outdir):
             os.makedirs(self.outdir)
+        
+        self.save_raw_data = save_raw_data
+        self.save_preprocessed_data = save_preprocessed_data
+        
+        # To be loaded by child classes
         self.filters = None
         self.parameter_names = None
         
@@ -153,6 +161,16 @@ class SurrogateTrainer:
             
         # TODO: improve saving of the scalers: saving the objects is not the best way to do it and breaks pickle
         joblib.dump(self.preprocessing_metadata, self.outdir + f"{self.name}.joblib")
+        
+    def _save_raw_data(self):
+        print("Saving raw data . . .")
+        np.savez(os.path.join(self.outdir, "raw_data.npz"), X_raw=self.X_raw, **self.y_raw)
+        print("Saving raw data . . . done")
+        
+    def _save_preprocessed_data(self):
+        print("Saving preprocessed data . . .")
+        np.savez(os.path.join(self.outdir, "preprocessed_data.npz"), X=self.X, **self.y)
+        print("Saving preprocessed data . . . done")
     
 class SVDSurrogateTrainer(SurrogateTrainer):
     
@@ -219,6 +237,11 @@ class SVDSurrogateTrainer(SurrogateTrainer):
         self.initialize_metadata()
         self.load_raw_data()
         self.preprocess()
+        
+        if save_preprocessed_data:
+            self._save_preprocessed_data()
+        if save_raw_data:
+            self._save_raw_data()
     
     # TODO: more elegant way to do this?    
     def initialize_metadata(self):

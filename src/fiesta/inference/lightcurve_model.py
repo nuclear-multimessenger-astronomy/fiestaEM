@@ -34,7 +34,10 @@ class LightcurveModel:
         self.filters = []
         self.parameter_names = []
         self.times = jnp.array([])
-        
+    
+    def add_name(self, x: Array):
+        return dict(zip(self.parameter_names, x))    
+    
     def project_input(self, x: Array) -> dict[str, Array]:
         """
         Project the given input to whatever preprocessed input space we are in. 
@@ -74,7 +77,7 @@ class LightcurveModel:
         """
         return y
     
-    # @partial(jax.jit, static_argnums=(0,))
+    @partial(jax.jit, static_argnums=(0,))
     def predict(self, x: dict[str, Array]) -> dict[str, Array]:
         """
         Generate the lightcurve y from the unnormalized and untransformed input x.
