@@ -74,7 +74,7 @@ class LightcurveModel:
         """
         return y
     
-    @partial(jax.jit, static_argnums=(0,))
+    # @partial(jax.jit, static_argnums=(0,))
     def predict(self, x: dict[str, Array]) -> dict[str, Array]:
         """
         Generate the lightcurve y from the unnormalized and untransformed input x.
@@ -275,7 +275,3 @@ class AfterglowpyLightcurvemodel(SurrogateLightcurveModel):
         
     def load_parameter_names(self) -> None:
         self.parameter_names = self.metadata["parameter_names"]
-        
-    def project_output(self, y: dict[str, Array]) -> dict[str, Array]:
-        output = super().project_output(y)
-        return {filt: mJys_to_mag_jnp(output[filt]) for filt in self.filters}

@@ -1,6 +1,7 @@
 """Method to train the surrogate models"""
 
 import os
+import copy
 import numpy as np
 import itertools
 import pandas as pd
@@ -317,7 +318,6 @@ class BullaSurrogateTrainer(SurrogateTrainer):
         
 # TODO: perhaps rename to *_1D, since it is only for 1D light curves, and we might want to get support for 2D by incorporating the frequencies... Unsure about the approach here
 
-# TODO: add support for providing filters, and take the nu range from there?
 class AfterglowpyTrainer(SurrogateTrainer):
     
     times: Float[Array, "n_times"]
@@ -416,53 +416,43 @@ class AfterglowpyTrainer(SurrogateTrainer):
         
         if save_data and not load_data:
             np.savez(os.path.join(self.outdir, "data.npz"), X_raw=self.X_raw, times=self.times, nus=self.nus, **self.y_raw)
-            
         
         
     def create_training_data(self):
         """
         Create a grid of training data with specified settings and generate the output files for them. 
         """
-
-        # Generate a grid of parameters by random sampling, will be saved later on
-        X_raw = np.empty((self.n_training_data, len(self.parameter_names)))
-        parameter_names = list(self.prior_ranges.keys())
-
-        # TODO: for now we train per filter, but best to change this!
-        # Create the output dataset
-        print("Creating the output dataset . . .")
-        y_raw = {}
         
-        for filt in self.filters:
-            output = np.empty((self.n_training_data, len(self.times)))
-            counter = 0
-            nu = self.nus[filt]
-            for i in tqdm.tqdm(range(self.n_training_data)):
-                # Generate values by random sampling:
-                param_values = [np.random.uniform(self.prior_ranges[p][0], self.prior_ranges[p][1]) for p in parameter_names]
+        # TODO: for now we train per filter, but best to change this!
+
+        # Initialize the output values
+        X_raw = np.empty((self.n_training_data, len(self.parameter_names)))
+        y_raw = {filt: np.empty((self.n_training_data, len(self.times))) for filt in self.filters}
+
+        parameter_names = list(self.prior_ranges.keys())
+        
+        print("Creating the output dataset . . .")
+        for i in tqdm.tqdm(range(self.n_training_data)):
+            # Generate "intrinsic" parameter values by random sampling:
+            param_values = [np.random.uniform(self.prior_ranges[p][0], self.prior_ranges[p][1]) for p in parameter_names]
+            X_raw[i] = param_values
+            
+            # Add nu per filter before calling afterglowpy
+            for filt in self.filters:
                 param_dict = dict(zip(parameter_names, param_values))
-                
-                # Update with parameters that afterglowpy needs and frequency for this filter
                 param_dict.update(self.fixed_parameters)
-                param_dict["nu"] = nu
+                param_dict["nu"] = self.nus[filt]
                 
                 # Create and save output
                 mJys = self.call_afterglowpy(param_dict)
+                y_raw[filt][i] = conversions.mJys_to_mag_np(mJys)
                 
-                # TODO: DEBUG: there might be an issue with the returned results...
-                if np.isnan(mJys).any() or np.isinf(mJys).any():
-                    print("NANs in the afterglowpy output")
-                
-                output[counter] = mJys
-                counter += 1
-            
-            y_raw[filt] = output
-        
         self.X_raw = X_raw
         self.y_raw = y_raw
         
     def preprocess(self):
-    
+        
+        print("Preprocessing data . . .")
         # Preprocessing: apply minmax-scaling
         self.X_scaler = MinMaxScalerJax()
         self.X = self.X_scaler.fit_transform(self.X_raw)
@@ -479,6 +469,7 @@ class AfterglowpyTrainer(SurrogateTrainer):
         self.preprocessing_metadata["X_scaler_max"] = self.X_scaler.max_val
         self.preprocessing_metadata["y_scaler_min"] = {filt: self.y_scalers[filt].min_val for filt in self.filters}
         self.preprocessing_metadata["y_scaler_max"] = {filt: self.y_scalers[filt].max_val for filt in self.filters}
+        print("Preprocessing data . . . done")
         
         
     def call_afterglowpy(self,
