@@ -251,7 +251,7 @@ class SVDSurrogateTrainer(SurrogateTrainer):
                                        "y_scaler_max": {},
                                        "times": self.times,
                                        "VA": {},
-                                       "nsvd_coeff": self.svd_ncoeff}
+                                       "svd_ncoeff": self.svd_ncoeff}
         
     def load_parameter_names(self):
         raise NotImplementedError
@@ -366,10 +366,10 @@ class BullaSurrogateTrainer(SVDSurrogateTrainer):
         """
         Fetch the time grid from the Bulla .dat files or create from given input
         """
-        _times_grid = utils.get_times_bulla_file(self.lc_files[0])
+        self._times_grid = utils.get_times_bulla_file(self.lc_files[0])
         if self.tmin is None or self.tmax is None or self.dt is None:
             print("No time range given, using grid times")
-            self.times = _times_grid
+            self.times = self._times_grid
             self.tmin = self.times[0]
             self.tmax = self.times[-1]
             self.dt = self.times[1] - self.times[0]
@@ -509,7 +509,7 @@ class AfterglowpyTrainer(SVDSurrogateTrainer):
                                        "y_scaler_max": {},
                                        "times": self.times,
                                        "VA": {},
-                                       "nsvd_coeff": self.svd_ncoeff,
+                                       "svd_ncoeff": self.svd_ncoeff,
                                        "nus": self.nus,
                                        "jet_type": self.jet_type,
                                        "parameter_names": self.parameter_names}

@@ -232,7 +232,7 @@ class SurrogateLightcurveModel(LightcurveModel):
 class SVDSurrogateLightcurveModel(SurrogateLightcurveModel):
     
     VA: dict[str, Array]
-    nsvd_coeff: int
+    svd_ncoeff: int
     
     def __init__(self, 
                  name: str, 
@@ -246,7 +246,7 @@ class SVDSurrogateLightcurveModel(SurrogateLightcurveModel):
         super().__init__(name=name, directory=directory, filters=filters, times=times)
         
         self.VA = self.metadata["VA"]
-        self.nsvd_coeff = self.metadata["nsvd_coeff"]
+        self.svd_ncoeff = self.metadata["svd_ncoeff"]
         
     def load_parameter_names(self) -> None:
         raise NotImplementedError
@@ -261,7 +261,7 @@ class SVDSurrogateLightcurveModel(SurrogateLightcurveModel):
         Returns:
             dict[str, Array]: _description_
         """
-        output = {filter: inverse_svd_transform(y[filter], self.VA[filter], self.nsvd_coeff) for filter in self.filters}
+        output = {filter: inverse_svd_transform(y[filter], self.VA[filter], self.svd_ncoeff) for filter in self.filters}
         return super().project_output(output)
        
 class BullaLightcurveModel(SVDSurrogateLightcurveModel):

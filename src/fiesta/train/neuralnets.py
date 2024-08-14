@@ -19,25 +19,33 @@ import pickle
 class NeuralnetConfig(ConfigDict):
     """Configuration for a neural network model. For type hinting"""
     name: str
-    output_size: int
+    output_size: Int
     layer_sizes: list[int]
     learning_rate: Float
     batch_size: Int
     nb_epochs: Int
     nb_report: Int
     
-    def __init__(self, **kwargs):
+    def __init__(self,
+                 name: str = "MLP",
+                 output_size: Int = 10,
+                 hidden_layer_sizes: list[int] = [64, 128, 64],
+                 learning_rate: Float = 1e-3,
+                 batch_size: int = 128,
+                 nb_epochs: Int = 1_000,
+                 nb_report: Int = None):
+        
         super().__init__()
-        self.name = kwargs.get("name", "MLP")
-        self.output_size = kwargs.get("output_size", 10)
-        layer_sizes = kwargs.get("layer_sizes", [64, 128, 64])
-        layer_sizes.append(self.output_size)
-        self.layer_sizes = layer_sizes
-        self.learning_rate = kwargs.get("learning_rate", 1e-3)
-        self.batch_size = kwargs.get("batch_size", 128)
-        self.nb_epochs = kwargs.get("nb_epochs", 1_000)
-        default_nb_report = self.nb_epochs // 10
-        self.nb_report = kwargs.get("nb_report", default_nb_report)
+        self.name = name
+        self.output_size = output_size
+        hidden_layer_sizes.append(self.output_size)
+        self.layer_sizes = hidden_layer_sizes
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size
+        self.nb_epochs = nb_epochs
+        if nb_report is None:
+            nb_report = self.nb_epochs // 10
+        self.nb_report = nb_report
     
 #####################
 ### ARCHITECTURES ###
