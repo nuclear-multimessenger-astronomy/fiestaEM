@@ -237,13 +237,13 @@ class SVDSurrogateLightcurveModel(SurrogateLightcurveModel):
     def __init__(self, 
                  name: str, 
                  directory: str,
-                 times: Array = None,
-                 filters: list[str] = None):
+                 filters: list[str] = None,
+                 times: Array = None):
         """
         Initialize a class to generate lightcurves from a Bulla trained model.
         
         """
-        super().__init__(name=name, directory=directory, filters=filters, times=times)
+        super().__init__(name=name, directory=directory, times=times, filters=filters)
         
         self.VA = self.metadata["VA"]
         self.svd_ncoeff = self.metadata["svd_ncoeff"]
@@ -269,10 +269,10 @@ class BullaLightcurveModel(SVDSurrogateLightcurveModel):
     def __init__(self, 
                  name: str, 
                  directory: str,
-                 times: Array = None,
-                 filters: list[str] = None):
+                 filters: list[str] = None,
+                 times: Array = None):
         
-        super().__init__(name=name, directory=directory, times=times, filters=filters) 
+        super().__init__(name=name, directory=directory, filters=filters, times=times)
         
     def load_parameter_names(self) -> None:
         self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[self.name]
