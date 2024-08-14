@@ -5,7 +5,7 @@
 import os
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array
+from jaxtyping import Array, Float
 from functools import partial
 from beartype import beartype as typechecker
 from flax.training.train_state import TrainState
@@ -13,11 +13,15 @@ import joblib
 
 import fiesta.train.neuralnets as fiesta_nn
 from fiesta.utils import MinMaxScalerJax, inverse_svd_transform
+import fiesta.conversions as conversions
 from fiesta import models_utilities
 
+########################
+### ABSTRACT CLASSES ###
+########################
 
 class LightcurveModel:
-    """Abstract class"""
+    """Abstract class for general light curve models"""
     
     name: str 
     filters: list[str]
@@ -30,8 +34,11 @@ class LightcurveModel:
         self.filters = []
         self.parameter_names = []
         self.times = jnp.array([])
-        
-    def project_input(self, x: dict[str, Array]) -> dict[str, Array]:
+    
+    def add_name(self, x: Array):
+        return dict(zip(self.parameter_names, x))    
+    
+    def project_input(self, x: Array) -> dict[str, Array]:
         """
         Project the given input to whatever preprocessed input space we are in. 
         By default (i.e., in this base class), the projection is the identity function.
@@ -84,7 +91,10 @@ class LightcurveModel:
         Returns:
             Array: Output dict[str, Array], i.e., the desired raw light curve per filter
         """
-        x_tilde = self.project_input(jnp.array([x[name] for name in self.parameter_names]))
+        
+        # Use saved parameter names to extract the parameters in the correct order into an array
+        x_array = jnp.array([x[name] for name in self.parameter_names])
+        x_tilde = self.project_input(x_array)
         y_tilde = self.compute_output(x_tilde)
         y = self.project_output(y_tilde)
         return y
@@ -92,31 +102,49 @@ class LightcurveModel:
     def __repr__(self) -> str:
         return self.name
     
-class BullaLightcurveModel(LightcurveModel):
+class SurrogateLightcurveModel(LightcurveModel):
+    """Abstract class for models that rely on a surrogate, in the form of a neural network."""
     
     directory: str
+    metadata: dict
     X_scaler: MinMaxScalerJax
     y_scaler: dict[str, MinMaxScalerJax]
-    VA: dict[str, Array]
     models: dict[str, TrainState]
     times: Array
+    tmin: Float
+    tmax: Float
+    parameter_names: list[str]
     
-    def __init__(self, 
-                 name: str, 
+    def __init__(self,
+                 name: str,
                  directory: str,
-                 times: Array = None,
-                 filters: list[str] = None):
-        """
-        Initialize a class to generate lightcurves from a Bulla trained model.
+                 filters: list[str] = None,
+                 times: Array = None) -> None:
+        """_summary_
 
         Args:
             name (str): Name of the model
             directory (str): Directory with trained model states and projection metadata such as scalers.
             filters (list[str]): List of all the filters for which the model should be loaded.
         """
-        super().__init__(name=name)
+        super().__init__(name)
         self.directory = directory
+        self.models = {}
         
+        # Load the metadata for projections etc
+        self.load_filters(filters)
+        self.load_metadata()
+        self.load_scalers()
+        self.load_times(times)
+        self.load_parameter_names()
+        self.load_networks()
+        
+    def load_metadata(self) -> None:
+        self.metadata_filename = os.path.join(self.directory, f"{self.name}.joblib")
+        assert os.path.exists(self.metadata_filename), f"Metadata file {self.metadata_filename} not found - check the directory {self.directory}"
+        self.metadata = joblib.load(self.metadata_filename)
+        
+    def load_filters(self, filters: list[str] = None) -> None:
         # Save those filters that were given and that were trained and store here already
         pkl_files = [file for file in os.listdir(self.directory) if file.endswith(".pkl") or file.endswith(".pickle")]
         all_available_filters = [file.split(".")[0] for file in pkl_files]
@@ -131,46 +159,38 @@ class BullaLightcurveModel(LightcurveModel):
         
         if len(filters) == 0:
             raise ValueError(f"No filters found in {self.directory} that match the given filters {filters}")
-        print(f"Loaded BullaLightcurveModel with filters {filters}")
         self.filters = filters
+        print(f"Loaded SurrogateLightcurveModel with filters {filters}")
         
-        # TODO: this is a bit cumbersome... Is there a better way to do it?
-        
-        # Load the metadata for projections etc
-        metadata = joblib.load(os.path.join(self.directory, f"{self.name}.joblib"))
-        
-        # TODO: check for time range and trained model time range
-        if times is not None:
-            times = jnp.array(metadata["times"])
-            
-        self.times = times
-        
-        min_val, max_val = metadata["X_scaler_min"], metadata["X_scaler_max"]
+    def load_scalers(self):
+        min_val, max_val = self.metadata["X_scaler_min"], self.metadata["X_scaler_max"]
         self.X_scaler = MinMaxScalerJax(min_val=min_val, max_val=max_val)
         
-        min_val, max_val = metadata["y_scaler_min"], metadata["y_scaler_max"]
+        min_val, max_val = self.metadata["y_scaler_min"], self.metadata["y_scaler_max"]
         self.y_scaler = {}
         for filt in self.filters:
             self.y_scaler[filt] = MinMaxScalerJax(min_val=min_val[filt], max_val=max_val[filt])
+            
+    def load_times(self, times: Array = None) -> None:
+        # TODO: check for time range and trained model time range
+        if times is None:
+            times = jnp.array(self.metadata["times"])
+        self.times = times
+        self.tmin = jnp.min(times)
+        self.tmax = jnp.max(times)
         
-        # TODO: do we have to explicitly convert to jnp.arrays?
-        self.VA = metadata["VA"]
-        self.nsvd_coeff = metadata["nsvd_coeff"]
-        
-        # Load the trained model states
+    def load_networks(self) -> None:
         self.models = {}
-        for filter in filters:
+        for filter in self.filters:
             filename = os.path.join(self.directory, f"{filter}.pkl")
             state, _ = fiesta_nn.load_model(filename)
             self.models[filter] = state
-            
-        # Also save the parameter names and times
-        self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[name]
-        self.times = jnp.array(metadata["times"])
-        self.tmin = self.times[0]
-        self.tmax = self.times[-1]
-            
-    def project_input(self, x: Array) -> Array:
+        
+    def load_parameter_names(self) -> None:
+        """Implement in child classes"""
+        raise NotImplementedError
+    
+    def project_input(self, x: Array) -> dict[str, Array]:
         """
         Project the given input to whatever preprocessed input space we are in.
 
@@ -182,21 +202,55 @@ class BullaLightcurveModel(LightcurveModel):
         """
         x_tilde = {filter: self.X_scaler.transform(x) for filter in self.filters}
         return x_tilde
-            
+    
     def compute_output(self, x: dict[str, Array]) -> dict[str, Array]:
         """
         Apply the trained flax neural network on the given input x.
 
         Args:
-            x (dict[str, Array]): Input array of parameters
+            x (dict[str, Array]): Input array of parameters per filter
 
         Returns:
             dict[str, Array]: _description_
         """
-        
         # TODO: too convoluted, simplify
         return {filter: self.models[filter].apply_fn({'params': self.models[filter].params}, x[filter]) for filter in self.filters}
+        
+    def project_output(self, y: dict[str, Array]) -> dict[str, Array]:
+        """
+        Project the computed output to whatever preprocessed output space we are in.
 
+        Args:
+            y (dict[str, Array]): Output array
+
+        Returns:
+            dict[str, Array]: Output array transformed to the preprocessed space.
+        """
+        return {filter: self.y_scaler[filter].inverse_transform(y[filter]) for filter in self.filters}
+        
+    
+class SVDSurrogateLightcurveModel(SurrogateLightcurveModel):
+    
+    VA: dict[str, Array]
+    svd_ncoeff: int
+    
+    def __init__(self, 
+                 name: str, 
+                 directory: str,
+                 filters: list[str] = None,
+                 times: Array = None):
+        """
+        Initialize a class to generate lightcurves from a Bulla trained model.
+        
+        """
+        super().__init__(name=name, directory=directory, times=times, filters=filters)
+        
+        self.VA = self.metadata["VA"]
+        self.svd_ncoeff = self.metadata["svd_ncoeff"]
+        
+    def load_parameter_names(self) -> None:
+        raise NotImplementedError
+            
     def project_output(self, y: dict[str, Array]) -> dict[str, Array]:
         """
         Apply the trained flax neural network on the given input x.
@@ -207,8 +261,30 @@ class BullaLightcurveModel(LightcurveModel):
         Returns:
             dict[str, Array]: _description_
         """
+        output = {filter: inverse_svd_transform(y[filter], self.VA[filter], self.svd_ncoeff) for filter in self.filters}
+        return super().project_output(output)
+       
+class BullaLightcurveModel(SVDSurrogateLightcurveModel):
+    
+    def __init__(self, 
+                 name: str, 
+                 directory: str,
+                 filters: list[str] = None,
+                 times: Array = None):
         
-        output = {filter: inverse_svd_transform(y[filter], self.VA[filter], self.nsvd_coeff) for filter in self.filters}
-        output = {filter: self.y_scaler[filter].inverse_transform(output[filter]) for filter in self.filters}
-
-        return output
+        super().__init__(name=name, directory=directory, filters=filters, times=times)
+        
+    def load_parameter_names(self) -> None:
+        self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[self.name]
+    
+class AfterglowpyLightcurvemodel(SVDSurrogateLightcurveModel):
+    
+    def __init__(self,
+                 name: str,
+                 directory: str,
+                 filters: list[str] = None,
+                 times: Array = None):
+        super().__init__(name=name, directory=directory, filters=filters, times=times)
+        
+    def load_parameter_names(self) -> None:
+        self.parameter_names = self.metadata["parameter_names"]

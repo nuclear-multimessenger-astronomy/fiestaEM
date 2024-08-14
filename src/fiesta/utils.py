@@ -9,6 +9,11 @@ import copy
 import re
 from sncosmo.bandpasses import _BANDPASSES
 from astropy.time import Time
+from fiesta.constants import pc_to_cm
+import astropy
+import scipy
+from sncosmo.bandpasses import _BANDPASSES, _BANDPASS_INTERPOLATORS
+import sncosmo
 
 class MinMaxScalerJax(object):
     """
@@ -46,6 +51,7 @@ def inverse_svd_transform(x: Array,
     return jnp.dot(VA[:, :nsvd_coeff], x)
 
 # @jax.jit
+# TODO: change place!
 def mag_app_from_mag_abs(mag_abs: Array,
                          luminosity_distance: Float) -> Array:
     return mag_abs + 5.0 * jnp.log10(luminosity_distance * 1e6 / 10.0)
@@ -227,3 +233,125 @@ def load_event_data(filename):
 
     return data
 
+def get_all_bandpass_metadata():
+    # TODO: taken over from NMMA, improve
+    """
+    Retrieves and combines the metadata for all registered bandpasses and interpolators.
+
+    Returns:
+        list: Combined list of metadata dictionaries from bandpasses and interpolators for sncosmo.
+    """
+
+    bandpass_metadata = _BANDPASSES.get_loaders_metadata()
+    interpolator_metadata = _BANDPASS_INTERPOLATORS.get_loaders_metadata()
+
+    combined_metadata = bandpass_metadata + interpolator_metadata
+
+    return combined_metadata
+
+def get_default_filts_lambdas(filters: list[str]=None):
+
+    filts = [
+        "u",
+        "g",
+        "r",
+        "i",
+        "z",
+        "y",
+        "J",
+        "H",
+        "K",
+        "U",
+        "B",
+        "V",
+        "R",
+        "I",
+        "radio-1.25GHz",
+        "radio-3GHz",
+        "radio-5.5GHz",
+        "radio-6GHz",
+        "X-ray-1keV",
+        "X-ray-5keV",
+    ]
+    lambdas_sloan = 1e-10 * np.array(
+        [3561.8, 4866.46, 6214.6, 7687.0, 7127.0, 7544.6, 8679.5, 9633.3, 12350.0]
+    )
+    lambdas_bessel = 1e-10 * np.array([3605.07, 4413.08, 5512.12, 6585.91, 8059.88])
+    lambdas_radio = scipy.constants.c / np.array([1.25e9, 3e9, 5.5e9, 6e9])
+    lambdas_Xray = scipy.constants.c / (
+        np.array([1e3, 5e3]) * scipy.constants.eV / scipy.constants.h
+    )
+
+    lambdas = np.concatenate(
+        [lambdas_sloan, lambdas_bessel, lambdas_radio, lambdas_Xray]
+    )
+
+    bandpasses = []
+    for val in get_all_bandpass_metadata():
+        if val["name"] in [
+            "ultrasat",
+            "megacampsf::u",
+            "megacampsf::g",
+            "megacampsf::r",
+            "megacampsf::i",
+            "megacampsf::z",
+            "megacampsf::y",
+        ]:
+            bandpass = sncosmo.get_bandpass(val["name"], 3)
+            bandpass.name = bandpass.name.split()[0]
+        else:
+            bandpass = sncosmo.get_bandpass(val["name"])
+
+        bandpasses.append(bandpass)
+
+    filts = filts + [band.name for band in bandpasses]
+    lambdas = np.concatenate([lambdas, [1e-10 * band.wave_eff for band in bandpasses]])
+
+    if filters is not None:
+        filts_slice = []
+        lambdas_slice = []
+
+        for filt in filters:
+            if filt.startswith("radio") and filt not in filts:
+                # for additional radio filters that not in the list
+                # calculate the lambdas based on the filter name
+                # split the filter name
+                freq_string = filt.replace("radio-", "")
+                freq_unit = freq_string[-3:]
+                freq_val = float(freq_string.replace(freq_unit, ""))
+                # make use of the astropy.units to be more flexible
+                freq = astropy.units.Quantity(freq_val, unit=freq_unit)
+                freq = freq.to("Hz").value
+                # adding to the list
+                filts_slice.append(filt)
+                lambdas_slice.append(scipy.constants.c / freq)
+            elif filt.startswith("X-ray-") and filt not in filts:
+                # for additional X-ray filters that not in the list
+                # calculate the lambdas based on the filter name
+                # split the filter name
+                energy_string = filt.replace("X-ray-", "")
+                energy_unit = energy_string[-3:]
+                energy_val = float(energy_string.replace(energy_unit, ""))
+                # make use of the astropy.units to be more flexible
+                energy = astropy.units.Quantity(energy_val, unit=energy_unit)
+                freq = energy.to("eV").value * scipy.constants.eV / scipy.constants.h
+                # adding to the list
+                filts_slice.append(filt)
+                lambdas_slice.append(scipy.constants.c / freq)
+            else:
+                try:
+                    ii = filts.index(filt)
+                    filts_slice.append(filts[ii])
+                    lambdas_slice.append(lambdas[ii])
+                except ValueError:
+                    ii = filts.index(filt.replace("_", ":"))
+                    filts_slice.append(filts[ii].replace(":", "_"))
+                    lambdas_slice.append(lambdas[ii])
+
+        filts = filts_slice
+        lambdas = np.array(lambdas_slice)
+
+    return filts, lambdas
+
+def mJys_to_mag():
+    pass
