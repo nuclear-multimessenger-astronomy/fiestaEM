@@ -2,6 +2,9 @@
 
 `fiesta`: **F**ast **I**nference of **E**lectromagnetic **S**ignals and **T**ransients with j**A**x
 
+![fiesta logo](docs/fiesta_logo.jpeg)
+
+## Development
 
 **NOTE:** `fiesta` is currently under development -- stay tuned!
 
