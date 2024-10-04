@@ -9,7 +9,7 @@ from jaxtyping import Array, Float
 from functools import partial
 from beartype import beartype as typechecker
 from flax.training.train_state import TrainState
-import joblib
+import pickle
 
 import fiesta.train.neuralnets as fiesta_nn
 from fiesta.utils import MinMaxScalerJax, inverse_svd_transform
@@ -140,9 +140,11 @@ class SurrogateLightcurveModel(LightcurveModel):
         self.load_networks()
         
     def load_metadata(self) -> None:
-        self.metadata_filename = os.path.join(self.directory, f"{self.name}.joblib")
+        self.metadata_filename = os.path.join(self.directory, f"{self.name}_metadata.pkl")
         assert os.path.exists(self.metadata_filename), f"Metadata file {self.metadata_filename} not found - check the directory {self.directory}"
-        self.metadata = joblib.load(self.metadata_filename)
+        meta_file = open(self.metadata_filename, "rb")
+        self.metadata = pickle.load(meta_file)
+        meta_file.close()
         
     def load_filters(self, filters: list[str] = None) -> None:
         # Save those filters that were given and that were trained and store here already
@@ -163,17 +165,16 @@ class SurrogateLightcurveModel(LightcurveModel):
         print(f"Loaded SurrogateLightcurveModel with filters {filters}")
         
     def load_scalers(self):
-        min_val, max_val = self.metadata["X_scaler_min"], self.metadata["X_scaler_max"]
-        self.X_scaler = MinMaxScalerJax(min_val=min_val, max_val=max_val)
-        
-        min_val, max_val = self.metadata["y_scaler_min"], self.metadata["y_scaler_max"]
-        self.y_scaler = {}
-        for filt in self.filters:
-            self.y_scaler[filt] = MinMaxScalerJax(min_val=min_val[filt], max_val=max_val[filt])
+        self.X_scaler, self.y_scaler = {}, {}
+        for filt in self.filters: 
+            self.X_scaler[filt] = MinMaxScalerJax(min_val=self.metadata[filt]["X_scaler_min"], max_val=self.metadata[filt]["X_scaler_max"])
+            self.y_scaler[filt] = self.metadata[filt]["y_scaler"]
+
             
     def load_times(self, times: Array = None) -> None:
-        # TODO: check for time range and trained model time range
         if times is None:
+            times = jnp.array(self.metadata["times"])
+        if times.min()<self.metadata["times"].min() or times.max()>self.metadata["times"].max():
             times = jnp.array(self.metadata["times"])
         self.times = times
         self.tmin = jnp.min(times)
@@ -200,7 +201,7 @@ class SurrogateLightcurveModel(LightcurveModel):
         Returns:
             dict[str, Array]: Transformed input array
         """
-        x_tilde = {filter: self.X_scaler.transform(x) for filter in self.filters}
+        x_tilde = {filter: self.X_scaler[filter].transform(x) for filter in self.filters}
         return x_tilde
     
     def compute_output(self, x: dict[str, Array]) -> dict[str, Array]:
@@ -245,8 +246,8 @@ class SVDSurrogateLightcurveModel(SurrogateLightcurveModel):
         """
         super().__init__(name=name, directory=directory, times=times, filters=filters)
         
-        self.VA = self.metadata["VA"]
-        self.svd_ncoeff = self.metadata["svd_ncoeff"]
+        self.VA = {filt: self.metadata[filt]["VA"] for filt in filters}
+        self.svd_ncoeff = {filt: self.metadata[filt]["svd_ncoeff"] for filt in filters}
         
     def load_parameter_names(self) -> None:
         raise NotImplementedError
@@ -261,7 +262,7 @@ class SVDSurrogateLightcurveModel(SurrogateLightcurveModel):
         Returns:
             dict[str, Array]: _description_
         """
-        output = {filter: inverse_svd_transform(y[filter], self.VA[filter], self.svd_ncoeff) for filter in self.filters}
+        output = {filter: inverse_svd_transform(y[filter], self.VA[filter], self.svd_ncoeff[filter]) for filter in self.filters}
         return super().project_output(output)
        
 class BullaLightcurveModel(SVDSurrogateLightcurveModel):
