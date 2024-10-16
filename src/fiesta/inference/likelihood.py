@@ -114,6 +114,7 @@ class EMLikelihood:
         # Sanity check:
         detection_present = any([len(self.times_det[filt]) > 0 for filt in self.filters])
         assert detection_present, "No detections found in the data. Please check your data."
+        print("Loading and preprocessing observations in likelihood . . . DONE")
         
     def __call__(self, theta):
         return self.evaluate(theta)
