@@ -7,7 +7,6 @@ import pandas as pd
 import scipy.interpolate as interp
 import copy
 import re
-from sncosmo.bandpasses import _BANDPASSES
 from astropy.time import Time
 from fiesta.constants import pc_to_cm
 import astropy
@@ -233,6 +232,41 @@ def load_event_data(filename):
 
     return data
 
+#########################
+### Filters           ###
+#########################
+
+
+class Filter:
+
+    def __init__(self,
+                 name: str,):
+        self.name = name
+        if (self.name, None) in _BANDPASSES._primary_loaders:
+            bandpass = sncosmo.get_bandpass(self.name)
+            self.nu = scipy.constants.c/(bandpass.wave_eff*1e-10)
+        elif (self.name, None) in _BANDPASS_INTERPOLATORS._primary_loaders:
+            bandpass = sncosmo.get_bandpass(val["name"], 3)
+            self.nu = scipy.constants.c/(bandpass.wave_eff*1e-10)
+        elif self.name.endswith("GHz"):
+            freq = re.findall(r"[-+]?(?:\d*\.*\d+)", self.name.replace("-",""))
+            freq = float(freq[-1])
+            self.nu = freq*1e9
+        elif self.name.endswith("keV"):
+            energy = re.findall(r"[-+]?(?:\d*\.*\d+)", self.name.replace("-",""))
+            energy = float(energy[-1])
+            self.nu = energy*1000*scipy.constants.eV / scipy.constants.h
+        else:
+            raise Excepetion(f"Filter {self.name} not available.")
+            
+        self.wavelength = scipy.constants.c/self.nu
+
+    
+        
+
+
+
+
 def get_all_bandpass_metadata():
     # TODO: taken over from NMMA, improve
     """
@@ -310,6 +344,7 @@ def get_default_filts_lambdas(filters: list[str]=None):
     if filters is not None:
         filts_slice = []
         lambdas_slice = []
+        transmittance_slice = []
 
         for filt in filters:
             if filt.startswith("radio") and filt not in filts:
@@ -324,7 +359,9 @@ def get_default_filts_lambdas(filters: list[str]=None):
                 freq = freq.to("Hz").value
                 # adding to the list
                 filts_slice.append(filt)
-                lambdas_slice.append(scipy.constants.c / freq)
+                lambdas_slice.append([scipy.constants.c / freq])
+                transmittance_slice.append([1])
+
             elif filt.startswith("X-ray-") and filt not in filts:
                 # for additional X-ray filters that not in the list
                 # calculate the lambdas based on the filter name
@@ -337,12 +374,14 @@ def get_default_filts_lambdas(filters: list[str]=None):
                 freq = energy.to("eV").value * scipy.constants.eV / scipy.constants.h
                 # adding to the list
                 filts_slice.append(filt)
-                lambdas_slice.append(scipy.constants.c / freq)
+                lambdas_slice.append([scipy.constants.c / freq])
+                transmittance_slice.append([1])
+
             else:
                 try:
                     ii = filts.index(filt)
                     filts_slice.append(filts[ii])
-                    lambdas_slice.append(lambdas[ii])
+                    lambdas_slice.append([lambdas[ii]])
                 except ValueError:
                     ii = filts.index(filt.replace("_", ":"))
                     filts_slice.append(filts[ii].replace(":", "_"))
@@ -351,7 +390,8 @@ def get_default_filts_lambdas(filters: list[str]=None):
         filts = filts_slice
         lambdas = np.array(lambdas_slice)
 
-    return filts, lambdas
+    return filts, lambdas, transmittance
+
 
 def mJys_to_mag():
     pass
