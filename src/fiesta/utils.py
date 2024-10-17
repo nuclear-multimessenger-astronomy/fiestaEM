@@ -1,4 +1,3 @@
-import jax
 import jax.numpy as jnp
 from jax.scipy.stats import truncnorm
 from jaxtyping import Array, Float
@@ -8,7 +7,6 @@ import scipy.interpolate as interp
 import copy
 import re
 from astropy.time import Time
-from fiesta.constants import pc_to_cm
 import astropy
 import scipy
 from sncosmo.bandpasses import _BANDPASSES, _BANDPASS_INTERPOLATORS
@@ -48,12 +46,6 @@ def inverse_svd_transform(x: Array,
 
     # TODO: check the shapes etc, transforms and those things
     return jnp.dot(VA[:, :nsvd_coeff], x)
-
-# @jax.jit
-# TODO: change place!
-def mag_app_from_mag_abs(mag_abs: Array,
-                         luminosity_distance: Float) -> Array:
-    return mag_abs + 5.0 * jnp.log10(luminosity_distance * 1e6 / 10.0)
 
 
 #######################
@@ -125,8 +117,6 @@ def read_single_bulla_file(filename: str) -> dict:
     }
     
     return lc_data
-
-
 
 #########################
 ### GENERAL UTILITIES ###
@@ -246,6 +236,7 @@ class Filter:
             bandpass = sncosmo.get_bandpass(self.name)
             self.nu = scipy.constants.c/(bandpass.wave_eff*1e-10)
         elif (self.name, None) in _BANDPASS_INTERPOLATORS._primary_loaders:
+            # FIXME: val undefined
             bandpass = sncosmo.get_bandpass(val["name"], 3)
             self.nu = scipy.constants.c/(bandpass.wave_eff*1e-10)
         elif self.name.endswith("GHz"):
@@ -386,6 +377,7 @@ def get_default_filts_lambdas(filters: list[str]=None):
         filts = filts_slice
         lambdas = np.array(lambdas_slice)
 
+    # FIXME: transmittance undefined
     return filts, lambdas, transmittance
 
 

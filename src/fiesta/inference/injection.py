@@ -9,7 +9,7 @@ import jax.numpy as jnp
 from jaxtyping import Float, Array
 
 from fiesta.inference.lightcurve_model import LightcurveModel
-from fiesta.utils import mag_app_from_mag_abs
+from fiesta.conversions import mag_app_from_mag_abs
 from fiesta.utils import Filter
 from fiesta.constants import days_to_seconds, c
 from fiesta import conversions

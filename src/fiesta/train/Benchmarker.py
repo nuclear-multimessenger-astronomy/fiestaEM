@@ -1,10 +1,11 @@
 from fiesta.inference.lightcurve_model import AfterglowpyLightcurvemodel
 import afterglowpy as grb
-from fiesta.constants import days_to_seconds, c
+from fiesta.constants import days_to_seconds
 from fiesta import conversions
 from fiesta import utils
+from fiesta.utils import Filter
 
-from jaxtyping import Array, Float, Int
+from jaxtyping import Array, Float
 
 import tqdm
 import os
@@ -15,7 +16,16 @@ from matplotlib.cm import ScalarMappable
 
 from scipy.integrate import trapezoid
 
+# TODO: get a benchmarker class for all surrogate model
 class Benchmarker:
+
+    name: str
+    model_dir: str
+    filters: list[Filter]
+    n_test_data: int
+    metric_name: str
+    jet_type: int
+    model: AfterglowpyLightcurvemodel
 
     def __init__(self,
                  name: str,
@@ -52,9 +62,6 @@ class Benchmarker:
             self.metric = lambda y: np.sqrt(trapezoid(x= self.times[mask],y=y[mask]**2))
         else:
             self.metric = lambda y: np.max(np.abs(y[mask]))
-        
-        
-
 
     def __repr__(self) -> str:
         return f"Surrogate_Benchmarker(name={self.name}, model_dir={self.model_dir})"

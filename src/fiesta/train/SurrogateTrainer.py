@@ -51,7 +51,6 @@ class SurrogateTrainer:
     val_X_raw: Float[Array, "n_batch n_params"]
     val_y_raw: dict[str, Float[Array, "n_batch n_times"]]
     
-    
     trained_states: dict[str, fiesta_nn.TrainState]
     
     def __init__(self, 

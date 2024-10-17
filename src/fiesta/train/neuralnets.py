@@ -215,8 +215,7 @@ def serialize(state: TrainState,
     params = flax.serialization.to_state_dict(state)["params"]
     
     serialized_dict = {"params": params,
-                       "config": config,
-                    }
+                       "config": config}
     
     return serialized_dict
 
