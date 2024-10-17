@@ -57,7 +57,7 @@ class Benchmarker:
 
 
     def __repr__(self) -> str:
-        return f"Surrogte_Benchmarker(name={self.name}, model_dir={self.model_dir})"
+        return f"Surrogate_Benchmarker(name={self.name}, model_dir={self.model_dir})"
 
     def load_filters(self, filters: list[str]):
         self.filters = []
