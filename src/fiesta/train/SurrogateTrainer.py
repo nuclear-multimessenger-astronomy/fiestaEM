@@ -8,6 +8,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 from fiesta.utils import MinMaxScalerJax
 from fiesta import utils
+from fiesta.utils import Filter
 from fiesta import conversions
 from fiesta.constants import days_to_seconds, c
 from fiesta import models_utilities
@@ -25,17 +26,31 @@ class SurrogateTrainer:
     
     name: str
     outdir: str
-    filters: list[str]
+    filters: list[Filter]
     parameter_names: list[str]
     
     validation_fraction: Float
     preprocessing_metadata: dict[str, dict[str, float]]
     
+    # TODO: why do we have so many datasets?
+    X: Float[Array, "n_batch n_input_surrogate"]
+    y: dict[str, Float[Array, "n_batch n_output_surrogate"]]
+    
     X_raw: Float[Array, "n_batch n_params"]
     y_raw: dict[str, Float[Array, "n_batch n_times"]]
     
-    X: Float[Array, "n_batch n_input_surrogate"]
-    y: dict[str, Float[Array, "n_batch n_output_surrogate"]]
+    train_X: Float[Array, "n_batch n_params"]
+    train_y: dict[str, Float[Array, "n_batch n_times"]]
+    
+    val_X: Float[Array, "n_batch n_params"]
+    val_y: dict[str, Float[Array, "n_batch n_times"]]
+    
+    train_X_raw: Float[Array, "n_batch n_params"]
+    train_y_raw: dict[str, Float[Array, "n_batch n_times"]]
+    
+    val_X_raw: Float[Array, "n_batch n_params"]
+    val_y_raw: dict[str, Float[Array, "n_batch n_times"]]
+    
     
     trained_states: dict[str, fiesta_nn.TrainState]
     
@@ -58,6 +73,7 @@ class SurrogateTrainer:
         # To be loaded by child classes
         self.filters = None
         self.parameter_names = None
+        self.plots_dir = None
         
         self.validation_fraction = validation_fraction
         self.preprocessing_metadata = {}
@@ -148,6 +164,7 @@ class SurrogateTrainer:
         
         meta_filename = os.path.join(self.outdir, f"{self.name}_metadata.pkl")
 
+        # FIXME: this should not be in this class
         if os.path.exists(meta_filename):
             with open(meta_filename, "rb") as meta_file:
                 save = pickle.load(meta_file)
@@ -388,8 +405,7 @@ class BullaSurrogateTrainer(SVDSurrogateTrainer):
     def load_parameter_names(self):
         self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[self.name]
         
-    def load_filters(self, 
-                     filters: list[str] = None):
+    def load_filters(self, filters: list[str] = None):
         """
         If no filters are given, we will read the filters from the first Bulla lightcurve file and assume all files have the same filters
 
@@ -401,8 +417,10 @@ class BullaSurrogateTrainer(SVDSurrogateTrainer):
         if filters is None:
             filters = utils.get_filters_bulla_file(self.lc_files[0], drop_times=True)
         self.filters = []
+        
+        # Create Filters objects for each filter
         for filter in filters:
-            self.filters.append(utils.Filter(filter))
+            self.filters.append(Filter(filter))
         
     def _read_files(self) -> tuple[dict[str, Float[Array, " n_batch n_params"]], Float[Array, "n_batch n_times"]]:
         """
@@ -549,7 +567,7 @@ class AfterglowpyTrainer(SVDSurrogateTrainer):
         self.filters = []
         for filter in filters:
             try:
-                self.filters.append(utils.Filter(filter))
+                self.filters.append(Filter(filter))
             except:
                 raise Exception(f"Filter {filter} not available.")
 
