@@ -82,7 +82,7 @@ class SurrogateTrainer:
         for filt in self.filters:
             y_scaler = MinMaxScalerJax()
             self.y[filt.name] = y_scaler.fit_transform(self.y_raw[filt.name])
-            self.y_scalers[filt] = y_scaler
+            self.y_scalers[filt.name] = y_scaler
             
         # Save the metadata
         self.preprocessing_metadata["X_scaler_min"] = self.X_scaler.min_val 
@@ -400,7 +400,9 @@ class BullaSurrogateTrainer(SVDSurrogateTrainer):
         self.lc_files = [os.path.join(self.data_dir, f) for f in filenames if f.endswith(".dat")]
         if filters is None:
             filters = utils.get_filters_bulla_file(self.lc_files[0], drop_times=True)
-        self.filters = filters
+        self.filters = []
+        for filter in filters:
+            self.filters.append(utils.Filter(filter))
         
     def _read_files(self) -> tuple[dict[str, Float[Array, " n_batch n_params"]], Float[Array, "n_batch n_times"]]:
         """
@@ -421,11 +423,11 @@ class BullaSurrogateTrainer(SVDSurrogateTrainer):
             lc_data = utils.read_single_bulla_file(filename)
             for filt in self.filters:
                 # TODO: improve this cumbersome thing
-                this_data = lc_data[filt]
+                this_data = lc_data[filt.name]
                 if i == 0:
-                    data[filt] = this_data
+                    data[filt.name] = this_data
                 else:
-                    data[filt] = np.vstack((data[filt], this_data))
+                    data[filt.name] = np.vstack((data[filt.name], this_data))
                     
             # Fetch the parameter values of this file
             params = self.extract_parameters_function(filename)
@@ -441,19 +443,22 @@ class BullaSurrogateTrainer(SVDSurrogateTrainer):
         print("Reading data files and interpolating NaNs . . .")
         X_raw, y = self._read_files()
         y_raw = utils.interpolate_nans(y, self._times_grid, self.times)
-        ###if self.save_raw_data:
-        ###    np.savez(os.path.join(self.outdir, "raw_data.npz"), X_raw=X_raw, times=self.times, times_grid=self._times_grid, **y_raw)
+        if self.save_raw_data:
+            np.savez(os.path.join(self.outdir, "raw_data.npz"), X_raw=X_raw, times=self.times, times_grid=self._times_grid, **y_raw)
         
         # split here into training and validating data
         self.n_val_data = int(self.validation_fraction*len(X_raw))
         self.n_training_data = len(X_raw) - self.n_val_data
         mask = np.zeros(len(X_raw) ,dtype = bool)
-        mask[np.random.choice(len(X_raw), self.n_val, replace = False)] = True
+        mask[np.random.choice(len(X_raw), self.n_val_data, replace = False)] = True
 
         self.train_X_raw, self.val_X_raw = X_raw[~mask], X_raw[mask]
         self.train_y_raw, self.val_y_raw = {}, {}
 
-        for filters in self.filters:
+        print("self.filters")
+        print(self.filters)
+
+        for filt in self.filters:
             self.train_y_raw[filt.name] = y_raw[filt.name][~mask]
             self.val_y_raw[filt.name] = y_raw[filt.name][mask]
 

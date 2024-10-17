@@ -257,14 +257,10 @@ class Filter:
             energy = float(energy[-1])
             self.nu = energy*1000*scipy.constants.eV / scipy.constants.h
         else:
-            raise Excepetion(f"Filter {self.name} not available.")
+            print(f"Warning: Filter {self.name} not recognized")
+            self.nu = jnp.nan
             
         self.wavelength = scipy.constants.c/self.nu
-
-    
-        
-
-
 
 
 def get_all_bandpass_metadata():
