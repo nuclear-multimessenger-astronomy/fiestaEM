@@ -70,13 +70,6 @@ class SurrogateTrainer:
         # To be loaded by child classes
         self.filters = None
         self.parameter_names = None
-<<<<<<< Updated upstream
-        self.plots_dir = None
-        
-        self.validation_fraction = validation_fraction
-=======
-                
->>>>>>> Stashed changes
         self.preprocessing_metadata = {}
         
         self.X_raw = None
