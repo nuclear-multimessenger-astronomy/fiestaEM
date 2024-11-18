@@ -145,6 +145,55 @@ class Uniform(Prior):
             jnp.zeros_like(variable),
         )
         return output + jnp.log(1.0 / (self.xmax - self.xmin))
+
+
+@jaxtyped(typechecker=typechecker)
+class Normal(Prior):
+    mu: float = 0.0
+    sigma: float = 1.0
+
+    def __repr__(self):
+        return f"Normal(mu={self.mu}, sigma={self.sigma})"
+
+    def __init__(
+        self,
+        mu: Float,
+        sigma: Float,
+        naming: list[str],
+        transforms: dict[str, tuple[str, Callable]] = {},
+        **kwargs,
+    ):
+        super().__init__(naming, transforms)
+        assert self.n_dim == 1, "Normal needs to be 1D distributions"
+        self.mu = mu
+        self.sigma = sigma
+
+    def sample(
+        self, rng_key: PRNGKeyArray, n_samples: int
+    ) -> dict[str, Float[Array, " n_samples"]]:
+        """
+        Sample from a normal distribution.
+
+        Parameters
+        ----------
+        rng_key : PRNGKeyArray
+            A random key to use for sampling.
+        n_samples : int
+            The number of samples to draw.
+
+        Returns
+        -------
+        samples : dict
+            Samples from the distribution. The keys are the names of the parameters.
+
+        """
+        samples = jax.random.normal(rng_key, (n_samples,),)
+        samples = self.mu + self.sigma * samples
+        return self.add_name(samples[None])
+
+    def log_prob(self, x: dict[str, Array]) -> Float:
+        variable = x[self.naming[0]]
+        return -1/(2*self.sigma**2) * (variable-self.mu)**2 - jnp.sqrt(2*jnp.pi*self.sigma**2)
     
 # class DiracDelta(Prior):
     
