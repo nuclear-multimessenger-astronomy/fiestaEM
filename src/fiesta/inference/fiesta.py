@@ -18,8 +18,6 @@ from flowMC.sampler.Gaussian_random_walk import GaussianRandomWalk
 from flowMC.nfmodel.rqSpline import MaskedCouplingRQSpline
 from flowMC.utils.PRNG_keys import initialize_rng_keys
 
-import time # TODO: remove me!
-
 default_hyperparameters = {
         "seed": 0,
         "n_chains": 20,

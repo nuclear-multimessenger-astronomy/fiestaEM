@@ -222,6 +222,19 @@ def load_event_data(filename):
 
     return data
 
+def write_event_data(filename: str, data: dict):
+    """
+    Takes a magnitude dict and writes it to filename. 
+    The magnitude dict should have filters as keys, the arrays should have the structure [[mjd, mag, err]].
+    """
+    with open(filename, "w") as out:
+        for filt in data.keys():
+            for data_point in data[filt]:
+                time = Time(data_point[0], format = "mjd")
+                filt_name = filt.replace("_", ":")
+                line = f"{time.isot} {filt_name} {data_point[1]:f} {data_point[2]:f}"
+                out.write(line +"\n")
+
 #########################
 ### Filters           ###
 #########################
