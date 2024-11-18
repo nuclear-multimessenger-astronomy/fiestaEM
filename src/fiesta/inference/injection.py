@@ -14,7 +14,7 @@ from fiesta.utils import Filter
 from fiesta.constants import days_to_seconds, c
 from fiesta import conversions
 
-import afterglowpy as grb
+from fiesta.train.FluxTrainer import RunAfterglowpy
 
 # TODO: get the parser going
 def get_parser(**kwargs):
@@ -94,6 +94,7 @@ class InjectionRecoveryAfterglowpy:
     
     def __init__(self,
                  injection_dict: dict[str, Float],
+                 trigger_time: Float,
                  filters: list[str],
                  jet_type = -1,
                  tmin: Float = 0.1,
@@ -112,6 +113,7 @@ class InjectionRecoveryAfterglowpy:
         self.filters = [Filter(filt) for filt in filters]
         print(f"Creating injection with filters: {filters}")
         self.injection_dict = injection_dict
+        self.trigger_time = trigger_time
         self.tmin = tmin
         self.tmax = tmax
         self.N_datapoints = N_datapoints
@@ -122,57 +124,22 @@ class InjectionRecoveryAfterglowpy:
     def create_injection(self):
         """Create a synthetic injection from the given model and parameters."""
         
-        points = np.random.multinomial(self.N_datapoints, [1/len(self.filters)]*len(self.filters)) # random number of datapoints in each filter
+        nus = [filt.nu for filt in self.filters]
+        times = np.logspace(np.log10(self.tmin), np.log10(self.tmax), 200)
+        afgpy = RunAfterglowpy(self.jet_type, times, nus, [list(self.injection_dict.values())], self.injection_dict.keys())
+        _, log_flux = afgpy(0)
+        mJys  = np.exp(log_flux).reshape(len(nus), 200)
+
         self.data = {}
+        points = np.random.multinomial(self.N_datapoints, [1/len(self.filters)]*len(self.filters)) # random number of datapoints in each filter
+        for j, npoints, filt in zip(range(len(self.filters)), points, self.filters):
+            times_data = self.create_timegrid(npoints)
+            mJys_filter = np.interp(times_data, times, mJys[j])
+            magnitudes = conversions.mJys_to_mag_np(mJys_filter)
+            magnitudes = magnitudes + 5 * np.log10(self.injection_dict["luminosity_distance"]/(10*1e-6))
 
-        for npoints, filt in zip(points, self.filters):
-            self.injection_dict["nu"] = filt.nu
-            times = self.create_timegrid(npoints)
-            mJys = self._call_afterglowpy(times*days_to_seconds, self.injection_dict)
-            magnitudes = conversions.mJys_to_mag_np(mJys)
-            mag_err = self.error_budget * np.ones_like(times)
-            self.data[filt.name] = np.array([times, magnitudes, mag_err]).T
-
-        
-    def _call_afterglowpy(self,
-                         times_afterglowpy: Array,
-                         params_dict: dict[str, Float]) -> Float[Array, "n_times"]:
-        """
-        Call afterglowpy to generate a single flux density output, for a given set of parameters. Note that the parameters_dict should contain all the parameters that the model requires, as well as the nu value.
-        The output will be a set of mJys.
-
-        Args:
-            Float[Array, "n_times"]: The flux density in mJys at the given times.
-        """
-        
-        # Preprocess the params_dict into the format that afterglowpy expects, which is usually called Z
-        Z = {}
-        
-        Z["jetType"]  = params_dict.get("jetType", self.jet_type)
-        Z["specType"] = params_dict.get("specType", 0)
-        Z["z"] = params_dict.get("z", 0.0)
-        Z["xi_N"] = params_dict.get("xi_N", 1.0)
-            
-        Z["E0"]        = 10 ** params_dict["log10_E0"]
-        Z["thetaCore"] = params_dict["thetaCore"]
-        Z["n0"]        = 10 ** params_dict["log10_n0"]
-        Z["p"]         = params_dict["p"]
-        Z["epsilon_e"] = 10 ** params_dict["log10_epsilon_e"]
-        Z["epsilon_B"] = 10 ** params_dict["log10_epsilon_B"]
-        Z["d_L"]       = params_dict.get("luminosity_distance", 1e-5)*1e6*3.086e18
-        if "inclination_EM" in list(params_dict.keys()):
-            Z["thetaObs"]  = params_dict["inclination_EM"]
-        else:
-            Z["thetaObs"]  = params_dict["thetaObs"]
-        if self.jet_type == 1 or self.jet_type == 4:
-            Z["b"] = params_dict["b"]
-        if "thetaWing" in list(params_dict.keys()):
-            Z["thetaWing"] = params_dict["thetaWing"]
-        
-        # Afterglowpy returns flux in mJys
-        mJys = grb.fluxDensity(times_afterglowpy, params_dict["nu"], **Z)
-        return mJys
-    
+            mag_err = self.error_budget * np.ones_like(times_data)
+            self.data[filt.name] = np.array([times_data + self.trigger_time, magnitudes, mag_err]).T 
     
     def create_timegrid(self, npoints):
         """Create a time grid for the injection."""
