@@ -1,4 +1,4 @@
-from fiesta.inference.lightcurve_model import AfterglowpyLightcurvemodel
+from fiesta.inference.lightcurve_model import LightcurveModel
 import afterglowpy as grb
 from fiesta.constants import days_to_seconds
 from fiesta import conversions
@@ -31,6 +31,8 @@ class Benchmarker:
                  name: str,
                  model_dir: str,
                  filters: list[str],
+                 parameter_grid: dict,
+                 MODEL = LightcurveModel,
                  n_test_data: int = 3000,
                  remake_test_data: bool = False,
                  metric_name: str = "$\\mathcal{L}_\\inf$",
@@ -40,16 +42,15 @@ class Benchmarker:
         self.name = name
         self.model_dir = model_dir
         self.load_filters(filters)
-        self.model = AfterglowpyLightcurvemodel(name = self.name,
-                                                directory = self.model_dir,
-                                                filters = filters)
+        self.model = MODEL(name = self.name,
+                           directory = self.model_dir,
+                           filters = filters)
         self.times = self.model.times
         self._times_afterglowpy = self.times * days_to_seconds
         self.jet_type = jet_type
 
         self.parameter_names = self.model.metadata["parameter_names"]
-        train_X_raw = np.load(self.model_dir+"raw_data_training.npz")["X_raw"]
-        self.parameter_boundaries = np.array([np.min(train_X_raw, axis = 0), np.max(train_X_raw, axis = 0)])
+        self.parameter_grid = parameter_grid
         
         if os.path.exists(self.model_dir+"/raw_data_test.npz") and not remake_test_data:
             self.load_test_data()
@@ -57,12 +58,19 @@ class Benchmarker:
            self.get_test_data(n_test_data)
 
         self.metric_name = metric_name
-        mask = np.logical_and(self.times>8, self.times<800)
+        mask = np.logical_and(self.times>1, self.times<1000)
         if metric_name == "$\\mathcal{L}_2$":
             self.metric = lambda y: np.sqrt(trapezoid(x= self.times[mask],y=y[mask]**2))
         else:
             self.metric = lambda y: np.max(np.abs(y[mask]))
+<<<<<<< Updated upstream
 
+=======
+        
+        self.calculate_mismatch()
+        self.get_error_distribution()
+        
+>>>>>>> Stashed changes
     def __repr__(self) -> str:
         return f"Surrogate_Benchmarker(name={self.name}, model_dir={self.model_dir})"
 
@@ -81,7 +89,7 @@ class Benchmarker:
 
         print(f"Determining test data for {n_test_data} random points within parameter grid.")
         for j in tqdm.tqdm(range(n_test_data)):
-            test_X_raw[j] = np.random.uniform(low = self.parameter_boundaries[0], high = self.parameter_boundaries[1])
+            test_X_raw[j] = np.random.uniform(low = [self.parameter_grid[p][0] for p in self.parameter_names], high = [self.parameter_grid[p][-1] for p in self.parameter_names])
             param_dict = {name: x for name, x in zip(self.parameter_names, test_X_raw[j])}
 
             prediction = self.model.predict(param_dict)
@@ -134,7 +142,6 @@ class Benchmarker:
         Z["xi_N"] = params_dict.get("xi_N", 1.0)
             
         Z["E0"]        = 10 ** params_dict["log10_E0"]
-        Z["thetaCore"] = params_dict["thetaCore"]
         Z["n0"]        = 10 ** params_dict["log10_n0"]
         Z["p"]         = params_dict["p"]
         Z["epsilon_e"] = 10 ** params_dict["log10_epsilon_e"]
@@ -144,24 +151,30 @@ class Benchmarker:
             Z["thetaObs"]  = params_dict["inclination_EM"]
         else:
             Z["thetaObs"]  = params_dict["thetaObs"]
-        if self.jet_type == 1 or self.jet_type == 4:
+
+        if self.jet_type == -1:
+             Z["thetaCore"] = params_dict["thetaCore"]
+        
+        if "thetaWing" in list(params_dict.keys()): #for Gaussian and power law jets
+             Z["thetaWing"] = params_dict["thetaWing"]
+             Z["thetaCore"] = params_dict["xCore"]*params_dict["thetaWing"]
+
+        if self.jet_type == 4:
             Z["b"] = params_dict["b"]
-        if "thetaWing" in list(params_dict.keys()):
-            Z["thetaWing"] = params_dict["thetaWing"]
         
         # Afterglowpy returns flux in mJys
         mJys = grb.fluxDensity(self._times_afterglowpy, params_dict["nu"], **Z)
         return mJys
     
-    def calculate_mismatch(self, filter):
-        mismatch = np.empty(self.n_test_data)
+    def calculate_mismatch(self):
+        mismatch = {}
+        for filt in self.filters:
+            array = np.empty(self.n_test_data)    
+            for j in range(self.n_test_data):
+                array[j] = self.metric(self.prediction_y_raw[filt.name][j] - self.test_y_raw[filt.name][j])
+            mismatch[filt.name] = array
 
-        for j in range(self.n_test_data):
-            mismatch[j] = self.metric(self.prediction_y_raw[filter][j] - self.test_y_raw[filter][j])
-
-        return mismatch
-
-
+        self.mismatch = mismatch
 
     def plot_lightcurves_mismatch(self,
                                   filter: str,
@@ -173,10 +186,10 @@ class Benchmarker:
             vline = np.sqrt(trapezoid(x = self.times, y = np.ones(len(self.times))))
         else:
             bins = np.arange(0, 3, 0.5)
-            vmin, vmax = 0, 3
+            vmin, vmax = 0, 2
             vline = 1.
         
-        mismatch = self.calculate_mismatch(filter)
+        mismatch = self.mismatch[filter]
         
         cmap = colors.LinearSegmentedColormap.from_list(name = "mymap", colors = [(0, "lightblue"), (1, "darkred")])
         colored_mismatch = cmap(mismatch/vmax)
@@ -219,25 +232,66 @@ class Benchmarker:
     def print_correlations(self,
                            filter: str,):
         
-        mismatch = self.calculate_mismatch(filter)
+        mismatch = self.mismatch[filter]
 
         
         print(f"\n \n \nCorrelations for filter {filter}:\n")
         corrcoeff = []
         for j, p in enumerate(self.parameter_names):
             print(f"{p}: {np.corrcoef(self.test_X_raw[:,j], mismatch)[0,1]}")
+
+    def get_error_distribution(self):
+
+        error_distribution = {filt.name: {} for filt in self.filters}
+
+        for filt in self.filters:
+            for j, p in enumerate(self.parameter_names):
+                p_array = self.test_X_raw[:,j]
+                bins = (self.parameter_grid[p][:-1] + self.parameter_grid[p][1:])/2
+                bins = [self.parameter_grid[p][0] ,*bins, self.parameter_grid[p][-1]]
+                # calculate the error histogram with mismatch as weights
+                error_distribution[filt.name][p], _ = np.histogram(p_array, weights = self.mismatch[filt.name], bins = bins, density = True)
+                error_distribution[filt.name][p] = error_distribution[filt.name][p]/np.sum(error_distribution[filt.name][p])
+
+        self.error_distribution = error_distribution
+
+
+    def plot_worst_lightcurves(self,):
+
+        fig, ax = plt.subplots(len(self.filters) , 1, figsize = (5, 15))
+        fig.subplots_adjust(hspace = 0.5, bottom = 0.08, top = 0.98, left = 0.14, right = 0.95)
+
+        for cax, filt in zip(ax, self.filters):
+            ind = np.argmax(self.mismatch[filt.name])
+            prediction = self.prediction_y_raw[filt.name][ind]
+            cax.plot(self.times, prediction, color = "blue")
+            cax.fill_between(self.times, prediction-1, prediction+1, color = "blue", alpha = 0.2)
+            cax.plot(self.times, self.test_y_raw[filt.name][ind], color = "red")
+            cax.invert_yaxis()
+            cax.set(xlabel = "$t$ in days", ylabel = "mag")
+            cax.set_title(f"{filt.name}", loc = "right", pad = -20)
+
+        return fig, ax
     
-    def plot_worst_lightcurve(self,filter):
+    def plot_error_distribution(self, filter):
+        mismatch = self.mismatch[filter]
+
+        fig, ax = plt.subplots(len(self.parameter_names), 1, figsize = (4, 18))
+        fig.subplots_adjust(hspace = 0.5, bottom = 0.08, top = 0.98, left = 0.09, right = 0.95)
+                
+        for j, cax in enumerate(ax):
+            p_array = self.test_X_raw[:,j]
+            p = self.parameter_names[j]
+            bins = (self.parameter_grid[p][:-1] + self.parameter_grid[p][1:])/2
+            bins = [self.parameter_grid[p][0] ,*bins, self.parameter_grid[p][-1]]
+
+            cax.hist(p_array, weights = self.mismatch[filter], color = "blue", bins = bins, density = True, histtype = "step")
+            cax.set_xlabel(self.parameter_names[j])
+            cax.set_yticks([])
         
-        mismatch = self.calculate_mismatch(filter)
-        ind = np.argsort(mismatch)[-1]
-        
-        fig, ax = plt.subplots(1,1)
-        fig.suptitle(f"{filter}")
-        ax.plot(self.times, self.prediction_y_raw[filter][ind], color = "blue")
-        ax.fill_between(self.times, self.prediction_y_raw[filter][ind]-1, self.prediction_y_raw[filter][ind]+1, color = "blue", alpha = 0.2)
-        ax.plot(self.times, self.test_y_raw[filter][ind], color = "red")
-        plt.gca().invert_yaxis()
-        ax.set(xlabel = "$t$ in days", ylabel = "mag")
         
         return fig, ax
+        
+
+
+

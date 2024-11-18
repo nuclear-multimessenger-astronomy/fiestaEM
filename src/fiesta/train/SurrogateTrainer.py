@@ -29,7 +29,6 @@ class SurrogateTrainer:
     filters: list[Filter]
     parameter_names: list[str]
     
-    validation_fraction: Float
     preprocessing_metadata: dict[str, dict[str, float]]
     
     # TODO: why do we have so many datasets?
@@ -56,7 +55,6 @@ class SurrogateTrainer:
     def __init__(self, 
                  name: str,
                  outdir: str,
-                 validation_fraction: Float = 0.2,
                  save_raw_data: bool = False,
                  save_preprocessed_data: bool = False) -> None:
         
@@ -72,9 +70,13 @@ class SurrogateTrainer:
         # To be loaded by child classes
         self.filters = None
         self.parameter_names = None
+<<<<<<< Updated upstream
         self.plots_dir = None
         
         self.validation_fraction = validation_fraction
+=======
+                
+>>>>>>> Stashed changes
         self.preprocessing_metadata = {}
         
         self.X_raw = None
@@ -82,6 +84,7 @@ class SurrogateTrainer:
         
         self.X = None
         self.y = None
+        self.weights = None
 
     def __repr__(self) -> str:
         return f"SurrogateTrainer(name={self.name})"
@@ -126,7 +129,9 @@ class SurrogateTrainer:
 
         input_ndim = len(self.parameter_names)
         for filt in self.filters:
-           
+
+            print(f"\n\n Training {filt.name}... \n\n")
+            
             # Create neural network and initialize the state
             net = fiesta_nn.MLP(layer_sizes=config.layer_sizes)
             key, subkey = jax.random.split(key)
@@ -244,17 +249,18 @@ class SVDSurrogateTrainer(SurrogateTrainer):
             save_preprocessed_data: If True, the preprocessed data (reduced, rescaled) will be saved in the outdir. Defaults to False.
         """
         
-        super().__init__(name=name, outdir=outdir, validation_fraction=validation_fraction)
+        super().__init__(name=name, outdir=outdir)
         self.plots_dir = plots_dir
         
         if self.plots_dir is not None and not os.path.exists(self.plots_dir):
             os.makedirs(self.plots_dir)
+
+        self.validation_fraction = validation_fraction
             
         self.svd_ncoeff = svd_ncoeff
         self.tmin = tmin
         self.tmax = tmax
         self.dt = dt
-        self.plots_dir = plots_dir
         self.save_raw_data = save_raw_data
         self.save_preprocessed_data = save_preprocessed_data
         
@@ -300,6 +306,13 @@ class SVDSurrogateTrainer(SurrogateTrainer):
         for filt in tqdm.tqdm(self.filters):
             
             y_scaler = MinMaxScalerJax()
+
+            completely_problematic = np.where(np.all(np.isinf(self.train_y_raw[filt.name]), axis = 1))[0]
+            problematic = np.unique(np.where(np.isinf(self.train_y_raw[filt.name]))[0])
+
+            if len(problematic)!=0:
+                raise Exception(f"There were infs in the magnitudes for filter {filt.name}.")
+
             data = y_scaler.fit_transform(self.train_y_raw[filt.name])
             
             # Do SVD decomposition on the training data
@@ -498,6 +511,7 @@ class AfterglowpyTrainer(SVDSurrogateTrainer):
                  outdir: str,
                  filters: list[str],
                  parameter_grid: dict[str, list[float]],
+                 weight_grids: dict = None,
                  n_training_data: Int = 5000,
                  jet_type: Int = -1,
                  fixed_parameters: dict[str, Float] = {},
@@ -536,6 +550,10 @@ class AfterglowpyTrainer(SVDSurrogateTrainer):
         self.n_times = n_times
         dt = (tmax - tmin) / n_times
         self.parameter_grid = parameter_grid
+        self.weight_grids = weight_grids
+        if self.weight_grids is None:
+            self.weight_grids = {p: np.full_like(self.parameter_grid[p], 1/len(self.parameter_grid[p])) for p in self.parameter_grid.keys()}
+
         self.fixed_parameters = fixed_parameters
         self.use_log_spacing = use_log_spacing
         
@@ -561,6 +579,7 @@ class AfterglowpyTrainer(SVDSurrogateTrainer):
                          plots_dir=plots_dir,
                          save_raw_data=save_raw_data,
                          save_preprocessed_data=save_preprocessed_data)
+       
         
     def load_filters(self, filters: list[str]):
         self.filters = []
@@ -595,23 +614,21 @@ class AfterglowpyTrainer(SVDSurrogateTrainer):
         TODO: for now we train per filter, but best to change this!
         """
         # Create training data
+        nus = jnp.array([filt.nu for filt in self.filters])
         X_raw = np.empty((self.n_training_data, len(self.parameter_names)))
         y_raw = {filt.name: np.empty((self.n_training_data, len(self.times))) for filt in self.filters}
 
         for j, key in enumerate(self.parameter_grid.keys()):
-            X_raw[:,j] = np.random.choice(self.parameter_grid[key], size = self.n_training_data, replace = True)
+            X_raw[:,j] = np.random.choice(self.parameter_grid[key], size = self.n_training_data, replace = True, p = self.weight_grids[key])
 
 
         print(f"Creating the afterglowpy training dataset on grid with {self.n_training_data} points.")
         for i in tqdm.tqdm(range(self.n_training_data)):
-            for filt in self.filters:
-                param_dict = dict(zip(self.parameter_names, X_raw[i]))
-                param_dict.update(self.fixed_parameters)
-                param_dict["nu"] = filt.nu # Add nu per filter before calling afterglowpy
-                
-                # Create and save output
-                mJys = self._call_afterglowpy(param_dict)
-                y_raw[filt.name][i] = conversions.mJys_to_mag_np(mJys)
+            param_dict = dict(zip(self.parameter_names, X_raw[i]))
+            param_dict.update(self.fixed_parameters)
+            mJys = self._call_afterglowpy(param_dict, nus)
+            for k, filt in enumerate(self.filters):
+                y_raw[filt.name][i] = conversions.mJys_to_mag_np(mJys[k])
                 
         self.train_X_raw = X_raw
         self.train_y_raw = y_raw
@@ -623,16 +640,13 @@ class AfterglowpyTrainer(SVDSurrogateTrainer):
 
         print(f"Creating the afterglowpy validation dataset on {self.n_val_data} random points within grid.")
         for i in tqdm.tqdm(range(self.n_val_data)):
-            X_raw[i] = [np.random.uniform(self.parameter_grid[p][0], self.parameter_grid[p][-1]) for p in self.parameter_names]          
+            X_raw[i] = [np.random.uniform(self.parameter_grid[p][0], self.parameter_grid[p][-1]) for p in self.parameter_names]
+            param_dict = dict(zip(self.parameter_names, X_raw[i]))
+            param_dict.update(self.fixed_parameters)
+            mJys = self._call_afterglowpy(param_dict, nus)
 
-            for filt in self.filters:
-                param_dict = dict(zip(self.parameter_names, X_raw[i]))
-                param_dict.update(self.fixed_parameters)
-                param_dict["nu"] = filt.nu # Add nu per filter before calling afterglowpy
-                
-                # Create and save output
-                mJys = self._call_afterglowpy(param_dict)
-                y_raw[filt.name][i] = conversions.mJys_to_mag_np(mJys)
+            for k, filt in enumerate(self.filters):
+                y_raw[filt.name][i] = conversions.mJys_to_mag_np(mJys[k])
 
         self.val_X_raw = X_raw
         self.val_y_raw = y_raw
@@ -643,23 +657,35 @@ class AfterglowpyTrainer(SVDSurrogateTrainer):
         raw_data_train = np.load(self.outdir+"/raw_data_training.npz")
         raw_data_validation = np.load(self.outdir+'/raw_data_validation.npz')
 
-        self.n_training_data = 4000
-        self.n_val_data = 1000
-
         training_y_raw = {}
         val_y_raw = {}
         
-        select = np.random.choice(range(0, len(raw_data_train["X_raw"])), size = self.n_training_data, replace = False)
-        select_val = np.random.choice(range(0, len(raw_data_validation["X_raw"])), size = self.n_val_data, replace = False)
-        
         for filt in self.filters:
-            training_y_raw[filt.name] = raw_data_train[filt.name][select]
-            val_y_raw[filt.name] = raw_data_validation[filt.name][select_val]
-        return raw_data_train["X_raw"][select], training_y_raw, raw_data_validation["X_raw"][select_val], val_y_raw
+            training_y_raw[filt.name] = raw_data_train[filt.name]
+            val_y_raw[filt.name] = raw_data_validation[filt.name]
+        
+        self.n_training_data = len(raw_data_train["X_raw"])
+        self.n_val_data = len(raw_data_validation["X_raw"])
+        return raw_data_train["X_raw"], training_y_raw, raw_data_validation["X_raw"], val_y_raw
+    
+    def _set_weights(self,): # TODO: dev legacy
+        weights = {filt.name: jnp.ones(self.n_training_data) for filt in self.filters}
+        
+
+        for j, p in enumerate(self.parameter_names):
+            bins = (self.parameter_grid[p][:-1] + self.parameter_grid[p][1:])/2
+            bins = [self.parameter_grid[p][0] ,*bins, self.parameter_grid[p][-1]+0.1] # the right boundary of the bins needs to be a little larger because of digitize
+            indices = np.digitize(self.train_X_raw[:,j], bins) - 1
+            for filt in self.filters:
+                weights[filt.name] *= self.weight_grids[filt.name][p][indices]
+        
+        self.weights = {filt.name: weights[filt.name]/np.sum(weights[filt.name]) for filt in self.filters}
+        
         
         
     def _call_afterglowpy(self,
-                         params_dict: dict[str, Float]) -> Float[Array, "n_times"]:
+                         params_dict: dict[str, Float],
+                         nus) -> Float[Array, "n_times"]:
         """
         Call afterglowpy to generate a single flux density output, for a given set of parameters. Note that the parameters_dict should contain all the parameters that the model requires, as well as the nu value.
         The output will be a set of mJys.
@@ -677,7 +703,6 @@ class AfterglowpyTrainer(SVDSurrogateTrainer):
         Z["xi_N"] = params_dict.get("xi_N", 1.0)
             
         Z["E0"]        = 10 ** params_dict["log10_E0"]
-        Z["thetaCore"] = params_dict["thetaCore"]
         Z["n0"]        = 10 ** params_dict["log10_n0"]
         Z["p"]         = params_dict["p"]
         Z["epsilon_e"] = 10 ** params_dict["log10_epsilon_e"]
@@ -687,11 +712,18 @@ class AfterglowpyTrainer(SVDSurrogateTrainer):
             Z["thetaObs"]  = params_dict["inclination_EM"]
         else:
             Z["thetaObs"]  = params_dict["thetaObs"]
-        if self.jet_type == 1 or self.jet_type == 4:
+
+        if self.jet_type == -1:
+             Z["thetaCore"] = params_dict["thetaCore"]
+        
+        if "thetaWing" in list(params_dict.keys()): #for Gaussian and power law jets
+             Z["thetaWing"] = params_dict["thetaWing"]
+             Z["thetaCore"] = params_dict["xCore"]*params_dict["thetaWing"]
+
+        if self.jet_type == 4:
             Z["b"] = params_dict["b"]
-        if "thetaWing" in list(params_dict.keys()):
-            Z["thetaWing"] = params_dict["thetaWing"]
         
         # Afterglowpy returns flux in mJys
-        mJys = grb.fluxDensity(self._times_afterglowpy, params_dict["nu"], **Z)
+        tt, nunu = np.meshgrid(self._times_afterglowpy, nus)
+        mJys = grb.fluxDensity(tt, nunu, **Z)
         return mJys

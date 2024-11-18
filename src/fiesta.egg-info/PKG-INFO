@@ -52,3 +52,7 @@ To train your own surrogate models, have a look at some of the example scripts i
 
 - `run_AT2017gfo_Bu2019lm.py`: Example where we infer the parameters of the AT2017gfo kilonova with the `Bu2019lm` model.
 - `run_GRB170817_tophat.py`: Example where we infer the parameters of the GRB170817 GRB with a surrogate model for `afterglowpy`'s tophat jet. **NOTE** This currently only uses one specific filter. The complete inference will be updated soon.
+
+## Acknowledgements
+
+The logo was created by [ideogram AI](https://ideogram.ai/). 
