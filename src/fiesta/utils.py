@@ -40,6 +40,35 @@ class MinMaxScalerJax(object):
         self.fit(x)
         return self.transform(x)
     
+
+class StandardScalerJax(object):
+    """
+    StandardScaler like sklearn does it, but for JAX arrays since sklearn might not be JAX-compatible?
+    
+    Note: assumes that input has dynamical range: it will not catch errors due to constant input (leading to zero division)
+    """
+    
+    def __init__(self,
+                 mu: Array = None,
+                 sigma: Array = None):
+        
+        self.mu = mu
+        self.sigma = sigma
+    
+    def fit(self, x: Array) -> None:
+        self.mu = jnp.average(x, axis=0)
+        self.sigma = jnp.std(x, axis=0)
+        
+    def transform(self, x: Array) -> Array:
+        return (x - self.mu) / self.sigma
+    
+    def inverse_transform(self, x: Array) -> Array:
+        return x * self.sigma + self.mu
+    
+    def fit_transform(self, x: Array) -> Array:
+        self.fit(x)
+        return self.transform(x)
+    
 def inverse_svd_transform(x: Array, 
                           VA: Array, 
                           nsvd_coeff: int = 10) -> Array:

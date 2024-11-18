@@ -8,7 +8,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
 from sklearn.decomposition import PCA
-from fiesta.utils import MinMaxScalerJax
+from fiesta.utils import MinMaxScalerJax, StandardScalerJax
 from fiesta import utils
 from fiesta import conversions
 from fiesta.constants import days_to_seconds, c
@@ -77,11 +77,11 @@ class FluxTrainer:
     
     def preprocess(self):
         
-        print("Preprocessing data by minmax scaling . . .")
-        self.X_scaler = MinMaxScalerJax()
+        print("Preprocessing data by scaling to mean 0 and std 1. . .")
+        self.X_scaler = StandardScalerJax()
         self.X = self.X_scaler.fit_transform(self.train_X_raw)
         
-        self.y_scaler = MinMaxScalerJax()
+        self.y_scaler = StandardScalerJax()
         self.y = self.y_scaler.fit_transform(self.train_y_raw)
             
         # Save the metadata
@@ -204,15 +204,15 @@ class PCATrainer(FluxTrainer):
         
     def preprocess(self):
 
-        # rescale the parameters to lie between 0 and 1
-        X_scaler = MinMaxScalerJax()
+        # rescale the parameters to be of mean 0 and std 1
+        X_scaler = StandardScalerJax()
         self.train_X = X_scaler.fit_transform(self.train_X_raw) # fit the scaler to the training data
         self.val_X = X_scaler.transform(self.val_X_raw) # transform the val data
         self.X_scaler = X_scaler
 
 
-        #rescale data to lie between 0 and 1
-        y_scaler = MinMaxScalerJax()
+        #rescale data to be of mean 0 and std 1
+        y_scaler = StandardScalerJax()
         self.train_y = y_scaler.fit_transform(self.train_y_raw)
         self.val_y = y_scaler.transform(self.val_y_raw)
         self.y_scaler = y_scaler

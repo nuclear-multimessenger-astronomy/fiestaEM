@@ -121,13 +121,13 @@ class Benchmarker:
                                   parameter_labels: list[str] = ["$\\iota$", "$\log_{10}(E_0)$", "$\\theta_c$", "$\log_{10}(n_{\mathrm{ism}})$", "$p$", "$\\epsilon_E$", "$\\epsilon_B$"]
                                   ):
         if self.metric_name == "$\\mathcal{L}_2$":
-            bins = np.arange(0, 100, 5)
-            vmin, vmax = 0, 50
-            vline = np.sqrt(trapezoid(x = self.times, y = np.ones(len(self.times))))
+            vline = np.sqrt(trapezoid(x = self.times, y = 0.2*np.ones(len(self.times))))
+            vmin, vmax = 0, vline*2
+            bins = np.linspace(vmin, vmax, 25)
         else:
-            bins = np.arange(0, 3, 0.5)
-            vmin, vmax = 0, 2
             vline = 1.
+            vmin, vmax = 0, 2*vline
+            bins = np.linspace(vmin, vmax, 20)
         
         mismatch = self.mismatch[filter]
         

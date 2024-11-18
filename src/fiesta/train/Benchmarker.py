@@ -63,14 +63,10 @@ class Benchmarker:
             self.metric = lambda y: np.sqrt(trapezoid(x= self.times[mask],y=y[mask]**2))
         else:
             self.metric = lambda y: np.max(np.abs(y[mask]))
-<<<<<<< Updated upstream
-
-=======
-        
+       
         self.calculate_mismatch()
         self.get_error_distribution()
         
->>>>>>> Stashed changes
     def __repr__(self) -> str:
         return f"Surrogate_Benchmarker(name={self.name}, model_dir={self.model_dir})"
 
