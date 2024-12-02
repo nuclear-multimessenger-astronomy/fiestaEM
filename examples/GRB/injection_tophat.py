@@ -3,7 +3,6 @@
 import os
 import jax
 
-from fiesta.utils import load_event_data, write_event_data
 print(f"GPU found? {jax.devices()}")
 import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
@@ -11,13 +10,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import corner
 
-from fiesta.inference.lightcurve_model import AfterglowpyLightcurvemodel
 from fiesta.inference.lightcurve_model import AfterglowpyPCA
 from fiesta.inference.injection import InjectionRecoveryAfterglowpy
 from fiesta.inference.likelihood import EMLikelihood
 from fiesta.inference.prior import Uniform, Composite
 from fiesta.inference.fiesta import Fiesta
-from fiesta.utils import write_event_data
+from fiesta.utils import load_event_data, write_event_data
 
 import time
 start_time = time.time()
@@ -60,18 +58,12 @@ default_corner_kwargs = dict(bins=40,
                         save=False,
                         truth_color="red")
 
-#############
-### SETUP ###
-#############
-
-
-
 ##############
 ### MODEL  ###
 ##############
 
 name = "tophat"
-model_dir = f"../trained_fluxes/afterglowpy/{name}/"
+model_dir = f"../../trained_fluxes/afterglowpy/{name}/"
 FILTERS = ["radio-3GHz", "radio-6GHz", "X-ray-1keV", "bessellv"]
 
 model = AfterglowpyPCA(name,
@@ -89,7 +81,7 @@ remake_injection = False
 injection_dict = {"inclination_EM": 0.32, "log10_E0": 53.79, "thetaCore": 0.1, "p": 2.47, "log10_n0": -2.1, "log10_epsilon_e": -1.326, "log10_epsilon_B": -3.89, "luminosity_distance": 40.0}
 
 if remake_injection:
-    injection = InjectionRecoveryAfterglowpy(injection_dict, filters = FILTERS, N_datapoints = 70, error_budget = 0.5, tmin = 1, tmax = 2000, trigger_time = trigger_time)
+    injection = InjectionRecoveryAfterglowpy(injection_dict, jet_type = -1, filters = FILTERS, N_datapoints = 70, error_budget = 0.5, tmin = 1, tmax = 2000, trigger_time = trigger_time)
     injection.create_injection()
     data = injection.data
     write_event_data("./injection_tophat/injection_tophat.dat", data)

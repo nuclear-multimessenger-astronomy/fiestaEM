@@ -1,6 +1,7 @@
 import jax.numpy as jnp
 from jax.scipy.stats import truncnorm
 from jaxtyping import Array, Float
+import jax
 import numpy as np
 import pandas as pd
 import scipy.interpolate as interp
@@ -11,6 +12,11 @@ import astropy
 import scipy
 from sncosmo.bandpasses import _BANDPASSES, _BANDPASS_INTERPOLATORS
 import sncosmo
+
+
+####################
+### DATA SCALERS ###
+####################
 
 class MinMaxScalerJax(object):
     """
@@ -68,7 +74,74 @@ class StandardScalerJax(object):
     def fit_transform(self, x: Array) -> Array:
         self.fit(x)
         return self.transform(x)
+
+class PCAdecomposer(object):
+    """
+    PCA decomposer like sklearn does it. Based on https://github.com/alonfnt/pcax/tree/main.
+    """
+    def __init__(self, n_components: int, solver: str = "randomized"):
+        self.n_components = n_components
+        self.solver = solver
     
+    def fit(self, x: Array)-> None:
+        if self.solver == "full":
+            self._fit_full(x, self.n_components)
+        elif self.solver == "randomized":
+            rng = jax.random.PRNGKey(self.n_components)
+            self._fit_randomized(x, rng)
+        else:
+            raise ValueError("solver parameter is not correct")
+    
+    def _fit_full(self, x: Array):
+        n_samples, n_features = x.shape
+        self.means = jnp.mean(x, axis=0, keepdims=True)
+        x = x - self.means
+
+        _, S, Vt = jax.scipy.linalg.svd(x, full_matrices= False)
+
+        self.explained_variance_  = (S[:self.n_components] ** 2) / (n_samples - 1)
+        total_var = jnp.sum(S ** 2) / (n_samples - 1)
+        self.explained_variance_ratio_ = self.explained_variance_ / total_var
+
+        self.Vt = Vt[:self.n_components]
+
+    def _fit_randomized(self, x: Array, rng, n_iter = 5):
+        """Randomized PCA based on Halko et al [https://doi.org/10.48550/arXiv.1007.5510]."""
+        n_samples, n_features = x.shape
+        self.means = jnp.mean(x, axis=0, keepdims=True)
+        x = x - self.means
+    
+        # Generate n_features normal vectors of the given size
+        size = jnp.minimum(2 * self.n_components, n_features)
+        Q = jax.random.normal(rng, shape=(n_features, size))
+    
+        def step_fn(q, _):
+            q, _ = jax.scipy.linalg.lu(x @ q, permute_l=True)
+            q, _ = jax.scipy.linalg.lu(x.T @ q, permute_l=True)
+            return q, None
+    
+        Q, _ = jax.lax.scan(step_fn, init=Q, xs=None, length=n_iter)
+        Q, _ = jax.scipy.linalg.qr(x @ Q, mode="economic")
+        B = Q.T @ x
+    
+        _, S, Vt = jax.scipy.linalg.svd(B, full_matrices=False)
+        
+        self.explained_variance_  = (S[:self.n_components] ** 2) / (n_samples - 1)
+        total_var = jnp.sum(S ** 2) / (n_samples - 1)
+        self.explained_variance_ratio_ = self.explained_variance_ / total_var
+
+        self.Vt = Vt[:self.n_components]
+    
+    def transform(self, x: Array)->Array:
+        return jnp.dot(x - self.means, self.Vt.T)
+    
+    def inverse_transform(self, x: Array)->Array:
+        return jnp.dot(x, self.Vt) + self.means
+    
+    def fit_transform(self, x: Array)-> Array:
+        self.fit(x)
+        return self.transform(x)
+        
 def inverse_svd_transform(x: Array, 
                           VA: Array, 
                           nsvd_coeff: int = 10) -> Array:

@@ -14,7 +14,7 @@ from fiesta.utils import Filter
 from fiesta.constants import days_to_seconds, c
 from fiesta import conversions
 
-from fiesta.train.FluxTrainer import RunAfterglowpy
+from fiesta.train.AfterglowData import RunAfterglowpy
 
 # TODO: get the parser going
 def get_parser(**kwargs):

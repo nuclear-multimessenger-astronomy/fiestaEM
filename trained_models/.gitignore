@@ -1,9 +1,0 @@
-figures/
-raw_data.npz
-preprocessed_data.npz
-preprocessed_data_training.npz
-preprocessed_data_validation.npz
-raw_data_test.npz
-raw_data_training.npz
-raw_data_validation.npz
-

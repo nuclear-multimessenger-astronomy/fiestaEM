@@ -252,3 +252,22 @@ class Composite(Prior):
         for prior in self.priors:
             output += prior.log_prob(x)
         return output
+
+class Constraint(Prior):
+    def __init__(self,
+                 naming: list[str], 
+                 minimum: Float,
+                 maximum: Float,
+                 transforms: dict[str, tuple[str, Callable]] = {})->None:
+        self.minimum = minimum
+        self.maximum = maximum
+        super().__init__(naming = naming, transforms=transforms)
+    
+    def log_prob(self, x: dict[str, Array]) -> Float:
+        variable = x[self.naming[0]]
+        output = jnp.where(
+            (variable >= self.xmax) | (variable <= self.xmin),
+            jnp.zeros_like(variable) - jnp.inf,
+            jnp.zeros_like(variable),
+        )
+        return output

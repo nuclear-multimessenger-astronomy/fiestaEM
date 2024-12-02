@@ -132,8 +132,8 @@ class SurrogateLightcurveModel(LightcurveModel):
         self.models = {}
         
         # Load the metadata for projections etc
-        self.load_filters(filters)
         self.load_metadata()
+        self.load_filters(filters)
         self.load_scalers()
         self.load_times(times)
         self.load_parameter_names()
@@ -300,12 +300,12 @@ class PCALightcurveModel(SurrogateLightcurveModel):
         super().__init__(name = name, directory= directory, filters = filters, times = times)
 
     def load_filters(self, filters: list[str] = None) -> None:
+        self.nus = self.metadata['nus']
         self.Filters = []
-
         for filter in filters:
             try:
                 Filter = utils.Filter(filter)
-                if Filter.nu<1e9 or Filter.nu>2.5e18:
+                if Filter.nu<self.nus[0] or Filter.nu>self.nus[-1]:
                     continue
                 self.Filters.append(Filter)
             except:
@@ -313,12 +313,14 @@ class PCALightcurveModel(SurrogateLightcurveModel):
         
         self.filters = [filt.name for filt in self.Filters]
         if len(self.filters) == 0:
-            raise ValueError(f"No filters found that match the given given frequency range (1e9 Hz to 2.5e18 Hz).")
+            raise ValueError(f"No filters found that match the trained frequency range {self.nus[0]:.3e} Hz to {self.nus[-1]:.3e} Hz.")
 
         print(f"Loaded SurrogateLightcurveModel with filters {self.filters}.")
             
     def load_scalers(self):
-        self.X_scaler, self.y_scaler = self.metadata["meta_data"]["X_scaler"], self.metadata["meta_data"]["y_scaler"]
+        self.X_scaler = self.metadata["X_scaler"]
+        self.y_scaler = self.metadata["y_scaler"]
+        #self.pca = self.metadata["pca"]
 
     def load_networks(self) -> None:
         filename = os.path.join(self.directory, f"{self.name}.pkl")
@@ -362,7 +364,7 @@ class PCALightcurveModel(SurrogateLightcurveModel):
         Returns:
             dict[str, Array]: Output array transformed to the preprocessed space.
         """
-        y = self.metadata["meta_data"]["pca"].inverse_transform(y)
+        #y = self.pca.inverse_transform(y)
         y = self.y_scaler.inverse_transform(y)
 
         y = jnp.reshape(y, shape = (len(self.metadata["nus"]), len(self.times)) )
@@ -390,9 +392,8 @@ class PCALightcurveModel(SurrogateLightcurveModel):
         x_tilde = self.X_scaler.transform(x)
         y = self.models.apply_fn({'params': self.models.params}, x_tilde)
 
-        y = self.metadata["meta_data"]["pca"].inverse_transform(y)
-        log_flux = self.y_scaler.inverse_transform(y)
-        return log_flux
+        logflux = self.y_scaler.inverse_transform(y)
+        return logflux
 
 class AfterglowpyPCA(PCALightcurveModel):
     
