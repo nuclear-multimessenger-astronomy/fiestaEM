@@ -217,7 +217,7 @@ class Normal(Prior):
 #         output = jnp.where(variable == self.value, jnp.zeros_like(variable), jnp.zeros_like(variable) - jnp.inf)
 #         return output
     
-class Composite(Prior):
+class CompositePrior(Prior):
     priors: list[Prior] = field(default_factory=list)
 
     def __repr__(self):
@@ -254,19 +254,21 @@ class Composite(Prior):
         return output
 
 class Constraint(Prior):
+    xmin: float
+    xmax: float
     def __init__(self,
                  naming: list[str], 
-                 minimum: Float,
-                 maximum: Float,
+                 xmin: Float,
+                 xmax: Float,
                  transforms: dict[str, tuple[str, Callable]] = {})->None:
-        self.minimum = minimum
-        self.maximum = maximum
         super().__init__(naming = naming, transforms=transforms)
+        self.xmin = xmin
+        self.xmax = xmax
     
     def log_prob(self, x: dict[str, Array]) -> Float:
         variable = x[self.naming[0]]
         output = jnp.where(
-            (variable >= self.xmax) | (variable <= self.xmin),
+            (variable > self.xmax) | (variable < self.xmin),
             jnp.zeros_like(variable) - jnp.inf,
             jnp.zeros_like(variable),
         )

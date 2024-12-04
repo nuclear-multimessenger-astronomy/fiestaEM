@@ -328,7 +328,7 @@ class RunAfterglowpy:
 
 
 class RunPyblastafterglow:
-    def __init__(self, jet_type, times, nus, X, parameter_names, fixed_parameters = {}):
+    def __init__(self, jet_type, times, nus, X, parameter_names, fixed_parameters = {}, rank = 0):
         self.jet_type = jet_type
         jet_conversion = {"-1": "tophat",
                           "0": "gaussian"}
@@ -346,6 +346,7 @@ class RunPyblastafterglow:
         self.X = X
         self.parameter_names = parameter_names
         self.fixed_parameters = fixed_parameters
+        self.rank = rank
 
     def _call_pyblastafterglow(self,
                          params_dict: dict[str, float]):
@@ -368,7 +369,6 @@ class RunPyblastafterglow:
             struct.update({"theta_c": params_dict['thetaCore']}) # half-opening angle of the winds of the jet
         elif "thetaWing" in list(params_dict.keys()):
             struct.update({"theta_w": params_dict["thetaWing"], "theta_c": params_dict['xCore']*params_dict["thetaWing"]}) # half-opening angle of the winds of the jet
-        
         # set model parameters
         P = dict(
                 # main model parameters; Uniform ISM -- 2 free parameters
@@ -379,7 +379,7 @@ class RunPyblastafterglow:
                     theta_obs= params_dict["inclination_EM"], # observer angle [rad] (from pol to jet axis)  
                     lc_freqs= self.lc_freqs, # frequencies for light curve calculation
                     lc_times= self.lc_times, # times for light curve calculation
-                    tb0=1e2, tb1=1e9, ntb=3000, # burster frame time grid boundary, resolution, for the simulation
+                    tb0=1e2, tb1=1e9, ntb=1500, # burster frame time grid boundary, resolution, for the simulation
                 ),
 
                 # ejecta parameters; FS only -- 3 free parameters 
@@ -398,11 +398,11 @@ class RunPyblastafterglow:
                 )
         )
 
-        pba_run = run_grb(working_dir= os.getcwd() + '/tmp/', # directory to save/load from simulation data
+        pba_run = run_grb(working_dir= os.getcwd() + f'/tmp_{self.rank}/', # directory to save/load from simulation data
                               P=P,                     # all parameters 
                               run=True,                # run code itself (if False, it will try to load results)
                               path_to_cpp="/home/aya/work/hkoehn/fiesta/PyBlastAfterglowMag/src/pba.out", # absolute path to the C++ executable of the code
-                              loglevel="info",         # logging level of the code (info or err)
+                              loglevel="err",         # logging level of the code (info or err)
                               process_skymaps=False    # process unstractured sky maps. Only useed if `do_skymap = yes`
                              )
         mJys = pba_run.GRB.get_lc()

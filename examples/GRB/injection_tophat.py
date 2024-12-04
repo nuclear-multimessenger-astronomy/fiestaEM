@@ -1,8 +1,7 @@
-"""Injection runs with afterglowpy"""
+"""Injection runs with afterglowpy tophat"""
 
 import os
 import jax
-
 print(f"GPU found? {jax.devices()}")
 import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
@@ -13,7 +12,7 @@ import corner
 from fiesta.inference.lightcurve_model import AfterglowpyPCA
 from fiesta.inference.injection import InjectionRecoveryAfterglowpy
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.inference.prior import Uniform, Composite
+from fiesta.inference.prior import Uniform, CompositePrior
 from fiesta.inference.fiesta import Fiesta
 from fiesta.utils import load_event_data, write_event_data
 
@@ -63,12 +62,12 @@ default_corner_kwargs = dict(bins=40,
 ##############
 
 name = "tophat"
-model_dir = f"../../trained_fluxes/afterglowpy/{name}/"
+model_dir = f"../../flux_models/afterglowpy_{name}/model"
 FILTERS = ["radio-3GHz", "radio-6GHz", "X-ray-1keV", "bessellv"]
 
 model = AfterglowpyPCA(name,
-                        model_dir, 
-                        filters = FILTERS)
+                       model_dir, 
+                       filters = FILTERS)
 
 
 ###################
@@ -105,7 +104,7 @@ log10_epsilon_B = Uniform(xmin=-8.0, xmax=0.0, naming=['log10_epsilon_B'])
 
 prior_list = [inclination_EM, 
               log10_E0, 
-              thetaCore, 
+              thetaCore,
               log10_n0, 
               p, 
               log10_epsilon_e, 
@@ -113,7 +112,7 @@ prior_list = [inclination_EM,
             # luminosity_distance
 ]
 
-prior = Composite(prior_list)
+prior = CompositePrior(prior_list)
 
 detection_limit = None
 likelihood = EMLikelihood(model,
@@ -123,8 +122,7 @@ likelihood = EMLikelihood(model,
                           trigger_time=trigger_time,
                           detection_limit = detection_limit,
                           fixed_params={"luminosity_distance": 40.0},
-                          error_budget = 1e-5
-) 
+                          error_budget = 1e-5) 
 
 ##############
 ### FIESTA ###

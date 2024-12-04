@@ -106,7 +106,7 @@ class Fiesta(object):
     def sample(self, key: PRNGKeyArray, initial_guess: Array = jnp.array([])):
         if initial_guess.size == 0:
             initial_guess_named = self.prior.sample(key, self.Sampler.n_chains)
-            initial_guess = jnp.stack([i for i in initial_guess_named.values()]).T
+            initial_guess = jnp.stack([initial_guess_named[key] for key in self.prior.naming]).T
         self.Sampler.sample(initial_guess, None)  # type: ignore
 
     def print_summary(self, transform: bool = True):

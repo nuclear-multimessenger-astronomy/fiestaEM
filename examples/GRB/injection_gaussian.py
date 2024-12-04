@@ -1,4 +1,4 @@
-"""Test run on GRB170817A data."""
+"""Injection runs with afterglowpy gaussian"""
 
 import os
 import jax
@@ -12,7 +12,8 @@ import corner
 from fiesta.inference.lightcurve_model import AfterglowpyPCA, PCALightcurveModel
 from fiesta.inference.injection import InjectionRecoveryAfterglowpy
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.inference.prior import Uniform, Composite, Constraint
+from fiesta.inference.prior import Uniform, CompositePrior, Constraint
+from fiesta.inference.prior_dict import ConstrainedPrior
 from fiesta.inference.fiesta import Fiesta
 from fiesta.utils import load_event_data, write_event_data
 
@@ -63,10 +64,10 @@ default_corner_kwargs = dict(bins=40,
 ##############
 
 name = "gaussian"
-model_dir = f"../flux_models/afterglowpy_{name}/"
+model_dir = f"../../flux_models/afterglowpy_{name}/model"
 FILTERS = ["radio-3GHz", "radio-6GHz", "X-ray-1keV", "bessellv"]
 
-model = PCALightcurveModel(name,
+model = AfterglowpyPCA(name,
                             model_dir, 
                             filters = FILTERS)
 
@@ -77,7 +78,7 @@ model = PCALightcurveModel(name,
 ###################
 
 trigger_time = 58849 # 01-01-2020 in mjd
-remake_injection = True
+remake_injection = False
 injection_dict = {"inclination_EM": 0.174, "log10_E0": 54.4, "thetaCore": 0.14, "alphaWing": 3, "p": 2.6, "log10_n0": -2, "log10_epsilon_e": -2.06, "log10_epsilon_B": -4.2, "luminosity_distance": 40.0}
 
 if remake_injection:
@@ -87,23 +88,27 @@ if remake_injection:
     write_event_data("./injection_gaussian/injection_gaussian.dat", data)
 
 data = load_event_data("./injection_gaussian/injection_gaussian.dat")
-
-
 #############################
 ### PRIORS AND LIKELIHOOD ###
 #############################
 
-inclination_EM = Uniform(xmin=0.0, xmax=np.pi/4, naming=['inclination_EM'])
-log10_E0 = Uniform(xmin=47.0, xmax=56.0, naming=['log10_E0'])
+inclination_EM = Uniform(xmin=0.0, xmax=np.pi/2, naming=['inclination_EM'])
+log10_E0 = Uniform(xmin=47.0, xmax=57.0, naming=['log10_E0'])
 thetaCore = Uniform(xmin=0.01, xmax=np.pi/5, naming=['thetaCore'])
 alphaWing = Uniform(xmin = 0.2, xmax = 3.5, naming= ["alphaWing"])
-thetaWing = Constraint(minimum = 0, maximum = np.pi/2, naming = ["thetaWing"])
+thetaWing = Constraint(xmin = 0, xmax = np.pi/2, naming = ["thetaWing"])
 log10_n0 = Uniform(xmin=-6.0, xmax=2.0, naming=['log10_n0'])
 p = Uniform(xmin=2.01, xmax=3.0, naming=['p'])
 log10_epsilon_e = Uniform(xmin=-4.0, xmax=0.0, naming=['log10_epsilon_e'])
 log10_epsilon_B = Uniform(xmin=-8.0, xmax=0.0, naming=['log10_epsilon_B'])
+epsilon_tot = Constraint(xmin = 0, xmax = 1, naming = ["epsilon_tot"])
 
 # luminosity_distance = Uniform(xmin=30.0, xmax=50.0, naming=['luminosity_distance'])
+def conversion_function(sample):
+    converted_sample = sample
+    converted_sample["thetaWing"] = converted_sample["thetaCore"] * converted_sample["alphaWing"]
+    converted_sample["epsilon_tot"] = 10**(converted_sample["log10_epsilon_B"]) + 10**(converted_sample["log10_epsilon_e"]) 
+    return converted_sample
 
 prior_list = [inclination_EM, 
               log10_E0, 
@@ -112,21 +117,22 @@ prior_list = [inclination_EM,
               log10_n0, 
               p, 
               log10_epsilon_e, 
-              log10_epsilon_B
-            # luminosity_distance
-]
+              log10_epsilon_B,
+              thetaWing,
+              epsilon_tot]
 
-prior = Composite(prior_list)
+prior = ConstrainedPrior(prior_list, conversion_function)
 
 detection_limit = None
 likelihood = EMLikelihood(model,
                           data,
                           FILTERS,
-                          tmax = 1000.0,
-                          trigger_time=0,
+                          tmax = 2000.0,
+                          trigger_time=trigger_time,
                           detection_limit = detection_limit,
-                          fixed_params={"luminosity_distance": 40.0}
-) 
+                          fixed_params={"luminosity_distance": 40.0},
+                          error_budget = 1e-5)
+
 
 ##############
 ### FIESTA ###
