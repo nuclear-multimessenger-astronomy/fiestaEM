@@ -5,7 +5,7 @@ import numpy as np
 import ast
 import h5py
 import tqdm
-from multiprocessing import Pool
+from multiprocessing import Pool, Value
 
 from fiesta.constants import days_to_seconds
 import afterglowpy as grb
@@ -18,7 +18,6 @@ class AfterglowData:
                  n_training: int, 
                  n_val: int,
                  n_test: int,
-                 n_pool: int,
                  parameter_distributions: dict = None,
                  jet_type: int = -1,
                  tmin: float = 1.,
@@ -52,8 +51,7 @@ class AfterglowData:
             self._initialize_file() # initialize the h5 file the data is later written to
             self.n_training_exists, self.n_val_exists, self.n_test_exists = 0, 0, 0
         
-        self.n_pool = n_pool
-        print(f"Initializing fiesta.train.AfterglowData \nJet type: {self.jet_type} \nParameters: {self.parameter_names} \nTimes: {self.times[0]} {self.times[-1]} {len(self.times)} \nNus: {self.nus[0]:.3e} {self.nus[-1]:.3e} {len(self.nus)} \nparameter_distributions: {self.parameter_distributions}\nExisting train, val, test: {self.n_training_exists}, {self.n_val_exists}, {self.n_test_exists} \nnpool: {self.n_pool} \n \n \n")      
+        print(f"Initialized fiesta.train.AfterglowData \nJet type: {self.jet_type} \nParameters: {self.parameter_names} \nTimes: {self.times[0]} {self.times[-1]} {len(self.times)} \nNus: {self.nus[0]:.3e} {self.nus[-1]:.3e} {len(self.nus)} \nparameter_distributions: {self.parameter_distributions}\nExisting train, val, test: {self.n_training_exists}, {self.n_val_exists}, {self.n_test_exists} \n \n \n")      
         self.fixed_parameters = fixed_parameters
 
         self.get_raw_data(self.n_training, "train") # create new data and save it to file
@@ -85,8 +83,8 @@ class AfterglowData:
         else:
             training = False
 
-        nchunks, rest = divmod(n, 1000) # create raw data in chunks of 1000
-        for chunk in tqdm.tqdm([*(nchunks*[1000]), rest], desc = f"Calculating {nchunks+1} chunks of {group} data...", leave = True):
+        nchunks, rest = divmod(n, self.chunk_size) # create raw data in chunks of chunk_size
+        for chunk in tqdm.tqdm([*(nchunks*[self.chunk_size]), rest], desc = f"Calculating {nchunks+1} chunks of {group} data...", leave = True):
             if chunk ==0:
                 continue
             X, y = self.create_raw_data(chunk, training)
@@ -205,22 +203,19 @@ class AfterglowData:
                     f["special_train"].create_group(label)
                     if comment is not None:
                         f["special_train"][label].attrs["comment"] = comment
-                    f["special_train"][label].create_dataset("X", data = X, maxshape=(None, len(self.parameter_names)), chunks = (1000, len(self.parameter_names)))
-                    f["special_train"][label].create_dataset("y", data = y, maxshape=(None, len(self.times)*len(self.nus)), chunks = (1000, len(self.times)*len(self.nus)))
+                    f["special_train"][label].create_dataset("X", data = X, maxshape=(None, len(self.parameter_names)), chunks = (self.chunk_size, len(self.parameter_names)))
+                    f["special_train"][label].create_dataset("y", data = y, maxshape=(None, len(self.times)*len(self.nus)), chunks = (self.chunk_size, len(self.times)*len(self.nus)))
 
             else: 
-                f[group].create_dataset("X", data = X, maxshape=(None, len(self.parameter_names)), chunks = (1000, len(self.parameter_names)))
-                f[group].create_dataset("y", data = y, maxshape=(None, len(self.times)*len(self.nus)), chunks = (1000, len(self.times)*len(self.nus)))
-
-        #print("Saving raw data . . .")
-        #with open(os.path.join(self.outdir, "afterglowpy_raw_data.pkl"), "wb") as outfile:
-        #    pickle.dump(save, outfile)
-        #print("Saving raw data . . . done")
+                f[group].create_dataset("X", data = X, maxshape=(None, len(self.parameter_names)), chunks = (self.chunk_size, len(self.parameter_names)))
+                f[group].create_dataset("y", data = y, maxshape=(None, len(self.times)*len(self.nus)), chunks = (self.chunk_size, len(self.times)*len(self.nus)))
 
 class AfterglowpyData(AfterglowData):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, n_pool: int, *args, **kwargs):
         self.outfile = "afterglowpy_raw_data.h5"
+        self.n_pool = n_pool
+        self.chunk_size = 1000
         super().__init__(*args, **kwargs)
 
 
@@ -242,23 +237,25 @@ class AfterglowpyData(AfterglowData):
 
 class PyblastafterglowData(AfterglowData):
 
-    def __init__(self, *args, **kwargs):
-        self.outfile = "pyblastafterglow_raw_data.h5"
+    def __init__(self, path_to_exec: str, rank: int = 0, *args, **kwargs):
+        self.outfile = f"pyblastafterglow_raw_data_{rank}.h5"
+        self.chunk_size = 10
+        self.rank = rank
+        self.path_to_exec = path_to_exec
         super().__init__(*args, **kwargs)
 
 
     def run_afterglow_model(self, X):
-
-        pbag = RunPyblastafterglow(self.jet_type, self.times, self.nus, X, self.parameter_names, self.fixed_parameters)
-        breakpoint()
-        #pool = Pool(processes=self.n_pool)
-        #jobs = [pool.apply_async(func=pbag, args=(argument,)) for argument in range(len(X_raw))]
-        #pool.close()
-        #for job in tqdm.tqdm(jobs):
-        #    idx, out = job.get()
-        #    y_raw[idx] = out
-            
-        #return X_raw, y_raw
+        """Should be run in parallel with different mpi processes to run pyblastafterglow on the parameters in the array X."""
+        y = np.empty((len(X), len(self.times)*len(self.nus)))
+        pbag = RunPyblastafterglow(self.jet_type, self.times, self.nus, X, self.parameter_names, self.fixed_parameters, rank=self.rank, path_to_exec = self.path_to_exec)
+        for j in tqdm.tqdm(range(len(X)), desc = f"Computing {len(X)} pyblastafterglow calculations.", leave = False):
+            try:
+                idx, out = pbag(j)
+                y[idx] = out
+            except:
+                y[j] = np.full(len(self.times)*len(self.nus), np.nan)      
+        return X, y
 
 
 class RunAfterglowpy:
@@ -305,14 +302,17 @@ class RunAfterglowpy:
         if self.jet_type == -1:
              Z["thetaCore"] = params_dict["thetaCore"]
         
-        if self.jet_type == 0:
+        elif self.jet_type == 0:
              Z["thetaCore"] = params_dict["thetaCore"]
              Z["thetaWing"] = params_dict["thetaCore"]*params_dict["alphaWing"]
 
-        if self.jet_type == 4:
+        elif self.jet_type == 4:
             Z["thetaCore"] = params_dict["thetaCore"]
             Z["thetaWing"] = params_dict["thetaCore"]*params_dict["alphaWing"]
             Z["b"] = params_dict["b"]
+        
+        else:
+            raise ValueError(f"Provided jet type {self.jet_type} invalid.")
         
         # Afterglowpy returns flux in mJys
         tt, nunu = np.meshgrid(self._times_afterglowpy, self.nus)
@@ -328,12 +328,14 @@ class RunAfterglowpy:
 
 
 class RunPyblastafterglow:
-    def __init__(self, jet_type, times, nus, X, parameter_names, fixed_parameters = {}, rank = 0):
+    def __init__(self, jet_type, times, nus, X, parameter_names, fixed_parameters = {}, rank = 0, path_to_exec = "./pba.out"):
         self.jet_type = jet_type
         jet_conversion = {"-1": "tophat",
                           "0": "gaussian"}
         self.jet_type = jet_conversion[str(self.jet_type)]
         times_seconds = times * days_to_seconds # pyblastafterglow takes seconds as input
+
+        # preparing the pyblastafterglow string argument for time array
         is_log_uniform = np.allclose(np.diff(np.log(times_seconds)), np.log(times_seconds[1])-np.log(times_seconds[0]))
         if is_log_uniform:
             log_dt = np.log(times_seconds[1])-np.log(times_seconds[0])
@@ -341,12 +343,16 @@ class RunPyblastafterglow:
         else:
             dt = times_seconds[1] - times_seconds[0]
             self.lc_times = f'array uniform {times_seconds[0]:e} {times_seconds[-1]+dt:e} {len(times_seconds)}'
+
+        # preparing the pyblastafterglow string argument for frequency array
         log_dnu = np.log(nus[1]/nus[0])
         self.lc_freqs = f'array logspace {nus[0]:e} {np.exp(log_dnu)*nus[-1]:e} {len(nus)}' # pyblastafterglow only takes this string format
+
         self.X = X
         self.parameter_names = parameter_names
         self.fixed_parameters = fixed_parameters
         self.rank = rank
+        self.path_to_exec = path_to_exec
 
     def _call_pyblastafterglow(self,
                          params_dict: dict[str, float]):
@@ -365,10 +371,17 @@ class RunPyblastafterglow:
             M0c=-1.,         # mass of the ejecta (if -1 -- inferr from Eiso_c and Gamma0c)
             n_layers_a=21    # resolution of the jet (number of individual blastwaves)
         )
-        if "thetaCore" in list(params_dict.keys()):
-            struct.update({"theta_c": params_dict['thetaCore']}) # half-opening angle of the winds of the jet
-        elif "thetaWing" in list(params_dict.keys()):
-            struct.update({"theta_w": params_dict["thetaWing"], "theta_c": params_dict['xCore']*params_dict["thetaWing"]}) # half-opening angle of the winds of the jet
+
+        if self.jet_type == "tophat":
+            struct["theta_c"] =  params_dict['thetaCore'] # half-opening angle of the winds of the jet
+        
+        elif self.jet_type == "gaussian":
+            struct["theta_c"] =  params_dict['thetaCore'] # half-opening angle of the winds of the jet
+            struct["theta_w"] = params_dict["thetaCore"] * params_dict["alphaWing"]
+        
+        else:
+            raise ValueError(f"Provided jet type {self.jet_type} invalid.")
+
         # set model parameters
         P = dict(
                 # main model parameters; Uniform ISM -- 2 free parameters
@@ -379,7 +392,7 @@ class RunPyblastafterglow:
                     theta_obs= params_dict["inclination_EM"], # observer angle [rad] (from pol to jet axis)  
                     lc_freqs= self.lc_freqs, # frequencies for light curve calculation
                     lc_times= self.lc_times, # times for light curve calculation
-                    tb0=1e2, tb1=1e9, ntb=1500, # burster frame time grid boundary, resolution, for the simulation
+                    tb0=1e1, tb1=1e9, ntb=1500, # burster frame time grid boundary, resolution, for the simulation
                 ),
 
                 # ejecta parameters; FS only -- 3 free parameters 
@@ -397,12 +410,11 @@ class RunPyblastafterglow:
                     # method_comp_mode = 'observFlux'
                 )
         )
-
         pba_run = run_grb(working_dir= os.getcwd() + f'/tmp_{self.rank}/', # directory to save/load from simulation data
                               P=P,                     # all parameters 
                               run=True,                # run code itself (if False, it will try to load results)
-                              path_to_cpp="/home/aya/work/hkoehn/fiesta/PyBlastAfterglowMag/src/pba.out", # absolute path to the C++ executable of the code
-                              loglevel="err",         # logging level of the code (info or err)
+                              path_to_cpp=self.path_to_exec, # absolute path to the C++ executable of the code
+                              loglevel="info",         # logging level of the code (info or err)
                               process_skymaps=False    # process unstractured sky maps. Only useed if `do_skymap = yes`
                              )
         mJys = pba_run.GRB.get_lc()
