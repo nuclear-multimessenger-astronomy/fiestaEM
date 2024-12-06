@@ -393,7 +393,7 @@ class RunPyblastafterglow:
                     theta_obs= params_dict["inclination_EM"], # observer angle [rad] (from pol to jet axis)  
                     lc_freqs= self.lc_freqs, # frequencies for light curve calculation
                     lc_times= self.lc_times, # times for light curve calculation
-                    tb0=1e1, tb1=1e9, ntb=2000, # burster frame time grid boundary, resolution, for the simulation
+                    tb0=1e1, tb1=1e9, ntb=1000, # burster frame time grid boundary, resolution, for the simulation
                 ),
 
                 # ejecta parameters; FS only -- 3 free parameters 
