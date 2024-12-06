@@ -40,9 +40,9 @@ jet_conversion = {"tophat": -1,
                   "gaussian": 0,
                   "powerlaw": 4}
 
-n_training = 10
-n_val = 2
-n_test = 2
+n_training = 100
+n_val = 10
+n_test = 10
 
 retrain_weights = None
 

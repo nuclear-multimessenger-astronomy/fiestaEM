@@ -237,18 +237,19 @@ class AfterglowpyData(AfterglowData):
 
 class PyblastafterglowData(AfterglowData):
 
-    def __init__(self, path_to_exec: str, rank: int = 0, *args, **kwargs):
+    def __init__(self, path_to_exec: str, rank: int = 0, grb_resolution: int = 12, *args, **kwargs):
         self.outfile = f"pyblastafterglow_raw_data_{rank}.h5"
         self.chunk_size = 10
         self.rank = rank
         self.path_to_exec = path_to_exec
+        self.grb_resolution = grb_resolution
         super().__init__(*args, **kwargs)
 
 
     def run_afterglow_model(self, X):
         """Should be run in parallel with different mpi processes to run pyblastafterglow on the parameters in the array X."""
         y = np.empty((len(X), len(self.times)*len(self.nus)))
-        pbag = RunPyblastafterglow(self.jet_type, self.times, self.nus, X, self.parameter_names, self.fixed_parameters, rank=self.rank, path_to_exec = self.path_to_exec)
+        pbag = RunPyblastafterglow(self.jet_type, self.times, self.nus, X, self.parameter_names, self.fixed_parameters, rank=self.rank, path_to_exec = self.path_to_exec, grb_resolution  = self.grb_resolution)
         for j in tqdm.tqdm(range(len(X)), desc = f"Computing {len(X)} pyblastafterglow calculations.", leave = False):
             try:
                 idx, out = pbag(j)
@@ -267,7 +268,6 @@ class RunAfterglowpy:
         self.X = X
         self.parameter_names = parameter_names
         self.fixed_parameters = fixed_parameters
-
 
     def _call_afterglowpy(self,
                          params_dict: dict[str, float]):
@@ -328,7 +328,7 @@ class RunAfterglowpy:
 
 
 class RunPyblastafterglow:
-    def __init__(self, jet_type, times, nus, X, parameter_names, fixed_parameters = {}, rank = 0, path_to_exec = "./pba.out"):
+    def __init__(self, jet_type, times, nus, X, parameter_names, fixed_parameters = {}, rank = 0, path_to_exec = "./pba.out", grb_resolution = 12):
         self.jet_type = jet_type
         jet_conversion = {"-1": "tophat",
                           "0": "gaussian"}
@@ -353,6 +353,7 @@ class RunPyblastafterglow:
         self.fixed_parameters = fixed_parameters
         self.rank = rank
         self.path_to_exec = path_to_exec
+        self.grb_resolution = grb_resolution
 
     def _call_pyblastafterglow(self,
                          params_dict: dict[str, float]):
@@ -369,7 +370,7 @@ class RunPyblastafterglow:
             Eiso_c=np.power(10, params_dict["log10_E0"]),  # isotropic equivalent energy of the burst 
             Gamma0c=params_dict["Gamma0"],    # lorentz factor of the core of the jet 
             M0c=-1.,         # mass of the ejecta (if -1 -- inferr from Eiso_c and Gamma0c)
-            n_layers_a=21    # resolution of the jet (number of individual blastwaves)
+            n_layers_a=self.grb_resolution    # resolution of the jet (number of individual blastwaves)
         )
 
         if self.jet_type == "tophat":
@@ -392,7 +393,7 @@ class RunPyblastafterglow:
                     theta_obs= params_dict["inclination_EM"], # observer angle [rad] (from pol to jet axis)  
                     lc_freqs= self.lc_freqs, # frequencies for light curve calculation
                     lc_times= self.lc_times, # times for light curve calculation
-                    tb0=1e1, tb1=1e9, ntb=1500, # burster frame time grid boundary, resolution, for the simulation
+                    tb0=1e1, tb1=1e9, ntb=2000, # burster frame time grid boundary, resolution, for the simulation
                 ),
 
                 # ejecta parameters; FS only -- 3 free parameters 
@@ -414,7 +415,7 @@ class RunPyblastafterglow:
                               P=P,                     # all parameters 
                               run=True,                # run code itself (if False, it will try to load results)
                               path_to_cpp=self.path_to_exec, # absolute path to the C++ executable of the code
-                              loglevel="info",         # logging level of the code (info or err)
+                              loglevel="err",         # logging level of the code (info or err)
                               process_skymaps=False    # process unstractured sky maps. Only useed if `do_skymap = yes`
                              )
         mJys = pba_run.GRB.get_lc()
