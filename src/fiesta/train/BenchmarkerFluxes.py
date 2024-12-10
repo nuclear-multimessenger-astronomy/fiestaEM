@@ -66,14 +66,17 @@ class Benchmarker:
     
     def get_test_data(self,):
 
-        with h5py.File(os.path.join(self.model_dir, "afterglowpy_raw_data.h5"), "r") as f:
+        file = [f for f in os.listdir(self.model_dir) if f.endswith("_raw_data.h5")][0]
+
+        with h5py.File(os.path.join(self.model_dir, file), "r") as f:
             self.parameter_distributions = ast.literal_eval(f["parameter_distributions"][()].decode('utf-8'))
             self.parameter_names =  f["parameter_names"][:].astype(str).tolist()
             self.test_X_raw = f["test"]["X"][:]
             y_raw = f["test"]["y"][:]
             y_raw = y_raw.reshape(len(self.test_X_raw), len(f["nus"]), len(f["times"]) ) 
             y_raw = interp1d(f["times"][:], y_raw, axis = 2)(self.times) # interpolate the test data over the time range of the model
-            self.fluxes_raw = y_raw.reshape(len(self.test_X_raw), len(f["nus"]) * len(self.times) )
+            y_raw = interp1d(f["nus"][:], y_raw, axis = 1)(self.nus) # interpolate the test data over the frequency range of the model
+            self.fluxes_raw = y_raw.reshape(len(self.test_X_raw), len(self.nus) * len(self.times) )
     
     def lightcurve_test_data(self, ):
         

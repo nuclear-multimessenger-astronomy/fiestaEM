@@ -1,8 +1,8 @@
 import numpy as np 
 import matplotlib.pyplot as plt
+import h5py
 
-from fiesta.train.FluxTrainer import PCATrainer, PyblastafterglowData, DataManager
-from fiesta.train.BenchmarkerFluxes import Benchmarker
+from fiesta.train.FluxTrainer import PCATrainer, DataManager
 from fiesta.inference.lightcurve_model import AfterglowpyPCA
 from fiesta.train.neuralnets import NeuralnetConfig
 from fiesta.utils import Filter
@@ -11,100 +11,51 @@ from fiesta.utils import Filter
 ### SETUP ###
 #############
 
-tmin = 0.1 # days
+tmin = 1 # days
 tmax = 2000
-n_times = 200
 
 
 numin = 1e9 # Hz 
-numax = 2.5e18
-n_nu = 256
+numax = 1e17
 
+n_training = 50_000
+n_val = 5000
+n_pca = 100
 
-parameter_distributions = {
-    'inclination_EM': (0, np.pi/2, "uniform"),
-    'log10_E0': (47, 57, "uniform"), 
-    'thetaCore': (0.01, np.pi/5, "loguniform"),
-    'log10_n0': (-6, 2, "uniform"),
-    'p': (2.01, 3, "uniform"),
-    'log10_epsilon_e': (-4, 0, "uniform"),
-    'log10_epsilon_B': (-8,0, "uniform"),
-    'Gamma0': (100, 1000, "uniform")
-}
+name = "tophat"
+outdir = f"./model/"
+file = outdir + "pyblastafterglow_raw_data.h5"
 
-    
-
-jet_name = "tophat"
-jet_conversion = {"tophat": -1,
-                  "gaussian": 0,
-                  "powerlaw": 4}
-
-n_training = 10
-n_val = 4
-n_test = 4
-
-n_pool = 1
-
-retrain_weights = None
-
-
-#######################
-### CREATE RAW DATA ###
-#######################
-name = jet_name
-outdir = f"./pyblastafterglow/{name}/"
-
-jet_type = jet_conversion[jet_name]
-
-
-
-creator = PyblastafterglowData(outdir = outdir,
-                          jet_type = jet_type,
-                          n_training = n_training, 
-                          n_val = n_val,
-                          n_test = n_test,
-                          n_pool = n_pool,
-                          tmin = tmin,
-                          tmax = tmax,
-                          n_times = n_times,
-                          numin = numin,
-                          numax = numax,
-                          n_nu = n_nu,
-                          parameter_distributions = parameter_distributions)
-
-exit()
-
+config = NeuralnetConfig(output_size=n_pca,
+                         nb_epochs=100_000,
+                         hidden_layer_sizes = [256, 512, 256],
+                         learning_rate =8e-3)
 
 ###############
 ### TRAINER ###
 ###############
 
 
-data_manager = DataManager(outdir = outdir,
-                           n_training= 20_000, 
-                           n_val= 2500, 
-                           tmin= 10,
-                           tmax= 1000,
-                           numin = 1e9,
-                           numax = 2.5e18,
-                           retrain_weights = retrain_weights)
+data_manager = DataManager(file = file,
+                           n_training= n_training,
+                           n_val= n_val, 
+                           tmin= tmin,
+                           tmax= tmax,
+                           numin = numin,
+                           numax = numax,
+                           special_training=[])
 
 trainer = PCATrainer(name,
                      outdir,
                      data_manager = data_manager,
-                     plots_dir=f"./benchmarks/{name}",
-                     n_pca = 50,
+                     plots_dir=f"./benchmarks/",
+                     n_pca = n_pca,
                      save_preprocessed_data=False
                      )
 
 ###############
 ### FITTING ###
 ###############
-
-config = NeuralnetConfig(output_size=trainer.n_pca,
-                         nb_epochs=100_000,
-                         hidden_layer_sizes = [64, 128, 64],
-                         learning_rate =8e-3)
 
 trainer.fit(config=config)
 trainer.save()
@@ -121,10 +72,11 @@ lc_model = AfterglowpyPCA(name,
                           filters = FILTERS)
 
 for filt in lc_model.Filters:
-    X_example = trainer.val_X_raw[-1]
+    with h5py.File(file, "r") as f:
+        X_example = f["val"]["X"][-1]
+        y_raw = f["val"]["y"][-1, data_manager.mask]
 
-    y_raw = trainer.val_y_raw[-1]
-    y_raw = y_raw.reshape(256, len(lc_model.times))
+    y_raw = y_raw.reshape(len(lc_model.nus), len(lc_model.times))
     y_raw = np.exp(y_raw)
     y_raw = np.array([np.interp(filt.nu, lc_model.metadata["nus"], column) for column in y_raw.T]) 
     y_raw = -48.6 + -1 * np.log10(y_raw*1e-3 / 1e23) * 2.5
@@ -145,5 +97,5 @@ for filt in lc_model.Filters:
     plt.legend()
     plt.gca().invert_yaxis()
 
-    plt.savefig(f"./pyblastafterglow/benchmarks/{name}/pyblastafterglow_{name}_{filt.name}_example.png")
+    plt.savefig(f"./benchmarks/pyblastafterglow_{name}_{filt.name}_example.png")
     plt.close()

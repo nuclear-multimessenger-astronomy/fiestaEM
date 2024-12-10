@@ -1,5 +1,4 @@
 import numpy as np 
-import matplotlib.pyplot as plt
 
 from fiesta.train.AfterglowData import PyblastafterglowData
 from mpi4py import MPI
@@ -70,4 +69,4 @@ creator = PyblastafterglowData(outdir = outdir,
                           n_nu = n_nu,
                           parameter_distributions = parameter_distributions,
                           rank = rank,
-                          path_to_exec = "/home/aya/work/hkoehn/fiesta/PyBlastAfterglowMag/src/pba.out")
+                          path_to_exec = "/hppfs/scratch/06/di35kuf/pyblastafterglow/PyBlastAfterglowMag/src/pba.out")

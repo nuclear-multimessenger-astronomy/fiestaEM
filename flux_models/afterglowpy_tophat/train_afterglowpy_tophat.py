@@ -79,7 +79,7 @@ for filt in lc_model.Filters:
         X_example = f["val"]["X"][-1]
         y_raw = f["val"]["y"][-1, data_manager.mask]
 
-    y_raw = y_raw.reshape(256, len(lc_model.times))
+    y_raw = y_raw.reshape(len(lc_model.nus), len(lc_model.times))
     y_raw = np.exp(y_raw)
     y_raw = np.array([np.interp(filt.nu, lc_model.metadata["nus"], column) for column in y_raw.T]) 
     y_raw = -48.6 + -1 * np.log10(y_raw*1e-3 / 1e23) * 2.5

@@ -255,7 +255,14 @@ class PyblastafterglowData(AfterglowData):
                 idx, out = pbag(j)
                 y[idx] = out
             except:
-                y[j] = np.full(len(self.times)*len(self.nus), np.nan)      
+                try: 
+                    pbag.n_tb = 3000 # increase blast wave evolution time grid if there is an error
+                    idx, out = pbag(j)
+                    y[idx] = out
+                    pbag.n_tb = 1000
+                except:
+                    y[j] = np.full(len(self.times)*len(self.nus), np.nan)
+                     
         return X, y
 
 
@@ -354,6 +361,7 @@ class RunPyblastafterglow:
         self.rank = rank
         self.path_to_exec = path_to_exec
         self.grb_resolution = grb_resolution
+        self.n_tb = 1000 # set default blast wave evolution timegrid to 1000
 
     def _call_pyblastafterglow(self,
                          params_dict: dict[str, float]):
@@ -393,7 +401,7 @@ class RunPyblastafterglow:
                     theta_obs= params_dict["inclination_EM"], # observer angle [rad] (from pol to jet axis)  
                     lc_freqs= self.lc_freqs, # frequencies for light curve calculation
                     lc_times= self.lc_times, # times for light curve calculation
-                    tb0=1e1, tb1=1e9, ntb=1000, # burster frame time grid boundary, resolution, for the simulation
+                    tb0=1e1, tb1=1e11, ntb=self.n_tb, # burster frame time grid boundary, resolution, for the simulation
                 ),
 
                 # ejecta parameters; FS only -- 3 free parameters 
