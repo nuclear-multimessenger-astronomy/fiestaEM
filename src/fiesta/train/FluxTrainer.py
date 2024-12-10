@@ -279,12 +279,16 @@ class DataManager:
                 train_X_raw = np.concatenate((train_X_raw, f["special_train"][label]["X"][:]))
             train_X = Xscaler.fit_transform(train_X_raw)
             
-
-            yscaler.fit(f["train"]["y"][:15_000, self.mask]) # only load 15k cause otherwise the array might get too large
+            loaded = f["train"]["y"][:15_000, self.mask]
+            if np.any(np.isinf(loaded)):
+                raise ValueError(f"Found inftys in training data.")
+            yscaler.fit(loaded) # only load 15k cause otherwise the array might get too large
             train_y = np.empty((self.n_training, n_components))
             n_loaded = 0
             for chunk in f["train"]["y"].iter_chunks():
                 loaded = f["train"]["y"][chunk][:, self.mask]
+                if np.any(np.isinf(loaded)):
+                    raise ValueError(f"Found inftys in training data.")
                 train_y[n_loaded:n_loaded+len(loaded)] = yscaler.transform(loaded)
                 n_loaded += len(loaded)
                 if n_loaded >= self.n_training:
