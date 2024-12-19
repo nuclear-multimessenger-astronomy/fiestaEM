@@ -1,9 +1,9 @@
-from fiesta.inference.lightcurve_model import AfterglowpyLightcurvemodel
+from fiestaEM.inference.lightcurve_model import AfterglowpyLightcurvemodel
 import afterglowpy as grb
-from fiesta.constants import days_to_seconds
-from fiesta import conversions
-from fiesta import utils
-from fiesta.utils import Filter
+from fiestaEM.constants import days_to_seconds
+from fiestaEM import conversions
+from fiestaEM import utils
+from fiestaEM.utils import Filter
 
 from jaxtyping import Array, Float
 

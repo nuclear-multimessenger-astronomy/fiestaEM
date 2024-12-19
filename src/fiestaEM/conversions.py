@@ -1,4 +1,4 @@
-from fiesta.constants import pc_to_cm
+from fiestaEM.constants import pc_to_cm
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array
