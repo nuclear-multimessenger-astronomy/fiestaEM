@@ -1,0 +1,9 @@
+LICENSE
+README.md
+pyproject.toml
+setup.cfg
+src/fiesta.egg-info/PKG-INFO
+src/fiesta.egg-info/SOURCES.txt
+src/fiesta.egg-info/dependency_links.txt
+src/fiesta.egg-info/requires.txt
+src/fiesta.egg-info/top_level.txt
