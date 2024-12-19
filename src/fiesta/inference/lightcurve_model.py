@@ -367,14 +367,20 @@ class PCALightcurveModel(SurrogateLightcurveModel):
         #y = self.pca.inverse_transform(y)
         y = self.y_scaler.inverse_transform(y)
 
-        y = jnp.reshape(y, shape = (len(self.metadata["nus"]), len(self.times)) )
+        y = jnp.reshape(y, (len(self.metadata["nus"]), len(self.times)))
         y = jnp.exp(y)
-
-        output = {}
-        for filt in self.Filters:
-            mJys = jnp.array([jnp.interp(filt.nu, self.metadata["nus"], column) for column in y.T]) # TODO: get a check here that the filt.nu is in range of the meta data
+        
+        def compute_mag_single_filter(nu):
+            # TODO: get a check here that the filt.nu is in range of the meta data
+            lambda_interp = lambda column: jnp.interp(nu, self.metadata["nus"], column) 
+            mJys = jax.vmap(lambda_interp)(y.T)
             mag = -48.6 + -1 * jnp.log10(mJys) * 2.5 + -1 * (-26) * 2.5
-            output[filt.name] = mag
+            return mag
+        
+        filter_nus = jnp.array([filt.nu for filt in self.Filters])
+        output_array = jax.vmap(compute_mag_single_filter)(filter_nus)
+        output = dict(zip(self.filters, output_array))
+        
         return output
 
     
