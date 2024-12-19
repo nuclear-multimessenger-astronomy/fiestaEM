@@ -11,7 +11,7 @@ import corner
 
 from fiesta.inference.lightcurve_model import AfterglowpyLightcurvemodel
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.inference.prior import Uniform, Composite
+from fiesta.inference.prior import Uniform, CompositePrior
 from fiesta.inference.fiesta import Fiesta
 from fiesta.utils import load_event_data
 
@@ -67,7 +67,7 @@ trigger_time = 57982.5285236896
 ##############
 
 name = "tophat"
-model_dir = f"../trained_models/afterglowpy/{name}/"
+model_dir = f"../../lightcurve_models/afterglowpy/{name}/"
 FILTERS = ["radio-3GHz", "radio-6GHz", "X-ray-1keV", "bessellv"]
 
 model = AfterglowpyLightcurvemodel(name,
@@ -79,7 +79,7 @@ model = AfterglowpyLightcurvemodel(name,
 ### DATA ###
 ############
 
-data = load_event_data("./data/GRB170817A.dat") # only one filter of the GRB170817A data
+data = load_event_data("../data/GRB170817A.dat") # only one filter of the GRB170817A data
 
 #############################
 ### PRIORS AND LIKELIHOOD ###
@@ -105,7 +105,7 @@ prior_list = [inclination_EM,
             #   luminosity_distance
 ]
 
-prior = Composite(prior_list)
+prior = CompositePrior(prior_list)
 
 detection_limit = None
 likelihood = EMLikelihood(model,

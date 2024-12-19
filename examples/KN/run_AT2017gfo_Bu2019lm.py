@@ -9,7 +9,7 @@ import corner
 
 from fiesta.inference.lightcurve_model import BullaLightcurveModel
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.inference.prior import Uniform, Composite
+from fiesta.inference.prior import Uniform, CompositePrior
 from fiesta.inference.fiesta import Fiesta
 from fiesta.utils import load_event_data
 
@@ -66,7 +66,7 @@ trigger_time = 57982.5285236896
 name = "Bu2019lm"
 label = name
 model = BullaLightcurveModel(name,
-                             f"../../trained_models/KN/{name}/",
+                             f"../../lightcurve_models/KN/{name}/",
                              filters)
 
 ############
@@ -93,7 +93,7 @@ prior_list = [KNphi,
               luminosity_distance
 ]
 
-prior = Composite(prior_list)
+prior = CompositePrior(prior_list)
 
 detection_limit = None
 likelihood = EMLikelihood(model,

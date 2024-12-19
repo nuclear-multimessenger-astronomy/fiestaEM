@@ -1,0 +1,60 @@
+Thu Dec 19 16:58:50 CET 2024
+NVIDIA A100-SXM4-40GB
+GPU found? [cuda(id=0)]
+Loaded SurrogateLightcurveModel with filters ['ps1__g', 'ps1__r', 'ps1__i', 'ps1__z', 'ps1__y', '2massj', '2massh', '2massks', 'sdssu']
+Converting error budget to dictionary.
+NOTE: No detection limit is given. Putting it to infinity.
+Loading and preprocessing observations in likelihood . . .
+Loading and preprocessing observations in likelihood . . . DONE
+INFO: Using MALA as local sampler
+Setting up a single Gaussian distribution
+No autotune found, use input sampler_params
+Training normalizing flow
+Tuning global sampler:   0%|          | 0/5 [00:00<?, ?it/s]Tuning global sampler:  20%|██        | 1/5 [01:05<04:23, 65.93s/it]Tuning global sampler:  40%|████      | 2/5 [01:07<01:23, 27.94s/it]Tuning global sampler:  60%|██████    | 3/5 [01:08<00:31, 15.79s/it]Tuning global sampler:  80%|████████  | 4/5 [01:09<00:10, 10.08s/it]Tuning global sampler: 100%|██████████| 5/5 [01:11<00:00,  6.93s/it]Tuning global sampler: 100%|██████████| 5/5 [01:11<00:00, 14.25s/it]
+Compiling MALA body
+Starting Production run
+Production run:   0%|          | 0/3 [00:00<?, ?it/s]Production run:  33%|███▎      | 1/3 [00:00<00:00,  2.88it/s]Production run:  67%|██████▋   | 2/3 [00:00<00:00,  2.85it/s]Production run: 100%|██████████| 3/3 [00:01<00:00,  2.83it/s]Production run: 100%|██████████| 3/3 [00:01<00:00,  2.83it/s]
+Training summary
+==========
+KNphi: 45.549 +/- 13.698
+KNtheta: 48.022 +/- 23.401
+log10_mej_dyn: -2.197 +/- 0.333
+log10_mej_wind: -1.150 +/- 0.249
+luminosity_distance: 41.621 +/- 5.310
+Log probability: -49.590 +/- 128.777
+Local acceptance: 0.989 +/- 0.106
+Global acceptance: 0.489 +/- 0.500
+Max loss: 7.175, Min loss: 4.116
+Production summary
+==========
+KNphi: 44.630 +/- 11.737
+KNtheta: 52.402 +/- 21.684
+log10_mej_dyn: -2.241 +/- 0.159
+log10_mej_wind: -1.054 +/- 0.101
+luminosity_distance: 42.222 +/- 5.083
+Log probability: -33.085 +/- 1.626
+Local acceptance: 0.995 +/- 0.071
+Global acceptance: 0.719 +/- 0.450
+Saving samples to ./outdir_AT2017gfo_Bu2019lm/results_training.npz
+Saving samples to ./outdir_AT2017gfo_Bu2019lm/results_production.npz
+Plotting corner . . .
+Plotting corner . . . done
+Total runtime: 1.0 m 20.11 s
+Plotting lightcurves . . .
+Plotting lightcurves . . . done
+DONE
+DONE
+
+JOB STATISTICS
+==============
+Job ID: 9119015
+Cluster: snellius
+User/Group: twouters2/twouters2
+State: COMPLETED (exit code 0)
+Nodes: 1
+Cores per node: 18
+CPU Utilized: 00:02:05
+CPU Efficiency: 5.69% of 00:36:36 core-walltime
+Job Wall-clock time: 00:02:02
+Memory Utilized: 1.27 GB
+Memory Efficiency: 25.48% of 5.00 GB

@@ -145,6 +145,55 @@ class Uniform(Prior):
             jnp.zeros_like(variable),
         )
         return output + jnp.log(1.0 / (self.xmax - self.xmin))
+
+
+@jaxtyped(typechecker=typechecker)
+class Normal(Prior):
+    mu: float = 0.0
+    sigma: float = 1.0
+
+    def __repr__(self):
+        return f"Normal(mu={self.mu}, sigma={self.sigma})"
+
+    def __init__(
+        self,
+        mu: Float,
+        sigma: Float,
+        naming: list[str],
+        transforms: dict[str, tuple[str, Callable]] = {},
+        **kwargs,
+    ):
+        super().__init__(naming, transforms)
+        assert self.n_dim == 1, "Normal needs to be 1D distributions"
+        self.mu = mu
+        self.sigma = sigma
+
+    def sample(
+        self, rng_key: PRNGKeyArray, n_samples: int
+    ) -> dict[str, Float[Array, " n_samples"]]:
+        """
+        Sample from a normal distribution.
+
+        Parameters
+        ----------
+        rng_key : PRNGKeyArray
+            A random key to use for sampling.
+        n_samples : int
+            The number of samples to draw.
+
+        Returns
+        -------
+        samples : dict
+            Samples from the distribution. The keys are the names of the parameters.
+
+        """
+        samples = jax.random.normal(rng_key, (n_samples,),)
+        samples = self.mu + self.sigma * samples
+        return self.add_name(samples[None])
+
+    def log_prob(self, x: dict[str, Array]) -> Float:
+        variable = x[self.naming[0]]
+        return -1/(2*self.sigma**2) * (variable-self.mu)**2 - jnp.sqrt(2*jnp.pi*self.sigma**2)
     
 # class DiracDelta(Prior):
     
@@ -168,7 +217,7 @@ class Uniform(Prior):
 #         output = jnp.where(variable == self.value, jnp.zeros_like(variable), jnp.zeros_like(variable) - jnp.inf)
 #         return output
     
-class Composite(Prior):
+class CompositePrior(Prior):
     priors: list[Prior] = field(default_factory=list)
 
     def __repr__(self):
@@ -202,4 +251,25 @@ class Composite(Prior):
         output = 0.0
         for prior in self.priors:
             output += prior.log_prob(x)
+        return output
+
+class Constraint(Prior):
+    xmin: float
+    xmax: float
+    def __init__(self,
+                 naming: list[str], 
+                 xmin: Float,
+                 xmax: Float,
+                 transforms: dict[str, tuple[str, Callable]] = {})->None:
+        super().__init__(naming = naming, transforms=transforms)
+        self.xmin = xmin
+        self.xmax = xmax
+    
+    def log_prob(self, x: dict[str, Array]) -> Float:
+        variable = x[self.naming[0]]
+        output = jnp.where(
+            (variable > self.xmax) | (variable < self.xmin),
+            jnp.zeros_like(variable) - jnp.inf,
+            jnp.zeros_like(variable),
+        )
         return output

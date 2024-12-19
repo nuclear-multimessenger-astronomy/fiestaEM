@@ -29,11 +29,14 @@ for metric_name in ["$\\mathcal{L}_2$", "$\\mathcal{L}_\infty$"]:
         fig.savefig(f"./figures/benchmark_{filt}_{file_ending}.pdf", dpi = 200)
     
         B.print_correlations(filter = filt)
-    
-    
-        fig, ax = B.plot_worst_lightcurve(filter = filt)
-        fig.savefig(f"./figures/worst_lightcurve_{filt}_{file_ending}.pdf", dpi = 200)
 
 
+        if metric_name == "$\\mathcal{L}_\infty$":
+            fig, ax = B.plot_error_distribution(filt)
+            fig.savefig(f"./benchmarks/{name}/error_distribution_{filt}.pdf", dpi = 200)
+    
+    
+    fig, ax = B.plot_worst_lightcurves()
+    fig.savefig(f"./benchmarks/{name}/worst_lightcurves_{file_ending}.pdf", dpi = 200)
 
 

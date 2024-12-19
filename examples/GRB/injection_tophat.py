@@ -1,7 +1,7 @@
-"""Test run on GRB170817A data."""
+"""Injection runs with afterglowpy tophat"""
 
 import os
-import jax 
+import jax
 print(f"GPU found? {jax.devices()}")
 import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
@@ -9,12 +9,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import corner
 
-from fiesta.inference.lightcurve_model import AfterglowpyLightcurvemodel
+from fiesta.inference.lightcurve_model import AfterglowpyPCA
 from fiesta.inference.injection import InjectionRecoveryAfterglowpy
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.inference.prior import Uniform, Composite
+from fiesta.inference.prior import Uniform, CompositePrior
 from fiesta.inference.fiesta import Fiesta
-from fiesta.utils import load_event_data
+from fiesta.utils import load_event_data, write_event_data
 
 import time
 start_time = time.time()
@@ -57,23 +57,17 @@ default_corner_kwargs = dict(bins=40,
                         save=False,
                         truth_color="red")
 
-#############
-### SETUP ###
-#############
-
-
-
 ##############
 ### MODEL  ###
 ##############
 
 name = "tophat"
-model_dir = f"../trained_models/afterglowpy/{name}/"
+model_dir = f"../../flux_models/afterglowpy_{name}/model"
 FILTERS = ["radio-3GHz", "radio-6GHz", "X-ray-1keV", "bessellv"]
 
-model = AfterglowpyLightcurvemodel(name,
-                                   model_dir, 
-                                   filters = FILTERS)
+model = AfterglowpyPCA(name,
+                       model_dir, 
+                       filters = FILTERS)
 
 
 ###################
@@ -81,11 +75,17 @@ model = AfterglowpyLightcurvemodel(name,
 ### AFTERGLOWPY ###
 ###################
 
+trigger_time = 58849 # 01-01-2020 in mjd
+remake_injection = False
+injection_dict = {"inclination_EM": 0.32, "log10_E0": 53.79, "thetaCore": 0.1, "p": 2.47, "log10_n0": -2.1, "log10_epsilon_e": -1.326, "log10_epsilon_B": -3.89, "luminosity_distance": 40.0}
 
-injection_dict = {"inclination_EM": 1.3, "log10_E0": 52, "thetaCore": 0.2, "p": 2.5, "log10_n0": -1., "log10_epsilon_e": -1., "log10_epsilon_B": -4., "luminosity_distance": 40.0}
-injection = InjectionRecoveryAfterglowpy(injection_dict, filters = FILTERS, N_datapoints = 50, error_budget = 0.5, tmin = 8, tmax = 800)
-injection.create_injection()
-data = injection.data
+if remake_injection:
+    injection = InjectionRecoveryAfterglowpy(injection_dict, jet_type = -1, filters = FILTERS, N_datapoints = 70, error_budget = 0.5, tmin = 1, tmax = 2000, trigger_time = trigger_time)
+    injection.create_injection()
+    data = injection.data
+    write_event_data("./injection_tophat/injection_tophat.dat", data)
+
+data = load_event_data("./injection_tophat/injection_tophat.dat")
 
 
 #############################
@@ -93,18 +93,18 @@ data = injection.data
 #############################
 
 inclination_EM = Uniform(xmin=0.0, xmax=np.pi/2, naming=['inclination_EM'])
-log10_E0 = Uniform(xmin=46.0, xmax=55.0, naming=['log10_E0'])
-thetaCore = Uniform(xmin=0.01, xmax=np.pi/10, naming=['thetaCore'])
-log10_n0 = Uniform(xmin=-7.0, xmax=1.0, naming=['log10_n0'])
+log10_E0 = Uniform(xmin=47.0, xmax=57.0, naming=['log10_E0'])
+thetaCore = Uniform(xmin=0.01, xmax=np.pi/5, naming=['thetaCore'])
+log10_n0 = Uniform(xmin=-6.0, xmax=2.0, naming=['log10_n0'])
 p = Uniform(xmin=2.01, xmax=3.0, naming=['p'])
-log10_epsilon_e = Uniform(xmin=-5.0, xmax=0.0, naming=['log10_epsilon_e'])
+log10_epsilon_e = Uniform(xmin=-4.0, xmax=0.0, naming=['log10_epsilon_e'])
 log10_epsilon_B = Uniform(xmin=-8.0, xmax=0.0, naming=['log10_epsilon_B'])
 
 # luminosity_distance = Uniform(xmin=30.0, xmax=50.0, naming=['luminosity_distance'])
 
 prior_list = [inclination_EM, 
               log10_E0, 
-              thetaCore, 
+              thetaCore,
               log10_n0, 
               p, 
               log10_epsilon_e, 
@@ -112,17 +112,17 @@ prior_list = [inclination_EM,
             # luminosity_distance
 ]
 
-prior = Composite(prior_list)
+prior = CompositePrior(prior_list)
 
 detection_limit = None
 likelihood = EMLikelihood(model,
                           data,
                           FILTERS,
-                          tmax = 500.0,
-                          trigger_time=0,
+                          tmax = 2000.0,
+                          trigger_time=trigger_time,
                           detection_limit = detection_limit,
-                          fixed_params={"luminosity_distance": 40.0}
-) 
+                          fixed_params={"luminosity_distance": 40.0},
+                          error_budget = 1e-5) 
 
 ##############
 ### FIESTA ###
@@ -133,7 +133,7 @@ eps = 5e-3
 local_sampler_arg = {"step_size": mass_matrix * eps}
 
 # Save for postprocessing
-outdir = f"./injection_tophat/"
+outdir = f"./injection_{name}/"
 if not os.path.exists(outdir):
     os.makedirs(outdir)
 
