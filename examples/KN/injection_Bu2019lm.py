@@ -16,7 +16,7 @@ import corner
 
 from fiesta.inference.lightcurve_model import BullaLightcurveModel
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.inference.prior import Uniform, Composite
+from fiesta.inference.prior import Uniform, CompositePrior
 from fiesta.inference.injection import InjectionRecovery
 from fiesta.inference.fiesta import Fiesta
 from fiesta.utils import load_event_data
@@ -72,7 +72,7 @@ trigger_time = 0.0
 ###########################
 
 model = BullaLightcurveModel(name,
-                             f"../trained_models/{name}/",
+                             f"../../lightcurve_models/KN/{name}/",
                              filters)
 
 injection_dict = {"KNtheta": 30.0,
@@ -105,7 +105,7 @@ prior_list = [KNtheta,
               luminosity_distance
               ]
 
-prior = Composite(prior_list)
+prior = CompositePrior(prior_list)
 
 detection_limit = None
 likelihood = EMLikelihood(model,
@@ -193,7 +193,7 @@ for i, filter_name in enumerate(filters):
     ax.set_ylabel(filter_name)
     ax.invert_yaxis()
     
-plt.savefig(f"./figures/test_injection_{name}_data.png", bbox_inches = 'tight')
+plt.savefig(os.path.join(outdir, f"test_injection_{name}_data.png"), bbox_inches = 'tight')
 plt.close()
 
 # Fixed names: do not include them in the plotting, as will break corner
