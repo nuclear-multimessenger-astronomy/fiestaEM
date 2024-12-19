@@ -6,13 +6,13 @@ import numpy as np
 import jax
 import jax.numpy as jnp 
 from jaxtyping import Array, Float, Int
-from fiestaEM.utils import MinMaxScalerJax
-from fiestaEM import utils
-from fiestaEM.utils import Filter
-from fiestaEM import conversions
-from fiestaEM.constants import days_to_seconds, c
-from fiestaEM import models_utilities
-import fiestaEM.train.neuralnets as fiestaEM_nn
+from fiesta.utils import MinMaxScalerJax
+from fiesta import utils
+from fiesta.utils import Filter
+from fiesta import conversions
+from fiesta.constants import days_to_seconds, c
+from fiesta import models_utilities
+import fiesta.train.neuralnets as fiesta_nn
 
 import matplotlib.pyplot as plt
 import pickle
@@ -51,7 +51,7 @@ class SurrogateTrainer:
     val_X_raw: Float[Array, "n_batch n_params"]
     val_y_raw: dict[str, Float[Array, "n_batch n_times"]]
     
-    trained_states: dict[str, fiestaEM_nn.TrainState]
+    trained_states: dict[str, fiesta_nn.TrainState]
     
     def __init__(self, 
                  name: str,
@@ -107,7 +107,7 @@ class SurrogateTrainer:
         print("Preprocessing data . . . done")
     
     def fit(self,
-            config: fiestaEM_nn.NeuralnetConfig = None,
+            config: fiesta_nn.NeuralnetConfig = None,
             key: jax.random.PRNGKey = jax.random.PRNGKey(0),
             verbose: bool = True):
         """
@@ -119,7 +119,7 @@ class SurrogateTrainer:
         
         # Get default choices if no config is given
         if config is None:
-            config = fiestaEM_nn.NeuralnetConfig()
+            config = fiesta_nn.NeuralnetConfig()
         self.config = config
             
         trained_states = {}
@@ -128,12 +128,12 @@ class SurrogateTrainer:
         for filt in self.filters:
            
             # Create neural network and initialize the state
-            net = fiestaEM_nn.MLP(layer_sizes=config.layer_sizes)
+            net = fiesta_nn.MLP(layer_sizes=config.layer_sizes)
             key, subkey = jax.random.split(key)
-            state = fiestaEM_nn.create_train_state(net, jnp.ones(input_ndim), subkey, config)
+            state = fiesta_nn.create_train_state(net, jnp.ones(input_ndim), subkey, config)
             
             # Perform training loop
-            state, train_losses, val_losses = fiestaEM_nn.train_loop(state, config, self.train_X, self.train_y[filt.name], self.val_X, self.val_y[filt.name], verbose=verbose)
+            state, train_losses, val_losses = fiesta_nn.train_loop(state, config, self.train_X, self.train_y[filt.name], self.val_X, self.val_y[filt.name], verbose=verbose)
 
             # Plot and save the plot if so desired
             if self.plots_dir is not None:
@@ -180,7 +180,7 @@ class SurrogateTrainer:
 
         for filt in self.filters:
             model = self.trained_states[filt.name]
-            fiestaEM_nn.save_model(model, self.config, out_name=self.outdir + f"{filt.name}.pkl")
+            fiesta_nn.save_model(model, self.config, out_name=self.outdir + f"{filt.name}.pkl")
             save[filt.name] = self.preprocessing_metadata[filt.name]
         
         with open(meta_filename, "wb") as meta_file:

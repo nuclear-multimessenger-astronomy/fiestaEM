@@ -8,11 +8,11 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array
 
-from fiestaEM.inference.lightcurve_model import LightcurveModel
-from fiestaEM.conversions import mag_app_from_mag_abs
-from fiestaEM.utils import Filter
-from fiestaEM.constants import days_to_seconds, c
-from fiestaEM import conversions
+from fiesta.inference.lightcurve_model import LightcurveModel
+from fiesta.conversions import mag_app_from_mag_abs
+from fiesta.utils import Filter
+from fiesta.constants import days_to_seconds, c
+from fiesta import conversions
 
 import afterglowpy as grb
 
