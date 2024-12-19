@@ -1,0 +1,62 @@
+Thu Dec 19 17:38:06 CET 2024
+NVIDIA A100-SXM4-40GB
+GPU found? [cuda(id=0)]
+Loaded SurrogateLightcurveModel with filters ['radio-3GHz', 'radio-6GHz', 'X-ray-1keV', 'bessellv'].
+Converting error budget to dictionary.
+NOTE: No detection limit is given. Putting it to infinity.
+Loading and preprocessing observations in likelihood . . .
+Loading and preprocessing observations in likelihood . . . DONE
+INFO: Using MALA as local sampler
+Setting up a single Gaussian distribution
+No autotune found, use input sampler_params
+Training normalizing flow
+Tuning global sampler:   0%|          | 0/7 [00:00<?, ?it/s]Tuning global sampler:  14%|█▍        | 1/7 [00:53<05:23, 53.96s/it]Tuning global sampler:  29%|██▊       | 2/7 [00:56<01:57, 23.49s/it]Tuning global sampler:  43%|████▎     | 3/7 [00:58<00:54, 13.74s/it]Tuning global sampler:  57%|█████▋    | 4/7 [01:00<00:27,  9.16s/it]Tuning global sampler:  71%|███████▏  | 5/7 [01:02<00:13,  6.74s/it]Tuning global sampler:  86%|████████▌ | 6/7 [01:04<00:05,  5.17s/it]Tuning global sampler: 100%|██████████| 7/7 [01:07<00:00,  4.18s/it]Tuning global sampler: 100%|██████████| 7/7 [01:07<00:00,  9.59s/it]
+Compiling MALA body
+Starting Production run
+Production run:   0%|          | 0/3 [00:00<?, ?it/s]Production run:  33%|███▎      | 1/3 [00:00<00:01,  1.97it/s]Production run:  67%|██████▋   | 2/3 [00:01<00:00,  1.97it/s]Production run: 100%|██████████| 3/3 [00:01<00:00,  1.97it/s]Production run: 100%|██████████| 3/3 [00:01<00:00,  1.97it/s]
+Training summary
+==========
+inclination_EM: 0.472 +/- 0.254
+log10_E0: 53.771 +/- 1.152
+thetaCore: 0.153 +/- 0.121
+log10_n0: -1.269 +/- 1.361
+p: 2.467 +/- 0.110
+log10_epsilon_e: -1.212 +/- 0.529
+log10_epsilon_B: -4.616 +/- 1.669
+Log probability: -1434.384 +/- 10642.869
+Local acceptance: 0.183 +/- 0.387
+Global acceptance: 0.282 +/- 0.450
+Max loss: 9.741, Min loss: 1.378
+Production summary
+==========
+inclination_EM: 0.339 +/- 0.056
+log10_E0: 54.048 +/- 0.617
+thetaCore: 0.097 +/- 0.017
+log10_n0: -1.707 +/- 0.918
+p: 2.469 +/- 0.017
+log10_epsilon_e: -1.240 +/- 0.152
+log10_epsilon_B: -4.511 +/- 1.341
+Log probability: -11.601 +/- 1.869
+Local acceptance: 0.112 +/- 0.315
+Global acceptance: 0.608 +/- 0.488
+Saving samples to ./injection_tophat/results_training.npz
+Saving samples to ./injection_tophat/results_production.npz
+Total runtime: 1.0 m 18.61 s
+Plotting lightcurves
+Plotting lightcurves . . . done
+DONE
+DONE
+
+JOB STATISTICS
+==============
+Job ID: 9119646
+Cluster: snellius
+User/Group: twouters2/twouters2
+State: COMPLETED (exit code 0)
+Nodes: 1
+Cores per node: 18
+CPU Utilized: 00:01:54
+CPU Efficiency: 5.92% of 00:32:06 core-walltime
+Job Wall-clock time: 00:01:47
+Memory Utilized: 1.39 GB
+Memory Efficiency: 27.77% of 5.00 GB
