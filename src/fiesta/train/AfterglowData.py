@@ -9,7 +9,6 @@ from multiprocessing import Pool, Value
 
 from fiesta.constants import days_to_seconds
 import afterglowpy as grb
-from PyBlastAfterglowMag.wrappers import run_grb
 
 
 class AfterglowData:
@@ -372,6 +371,12 @@ class RunPyblastafterglow:
         Args:
             Float[Array, "n_times"]: The flux density in mJys at the given times.
         """
+        
+        try:
+            from PyBlastAfterglowMag.wrappers import run_grb
+        except ImportError:
+            raise ImportError("PyBlastAfterglowMag is not installed. Please install it from source")
+        
         # Define jet structure (analytic; gaussian) -- 3 free parameters 
         struct = dict(
             struct= self.jet_type, # type of the structure tophat or gaussian
