@@ -11,10 +11,10 @@ from beartype import beartype as typechecker
 from flax.training.train_state import TrainState
 import pickle
 
-import fiesta.train.neuralnets as fiesta_nn
-from fiesta.utils import MinMaxScalerJax, inverse_svd_transform
-import fiesta.conversions as conversions
-from fiesta import models_utilities
+import fiestaEM.train.neuralnets as fiestaEM_nn
+from fiestaEM.utils import MinMaxScalerJax, inverse_svd_transform
+import fiestaEM.conversions as conversions
+from fiestaEM import models_utilities
 
 ########################
 ### ABSTRACT CLASSES ###
@@ -184,7 +184,7 @@ class SurrogateLightcurveModel(LightcurveModel):
         self.models = {}
         for filter in self.filters:
             filename = os.path.join(self.directory, f"{filter}.pkl")
-            state, _ = fiesta_nn.load_model(filename)
+            state, _ = fiestaEM_nn.load_model(filename)
             self.models[filter] = state
         
     def load_parameter_names(self) -> None:

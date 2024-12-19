@@ -6,9 +6,9 @@ import jax
 from jaxtyping import Float, Array
 import jax.numpy as jnp
 
-from fiesta.inference.lightcurve_model import LightcurveModel
-from fiesta.utils import truncated_gaussian
-from fiesta.conversions import mag_app_from_mag_abs
+from fiestaEM.inference.lightcurve_model import LightcurveModel
+from fiestaEM.utils import truncated_gaussian
+from fiestaEM.conversions import mag_app_from_mag_abs
 
 class EMLikelihood:
     
