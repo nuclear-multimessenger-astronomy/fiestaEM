@@ -13,8 +13,8 @@ import pickle
 
 import fiesta.train.neuralnets as fiesta_nn
 from fiesta.utils import MinMaxScalerJax, inverse_svd_transform
-import fiesta.conversions as conversions
 from fiesta import models_utilities
+from fiesta import utils
 
 ########################
 ### ABSTRACT CLASSES ###
@@ -77,7 +77,7 @@ class LightcurveModel:
         """
         return y
     
-    @partial(jax.jit, static_argnums=(0,))
+    @partial(jax.jit, static_argnums=(0,)) # TODO: the jit here can come into conflict with scikit-learn methods used in project_output, maybe only jit self.comput_output
     def predict(self, x: dict[str, Array]) -> dict[str, Array]:
         """
         Generate the lightcurve y from the unnormalized and untransformed input x.
@@ -86,7 +86,7 @@ class LightcurveModel:
         x to x tilde and y to y tilde take care of projections (e.g. SVD projections) and normalizations.
 
         Args:
-            x (Array): Input array, unnormalized and untransformed.
+            x (dict[str, Array]): Input array, unnormalized and untransformed.
 
         Returns:
             Array: Output dict[str, Array], i.e., the desired raw light curve per filter
@@ -132,8 +132,8 @@ class SurrogateLightcurveModel(LightcurveModel):
         self.models = {}
         
         # Load the metadata for projections etc
-        self.load_filters(filters)
         self.load_metadata()
+        self.load_filters(filters)
         self.load_scalers()
         self.load_times(times)
         self.load_parameter_names()
@@ -227,8 +227,7 @@ class SurrogateLightcurveModel(LightcurveModel):
         Returns:
             dict[str, Array]: Output array transformed to the preprocessed space.
         """
-        return {filter: self.y_scaler[filter].inverse_transform(y[filter]) for filter in self.filters}
-        
+        return {filter: self.y_scaler[filter].inverse_transform(y[filter]) for filter in self.filters}   
     
 class SVDSurrogateLightcurveModel(SurrogateLightcurveModel):
     
@@ -279,6 +278,130 @@ class BullaLightcurveModel(SVDSurrogateLightcurveModel):
         self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[self.name]
     
 class AfterglowpyLightcurvemodel(SVDSurrogateLightcurveModel):
+    
+    def __init__(self,
+                 name: str,
+                 directory: str,
+                 filters: list[str] = None,
+                 times: Array = None):
+        super().__init__(name=name, directory=directory, filters=filters, times=times)
+        
+    def load_parameter_names(self) -> None:
+        self.parameter_names = self.metadata["parameter_names"]
+
+class PCALightcurveModel(SurrogateLightcurveModel):
+
+    def __init__(self,
+                     name: str,
+                     directory: str,
+                     filters: list[str] = None, 
+                     times: Array = None):
+            
+        super().__init__(name = name, directory= directory, filters = filters, times = times)
+
+    def load_filters(self, filters: list[str] = None) -> None:
+        self.nus = self.metadata['nus']
+        self.Filters = []
+        for filter in filters:
+            try:
+                Filter = utils.Filter(filter)
+                if Filter.nu<self.nus[0] or Filter.nu>self.nus[-1]:
+                    continue
+                self.Filters.append(Filter)
+            except:
+                raise Exception(f"Filter {filter} not available.")
+        
+        self.filters = [filt.name for filt in self.Filters]
+        if len(self.filters) == 0:
+            raise ValueError(f"No filters found that match the trained frequency range {self.nus[0]:.3e} Hz to {self.nus[-1]:.3e} Hz.")
+
+        print(f"Loaded SurrogateLightcurveModel with filters {self.filters}.")
+            
+    def load_scalers(self):
+        self.X_scaler = self.metadata["X_scaler"]
+        self.y_scaler = self.metadata["y_scaler"]
+        #self.pca = self.metadata["pca"]
+
+    def load_networks(self) -> None:
+        filename = os.path.join(self.directory, f"{self.name}.pkl")
+        state, _ = fiesta_nn.load_model(filename)
+        self.models = state
+    
+
+    def project_input(self, x: Array) -> Array:
+        """
+        Project the given input to whatever preprocessed input space we are in.
+
+        Args:
+            x (Array): Original input array
+
+        Returns:
+            Array: Transformed input array
+        """
+        x_tilde = self.X_scaler.transform(x)
+        return x_tilde
+    
+    def compute_output(self, x: Array) -> Array:
+        """
+        Apply the trained flax neural network on the given input x.
+
+        Args:
+            x (dict[str, Array]): Input array of parameters per filter
+
+        Returns:
+            dict[str, Array]: _description_
+        """
+        output = self.models.apply_fn({'params': self.models.params}, x)
+        return output
+        
+    def project_output(self, y: Array) -> dict[str, Array]:
+        """
+        Project the computed output to whatever preprocessed output space we are in.
+
+        Args:
+            y (dict[str, Array]): Output array
+
+        Returns:
+            dict[str, Array]: Output array transformed to the preprocessed space.
+        """
+        #y = self.pca.inverse_transform(y)
+        y = self.y_scaler.inverse_transform(y)
+
+        y = jnp.reshape(y, (len(self.metadata["nus"]), len(self.times)))
+        y = jnp.exp(y)
+        
+        def compute_mag_single_filter(nu):
+            # TODO: get a check here that the filt.nu is in range of the meta data
+            lambda_interp = lambda column: jnp.interp(nu, self.metadata["nus"], column) 
+            mJys = jax.vmap(lambda_interp)(y.T)
+            mag = -48.6 + -1 * jnp.log10(mJys) * 2.5 + -1 * (-26) * 2.5
+            return mag
+        
+        filter_nus = jnp.array([filt.nu for filt in self.Filters])
+        output_array = jax.vmap(compute_mag_single_filter)(filter_nus)
+        output = dict(zip(self.filters, output_array))
+        
+        return output
+
+    
+    def predict_log_flux(self, x: Array) -> Array:
+        """
+        Predict the total log flux array for the parameters x.
+
+        Args:
+            x [Array]: raw parameter array
+
+        Returns:
+            log_flux [Array]: Array of log-fluxes.
+        """
+
+        x_tilde = self.X_scaler.transform(x)
+        y = self.models.apply_fn({'params': self.models.params}, x_tilde)
+
+        logflux = self.y_scaler.inverse_transform(y)
+        return logflux
+
+class AfterglowpyPCA(PCALightcurveModel):
     
     def __init__(self,
                  name: str,
