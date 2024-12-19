@@ -7,8 +7,8 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-gpu=1
 #SBATCH --mem-per-gpu=5G
-#SBATCH --output=outdir_injection_Bu2019lm/log.out
-#SBATCH --job-name=injection_Bu2019lm
+#SBATCH --output=outdir_AT2017gfo_Bu2019lm/log.out
+#SBATCH --job-name=AT2017gfo_Bu2019lm
 
 now=$(date)
 echo "$now"
@@ -22,6 +22,6 @@ conda activate /home/twouters2/miniconda3/envs/ninjax
 nvidia-smi --query-gpu=name --format=csv,noheader
 
 # Run the script
-python injection_Bu2019lm.py
+python run_AT2017gfo_Bu2019lm.py
 
 echo "DONE"
