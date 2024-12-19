@@ -1,7 +1,7 @@
 from fiesta.constants import pc_to_cm
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array
+from jaxtyping import Array, Float
 import numpy as np
 
 def Mpc_to_cm(d: float):
