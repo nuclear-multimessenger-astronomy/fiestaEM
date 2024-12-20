@@ -39,7 +39,8 @@ class FluxTrainer:
     def __init__(self, 
                  name: str,
                  outdir: str,
-                 plots_dir: str = None, 
+                 plots_dir: str = None,
+                 save_preprocessed_data: bool = False
                  ) -> None:
         
         self.name = name
@@ -57,6 +58,7 @@ class FluxTrainer:
         self.parameter_names = None
                 
         self.preprocessing_metadata = {}
+        self.save_preprocessed_data = save_preprocessed_data
         
         self.train_X_raw = None
         self.train_y_raw = None
@@ -163,10 +165,10 @@ class PCATrainer(FluxTrainer):
 
         super().__init__(name = name,
                        outdir = outdir,
-                       plots_dir = plots_dir)
+                       plots_dir = plots_dir, 
+                       save_preprocessed_data = save_preprocessed_data)
 
         self.n_pca = n_pca
-        self.save_preprocessed_data = save_preprocessed_data
         self.data_manager = data_manager
         self.parameter_names = data_manager.parameter_names
         self.times = data_manager.times
@@ -178,7 +180,7 @@ class PCATrainer(FluxTrainer):
 
         self.preprocess()
     
-        if save_preprocessed_data:
+        if self.save_preprocessed_data:
             self._save_preprocessed_data()
         
     def preprocess(self):
