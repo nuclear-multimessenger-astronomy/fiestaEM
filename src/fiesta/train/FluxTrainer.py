@@ -2,12 +2,13 @@
 
 import os
 import numpy as np
+import gc
 
 import jax
 import jax.numpy as jnp 
 from jaxtyping import Array, Float, Int
 
-from fiesta.utils import MinMaxScalerJax, StandardScalerJax, PCAdecomposer
+from fiesta.utils import MinMaxScalerJax, StandardScalerJax, PCAdecomposer, ImageScaler
 from fiesta import utils
 from fiesta import conversions
 from fiesta import models_utilities
@@ -18,22 +19,23 @@ import pickle
 import h5py
 from typing import Callable
 
+################
+# TRAINING API #
+################
 
 class FluxTrainer:
-    """Abstract class for training a collection of surrogate"""
+    """Abstract class for training a surrogate model that predicts a flux array."""
     
     name: str
     outdir: str
     parameter_names: list[str]
+
+    train_X: Float[Array, "n_train"]
+    train_y: Float[Array, "n_train"]
+    val_X: Float[Array, "n_val"]
+    val_y: Float[Array, "n_val"]
     
-    preprocessing_metadata: dict[str, dict[str, float]]
-    
-    X_raw: Float[Array, "n_batch n_params"]
-    y_raw: dict[str, Float[Array, "n_batch n_times"]]
-    
-    X: Float[Array, "n_batch n_input_surrogate"]
-    y: dict[str, Float[Array, "n_batch n_output_surrogate"]]
-    
+    preprocessing_metadata: dict  
     trained_states: dict[str, fiesta_nn.TrainState]
     
     def __init__(self, 
@@ -50,7 +52,7 @@ class FluxTrainer:
             os.makedirs(self.outdir)
         
         self.plots_dir = plots_dir
-        if not os.path.exists(self.plots_dir):
+        if self.plots_dir is not None and not os.path.exists(self.plots_dir):
             os.makedirs(self.plots_dir)
         
        
@@ -60,17 +62,18 @@ class FluxTrainer:
         self.preprocessing_metadata = {}
         self.save_preprocessed_data = save_preprocessed_data
         
-        self.train_X_raw = None
-        self.train_y_raw = None
+        self.train_X = None
+        self.train_y = None
 
-        self.val_X_raw = None
-        self.val_y_raw = None
+        self.val_X = None
+        self.val_y = None
 
     def __repr__(self) -> str:
         return f"FluxTrainer(name={self.name})"
     
     def preprocess(self):
-        
+        raise NotImplementedError
+        """
         print("Preprocessing data by scaling to mean 0 and std 1. . .")
         self.X_scaler = StandardScalerJax()
         self.X = self.X_scaler.fit_transform(self.train_X_raw)
@@ -80,6 +83,86 @@ class FluxTrainer:
             
         # Save the metadata
         self.preprocessing_metadata["X_scaler"] = self.X_scaler
+        self.preprocessing_metadata["y_scaler"] = self.y_scaler
+        print("Preprocessing data . . . done")
+        """
+    
+    def fit(self, 
+            config: fiesta_nn.NeuralnetConfig = None,
+            key: jax.random.PRNGKey = jax.random.PRNGKey(0),
+            verbose: bool = True):
+        raise NotImplementedError
+    
+    def plot_learning_curve(self, train_losses, val_losses):
+        plt.figure(figsize=(10, 5))
+        ls = "-o"
+        ms = 3
+        plt.plot([i+1 for i in range(len(train_losses))], train_losses, ls, markersize=ms, label="Train", color="red")
+        plt.plot([i+1 for i in range(len(val_losses))], val_losses, ls, markersize=ms, label="Validation", color="blue")
+        plt.legend()
+        plt.xlabel("Epoch")
+        plt.ylabel("MSE loss")
+        plt.yscale('log')
+        plt.title("Learning curves")
+        plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{self.name}.png"))
+        plt.close()
+    
+    def save(self):
+        """
+        Save the trained model and all the used metadata to the outdir.
+        """
+        # Save the metadata
+        if not os.path.exists(self.outdir):
+            os.makedirs(self.outdir)
+        meta_filename = os.path.join(self.outdir, f"{self.name}_metadata.pkl")
+        
+        save = {}
+        save["times"] = self.times
+        save["nus"] = self.nus
+        save["parameter_names"] = self.parameter_names
+        save.update(self.preprocessing_metadata) 
+
+        with open(meta_filename, "wb") as meta_file:
+            pickle.dump(save, meta_file)
+        
+        # Save the NN
+        self.network.save_model(outfile = os.path.join(self.outdir, f"{self.name}.pkl"))
+    
+    def _save_preprocessed_data(self):
+        print("Saving preprocessed data . . .")
+        np.savez(os.path.join(self.outdir, "afterglow_preprocessed_data.npz"), train_X=self.train_X, train_y= self.train_y, val_X = self.val_X, val_y = self.val_y)
+        print("Saving preprocessed data . . . done")
+
+class PCATrainer(FluxTrainer):
+
+    def __init__(self,
+                 name: str,
+                 outdir: str,
+                 data_manager_args: dict,
+                 n_pca: Int = 100,
+                 plots_dir: str = None,
+                 save_preprocessed_data: bool = False):
+
+        super().__init__(name = name,
+                       outdir = outdir,
+                       plots_dir = plots_dir, 
+                       save_preprocessed_data = save_preprocessed_data)
+
+        self.n_pca = n_pca
+
+        self.data_manager = DataManager(**data_manager_args)
+        self.data_manager.print_file_info()
+        self.data_manager._pass_meta_data(self)
+
+        self.preprocess()
+        if self.save_preprocessed_data:
+            self._save_preprocessed_data()
+        
+    def preprocess(self):
+        print(f"Fitting PCA model with {self.n_pca} components to the provided data.")
+        self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_pca(self.n_pca)
+        print(f"PCA model accounts for a share {np.sum(self.y_scaler.explained_variance_ratio_)} of the total variance in the training data. This value is hopefully close to 1.")
+        self.preprocessing_metadata["X_scaler"] = self.X_scaler 
         self.preprocessing_metadata["y_scaler"] = self.y_scaler
         print("Preprocessing data . . . done")
     
@@ -101,104 +184,82 @@ class FluxTrainer:
             
         input_ndim = len(self.parameter_names)
 
-           
-        # Create neural network and initialize the state
-        net = fiesta_nn.MLP(layer_sizes=config.layer_sizes)
-        key, subkey = jax.random.split(key)
-        state = fiesta_nn.create_train_state(net, jnp.ones(input_ndim), subkey, config)
         
+        # Create neural network and initialize the state
+        self.network = fiesta_nn.MLP(config = config, input_ndim = input_ndim, key = key)
+                
         # Perform training loop
-        state, train_losses, val_losses = fiesta_nn.train_loop(state, config, self.train_X, self.train_y, self.val_X, self.val_y, verbose=verbose)
+        state, train_losses, val_losses = self.network.train_loop(self.train_X, self.train_y, self.val_X, self.val_y, verbose=verbose)
+
         # Plot and save the plot if so desired
         if self.plots_dir is not None:
-            plt.figure(figsize=(10, 5))
-            ls = "-o"
-            ms = 3
-            plt.plot([i+1 for i in range(len(train_losses))], train_losses, ls, markersize=ms, label="Train", color="red")
-            plt.plot([i+1 for i in range(len(val_losses))], val_losses, ls, markersize=ms, label="Validation", color="blue")
-            plt.legend()
-            plt.xlabel("Epoch")
-            plt.ylabel("MSE loss")
-            plt.yscale('log')
-            plt.title("Learning curves")
-            plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{self.name}.png"))
-            plt.close()     
+           self.plot_learning_curve(train_losses, val_losses)
        
         self.trained_state = state
         
-    def save(self):
-        """
-        Save the trained model and all the used metadata to the outdir.
-        """
-        # Save the metadata
-        if not os.path.exists(self.outdir):
-            os.makedirs(self.outdir)
-        meta_filename = os.path.join(self.outdir, f"{self.name}_metadata.pkl")
-        
-        save = {}
-        save["times"] = self.times
-        save["nus"] = self.nus
-        save["parameter_names"] = self.parameter_names
-        save.update(self.preprocessing_metadata) 
-
-        with open(meta_filename, "wb") as meta_file:
-            pickle.dump(save, meta_file)
-        
-        # Save the NN
-        model = self.trained_state
-        fiesta_nn.save_model(model, self.config, out_name=self.outdir + f"{self.name}.pkl")
     
-    def _save_preprocessed_data(self):
-        print("Saving preprocessed data . . .")
-        np.savez(os.path.join(self.outdir, "afterglow_preprocessed_data.npz"), train_X=self.train_X, train_y= self.train_y, val_X = self.val_X, val_y = self.val_y)
-        print("Saving preprocessed data . . . done")
 
-class PCATrainer(FluxTrainer):
+class CVAETrainer(FluxTrainer):
 
     def __init__(self,
                  name: str,
-                 outdir: str,
-                 data_manager,
-                 n_pca: Int = 100,
-                 plots_dir: str = None,
-                 save_preprocessed_data: bool = False):
-
+                 outdir,
+                 data_manager_args,
+                 image_size: tuple[Int],
+                 plots_dir: str =f"./benchmarks/",
+                 save_preprocessed_data=False)->None:
+        
         super().__init__(name = name,
                        outdir = outdir,
                        plots_dir = plots_dir, 
                        save_preprocessed_data = save_preprocessed_data)
-
-        self.n_pca = n_pca
-        self.data_manager = data_manager
-        self.parameter_names = data_manager.parameter_names
-        self.times = data_manager.times
-        self.nus = data_manager.nus
         
-        self.plots_dir = plots_dir
-        if self.plots_dir is not None and not os.path.exists(self.plots_dir):
-            os.makedirs(self.plots_dir)
+        self.data_manager = DataManager(**data_manager_args)
+        self.data_manager.print_file_info()
+        self.data_manager._pass_meta_data(self)
+
+        self.image_size = image_size
 
         self.preprocess()
-    
         if self.save_preprocessed_data:
             self._save_preprocessed_data()
         
-    def preprocess(self):
-        print(f"Fitting PCA model with {self.n_pca} components to the provided data.")
-        self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_data_from_file(self.n_pca)
-        print(f"PCA model accounts for a share {np.sum(self.y_scaler.explained_variance_ratio_)} of the total variance in the training data. This value is hopefully close to 1.")
+    def preprocess(self)-> None:
+        print(f"Preprocessing data by resampling flux array to {self.image_size} and standardizing.")
+        self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_cVAE(self.image_size)
         self.preprocessing_metadata["X_scaler"] = self.X_scaler 
         self.preprocessing_metadata["y_scaler"] = self.y_scaler
         print("Preprocessing data . . . done")
-
-    def load_parameter_names(self):
-        raise NotImplementedError
+    
+    def fit(self,
+            config: fiesta_nn.NeuralnetConfig = None,
+            key: jax.random.PRNGKey = jax.random.PRNGKey(0),
+            verbose: bool = True):
+        """
+        The config controls which architecture is built and therefore should not be specified here.
         
-    def load_times(self):
-        raise NotImplementedError
-       
-    def load_raw_data(self):
-        raise NotImplementedError
+        Args:
+            config (nn.NeuralnetConfig, optional): _description_. Defaults to None.
+        """
+        
+        # Get default choices if no config is given
+        if config is None:
+            config = fiesta_nn.NeuralnetConfig()
+        self.config = config
+
+        self.network = fiesta_nn.CVAE(config = self.config, conditional_dim = len(self.parameter_names), key = key)
+        state, train_losses, val_losses = self.network.train_loop(self.train_X, self.train_y, self.val_X, self.val_y, verbose = verbose)
+
+        # Plot and save the plot if so desired
+        if self.plots_dir is not None:
+            self.plot_learning_curve(train_losses, val_losses)     
+        
+        self.trained_state = state        
+
+
+###################
+# DATA MANAGEMENT #       
+###################
 
 class DataManager:
     
@@ -253,7 +314,7 @@ class DataManager:
         mask = nu_mask[:, None] & time_mask
         self.mask = mask.flatten()
     
-    def get_data_from_file(self,):
+    def load_raw_data_from_file(self,):
         with h5py.File(self.file, "r") as f:
             if self.n_training>self.n_training_exists:
                 raise ValueError(f"Only {self.n_training_exists} entries in file, not enough to train with {self.n_training} data points.")
@@ -269,53 +330,107 @@ class DataManager:
             self.val_X_raw = f["val"]["X"][:self.n_val]
             self.val_y_raw = f["val"]["y"][:self.n_val, self.mask]
     
-    def preprocess_data_from_file(self, n_components: int)->None:
+    def preprocess_pca(self, n_components: int)->None:
         Xscaler, yscaler = StandardScalerJax(), PCAdecomposer(n_components=n_components)
+        if self.n_training > self.n_training_exists: # check if there is enough data
+            raise ValueError(f"Only {self.n_training_exists} entries in file, not enough to train with {self.n_training} data points.")
+        if self.n_val > self.n_val_exists:
+                raise ValueError(f"Only {self.n_val_exists} entries in file, not enough to train with {self.n_val} data points.")
+        
+        # preprocess the training data
         with h5py.File(self.file, "r") as f:
-            # preprocess the training data
-            if self.n_training>self.n_training_exists:
-                raise ValueError(f"Only {self.n_training_exists} entries in file, not enough to train with {self.n_training} data points.")
-            
             train_X_raw = f["train"]["X"][:self.n_training]
-            for label in self.special_training:
-                train_X_raw = np.concatenate((train_X_raw, f["special_train"][label]["X"][:]))
             train_X = Xscaler.fit_transform(train_X_raw)
             
-            loaded = f["train"]["y"][:15_000, self.mask]
+            y_set = f["train"]["y"]
+            chunk_size = y_set.chunks[0]
+
+            loaded = y_set[:20_000, self.mask].astype(np.float16) # only load 20k cause otherwise we might run out of memory at this step
             if np.any(np.isinf(loaded)):
                 raise ValueError(f"Found inftys in training data.")
-            yscaler.fit(loaded) # only load 15k cause otherwise the array might get too large
+            yscaler.fit(loaded); del loaded; gc.collect()
+
             train_y = np.empty((self.n_training, n_components))
-            n_loaded = 0
-            for chunk in f["train"]["y"].iter_chunks():
-                loaded = f["train"]["y"][chunk][:, self.mask]
+            nchunks, rest = divmod(self.n_training, chunk_size) # create raw data in chunks of chunk_size
+            for j, chunk in enumerate(y_set.iter_chunks()):
+                loaded = y_set[chunk][:, self.mask]
                 if np.any(np.isinf(loaded)):
                     raise ValueError(f"Found inftys in training data.")
-                train_y[n_loaded:n_loaded+len(loaded)] = yscaler.transform(loaded)
-                n_loaded += len(loaded)
-                if n_loaded >= self.n_training:
-                    break       
+                train_y[j*chunk_size:(j+1)*chunk_size] = yscaler.transform(loaded)
+                if j>= nchunks-1:
+                    break
+            if rest > 0:
+                loaded = y_set[-rest:, self.mask]
+                if np.any(np.isinf(loaded)):
+                    raise ValueError(f"Found inftys in training data.")
+                train_y[-rest:] = yscaler.transform(loaded)
+        
+        # preprocess the special training data as well ass the validation data
+        train_X, train_y, val_X, val_y = self.__preprocess__special_and_val_data(train_X, train_y, Xscaler, yscaler)
+
+        return train_X, train_y, val_X, val_y, Xscaler, yscaler
+    
+    def preprocess_cVAE(self, image_size: Int[Array, "shape=(2,)"]):
+        Xscaler, yscaler = MinMaxScalerJax(), ImageScaler(downscale = image_size, upscale = (self.n_nus, self.n_times))
+        if self.n_training > self.n_training_exists: # check if there is enough data
+            raise ValueError(f"Only {self.n_training_exists} entries in file, not enough to train with {self.n_training} data points.")
+        if self.n_val > self.n_val_exists:
+                raise ValueError(f"Only {self.n_val_exists} entries in file, not enough to train with {self.n_val} data points.")
+        
+        # preprocess the training data
+        with h5py.File(self.file, "r") as f:
+            # preprocess the training data
+            train_X_raw = f["train"]["X"][:self.n_training]
+            train_X = Xscaler.fit_transform(train_X_raw)
+
+            y_set = f["train"]["y"]
+            chunk_size = y_set.chunks[0]
+            test = y_set[0]
+
+            train_y = np.empty((self.n_training, jnp.prod(image_size)), dtype=jnp.float16)
+            nchunks, rest = divmod(self.n_training, chunk_size) # create raw data in chunks of chunk_size
+            for j, chunk in enumerate(y_set.iter_chunks()):
+                loaded = y_set[chunk][:, self.mask].astype(jnp.float16).reshape(-1, self.n_nus, self.n_times)
+                if np.any(np.isinf(loaded)):
+                    raise ValueError(f"Found inftys in training data.")
+                train_y[j*chunk_size:(j+1)*chunk_size] = yscaler.resize_image(loaded).reshape(-1, jnp.prod(image_size))
+                if j>= nchunks-1:
+                    break
+            if rest > 0:
+                loaded = y_set[-rest:, self.mask].astype(jnp.float16).reshape(-1, self.n_nus, self.n_times)
+                if np.any(np.isinf(loaded)):
+                    raise ValueError(f"Found inftys in training data.")
+                train_y[-rest:] = yscaler.resize_image(loaded)
+            
+            standardscaler = StandardScalerJax()
+            train_y = standardscaler.fit_transform(train_y)
+            yscaler.mu, yscaler.sigma = standardscaler.mu, standardscaler.sigma # a bit hacky here, but that is because of loading the data in chunks above
+
+        # preprocess the special training data as well ass the validation data
+        train_X, train_y, val_X, val_y = self.__preprocess__special_and_val_data(train_X, train_y, Xscaler, yscaler)
+        return train_X, train_y, val_X, val_y, Xscaler, yscaler
+    
+
+    def __preprocess__special_and_val_data(self, train_X, train_y, Xscaler, yscaler):
+        with h5py.File(self.file, "r") as f:
+            # preprocess the special training data       
             for label in self.special_training:
+                special_train_x = Xscaler.transform(f["special_train"][label]["X"][:])
+                train_X = np.concatenate((train_X, special_train_x))
+
                 special_train_y = yscaler.transform(f["special_train"][label]["y"][:, self.mask])
-                train_y = np.concatenate((train_y, special_train_y))
+                train_y = np.concatenate(( train_y, special_train_y.astype(jnp.float16) ))
 
             # preprocess validation data
-            if self.n_val>self.n_val_exists:
-                raise ValueError(f"Only {self.n_val_exists} entries in file, not enough to train with {self.n_val} data points.")
             val_X_raw = f["val"]["X"][:self.n_val]
             val_X = Xscaler.transform(val_X_raw)
             val_y_raw = f["val"]["y"][:self.n_val, self.mask]
             val_y = yscaler.transform(val_y_raw)
-
-            return train_X, train_y, val_X, val_y, Xscaler, yscaler
- 
+        
+        return train_X, train_y, val_X, val_y
     
-    def pass_data(self, object):
+    def _pass_meta_data(self, object):
         object.parameter_names = self.parameter_names
-        object.train_X_raw = self.train_X_raw
-        object.train_y_raw = self.train_y_raw
-        object.val_X_raw = self.val_X_raw
-        object.val_y_raw = self.val_y_raw
         object.times = self.times
         object.nus = self.nus
     
