@@ -179,7 +179,7 @@ class AfterglowData:
 
     def _save_to_file(self, X, y, group: str, label: str = None, comment: str = None):
         with h5py.File(self.outfile, "a") as f:
-            if "y" in f[group]:
+            if "y" in f[group]: # checks if the dataset already exists
                 Xset = f[group]["X"]
                 Xset.resize(Xset.shape[0]+X.shape[0], axis = 0)
                 Xset[-X.shape[0]:] = X
@@ -188,7 +188,7 @@ class AfterglowData:
                 yset.resize(yset.shape[0]+y.shape[0], axis = 0)
                 yset[-y.shape[0]:] = y
             
-            elif label is not None: # when we have special training data
+            elif label is not None: # or if we have special training data
                 if label in f["special_train"]:
                     Xset = f["special_train"][label]["X"]
                     Xset.resize(Xset.shape[0]+X.shape[0], axis = 0)
@@ -205,7 +205,7 @@ class AfterglowData:
                     f["special_train"][label].create_dataset("X", data = X, maxshape=(None, len(self.parameter_names)), chunks = (self.chunk_size, len(self.parameter_names)))
                     f["special_train"][label].create_dataset("y", data = y, maxshape=(None, len(self.times)*len(self.nus)), chunks = (self.chunk_size, len(self.times)*len(self.nus)))
 
-            else: 
+            else: # or if we need to create a new data set
                 f[group].create_dataset("X", data = X, maxshape=(None, len(self.parameter_names)), chunks = (self.chunk_size, len(self.parameter_names)))
                 f[group].create_dataset("y", data = y, maxshape=(None, len(self.times)*len(self.nus)), chunks = (self.chunk_size, len(self.times)*len(self.nus)))
 

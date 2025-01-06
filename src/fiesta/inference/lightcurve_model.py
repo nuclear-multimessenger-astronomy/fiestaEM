@@ -3,6 +3,7 @@
 # TODO: improve them with jax treemaps, since dicts are essentially pytrees
 
 import os
+from pyexpat import model
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
@@ -77,7 +78,7 @@ class LightcurveModel:
         """
         return y
     
-    @partial(jax.jit, static_argnums=(0,)) # TODO: the jit here can come into conflict with scikit-learn methods used in project_output, maybe only jit self.comput_output
+    @partial(jax.jit, static_argnums=(0,))
     def predict(self, x: dict[str, Array]) -> dict[str, Array]:
         """
         Generate the lightcurve y from the unnormalized and untransformed input x.
@@ -289,14 +290,15 @@ class AfterglowpyLightcurvemodel(SVDSurrogateLightcurveModel):
     def load_parameter_names(self) -> None:
         self.parameter_names = self.metadata["parameter_names"]
 
-class PCALightcurveModel(SurrogateLightcurveModel):
+class FluxModel(SurrogateLightcurveModel):
 
     def __init__(self,
                      name: str,
                      directory: str,
                      filters: list[str] = None, 
-                     times: Array = None):
-            
+                     times: Array = None,
+                     model_type: str = "MLP"):
+        self.model_type = model_type # TODO: make this switch nicer somehow maybe
         super().__init__(name = name, directory= directory, filters = filters, times = times)
 
     def load_filters(self, filters: list[str] = None) -> None:
@@ -317,14 +319,20 @@ class PCALightcurveModel(SurrogateLightcurveModel):
 
         print(f"Loaded SurrogateLightcurveModel with filters {self.filters}.")
             
-    def load_scalers(self):
+    def load_scalers(self) -> None:
         self.X_scaler = self.metadata["X_scaler"]
         self.y_scaler = self.metadata["y_scaler"]
-        #self.pca = self.metadata["pca"]
 
     def load_networks(self) -> None:
         filename = os.path.join(self.directory, f"{self.name}.pkl")
-        state, _ = fiesta_nn.load_model(filename)
+        if self.model_type == "MLP":
+            state, _ = fiesta_nn.MLP.load_model(filename)
+            self.z = jnp.array([])  # TODO: how to get z?
+        elif self.model_type == "CVAE":
+           state, _ = fiesta_nn.CVAE.load_model(filename)
+           self.z = jnp.zeros(20)
+        else:
+            raise ValueError(f"Model type must be either 'MLP' or 'CVAE'.")
         self.models = state
     
 
@@ -351,6 +359,7 @@ class PCALightcurveModel(SurrogateLightcurveModel):
         Returns:
             dict[str, Array]: _description_
         """
+        x = jnp.concatenate((self.z, x))
         output = self.models.apply_fn({'params': self.models.params}, x)
         return output
         
@@ -371,7 +380,6 @@ class PCALightcurveModel(SurrogateLightcurveModel):
         y = jnp.exp(y)
         
         def compute_mag_single_filter(nu):
-            # TODO: get a check here that the filt.nu is in range of the meta data
             lambda_interp = lambda column: jnp.interp(nu, self.metadata["nus"], column) 
             mJys = jax.vmap(lambda_interp)(y.T)
             mag = -48.6 + -1 * jnp.log10(mJys) * 2.5 + -1 * (-26) * 2.5
@@ -401,14 +409,15 @@ class PCALightcurveModel(SurrogateLightcurveModel):
         logflux = self.y_scaler.inverse_transform(y)
         return logflux
 
-class AfterglowpyPCA(PCALightcurveModel):
+class AfterglowFlux(FluxModel):
     
     def __init__(self,
                  name: str,
                  directory: str,
                  filters: list[str] = None,
-                 times: Array = None):
-        super().__init__(name=name, directory=directory, filters=filters, times=times)
+                 times: Array = None, 
+                 model_type: str = "MLP"):
+        super().__init__(name=name, directory=directory, filters=filters, times=times, model_type=model_type)
         
     def load_parameter_names(self) -> None:
         self.parameter_names = self.metadata["parameter_names"]

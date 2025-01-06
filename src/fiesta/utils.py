@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 from jax.scipy.stats import truncnorm
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Int
 import jax
 import numpy as np
 import pandas as pd
@@ -141,6 +141,36 @@ class PCAdecomposer(object):
     def fit_transform(self, x: Array)-> Array:
         self.fit(x)
         return self.transform(x)
+
+class ImageScaler(StandardScalerJax):
+    """
+    MinMaxScaler that additionally also resizes the image it scales.
+    """
+    def __init__(self, 
+                 downscale: Int[Array, "shape=(2,)"],
+                 upscale: Int[Array, "shape=(2,)"],
+                 mu: Array = None,
+                 sigma: Array = None):
+        self.downscale = downscale
+        self.upscale = upscale
+        super().__init__(mu = mu, sigma = sigma)
+    
+    def resize_image(self, x: Array):
+        return jax.image.resize(x, shape = (x.shape[0], *self.downscale), method = "bilinear")
+        
+    def transform(self, x: Array)-> Array:
+        x = x.reshape(-1, *self.upscale)
+        x = jax.image.resize(x, shape = (x.shape[0], *self.downscale), method = "bilinear")
+        x = x.reshape(-1, jnp.prod(self.downscale))
+        x = super().transform(x)
+        return x
+
+    def inverse_transform(self, x: Array)-> Array:
+        x = super().inverse_transform(x)
+        x = x.reshape(-1, *self.downscale)
+        x = jax.image.resize(x, shape = (x.shape[0], *self.upscale), method = "bilinear")
+        return x
+    
         
 def inverse_svd_transform(x: Array, 
                           VA: Array, 

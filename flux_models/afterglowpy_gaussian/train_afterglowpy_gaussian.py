@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import h5py
 
 from fiesta.train.FluxTrainer import PCATrainer, DataManager
-from fiesta.inference.lightcurve_model import AfterglowpyPCA
+from fiesta.inference.lightcurve_model import AfterglowFlux
 from fiesta.train.neuralnets import NeuralnetConfig
 from fiesta.utils import Filter
 
@@ -21,7 +21,7 @@ numax = 2.5e18
 
 n_training = 70_000
 n_val = 5000
-n_pca = 100
+n_pca = 200
 
 name = "gaussian"
 outdir = f"./model/"
@@ -38,7 +38,7 @@ config = NeuralnetConfig(output_size=n_pca,
 ###############
 
 
-data_manager = DataManager(file = file,
+data_manager_args = dict(file = file,
                            n_training= n_training, 
                            n_val= n_val, 
                            tmin= tmin,
@@ -47,10 +47,9 @@ data_manager = DataManager(file = file,
                            numax = numax, 
                            special_training=["02"])
 
-data_manager.print_file_info()
 trainer = PCATrainer(name,
                      outdir,
-                     data_manager = data_manager,
+                     data_manager_args = data_manager_args,
                      plots_dir=f"./benchmarks/",
                      n_pca = n_pca,
                      save_preprocessed_data=False
@@ -71,14 +70,15 @@ trainer.save()
 print("Producing example lightcurve . . .")
 FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
-lc_model = AfterglowpyPCA(name,
-                          outdir, 
-                          filters = FILTERS)
+lc_model = AfterglowFlux(name,
+                         outdir, 
+                         filters = FILTERS,
+                         model_type = "MLP")
 
 for filt in lc_model.Filters:
     with h5py.File(file, "r") as f:
         X_example = f["val"]["X"][-1]
-        y_raw = f["val"]["y"][-1, data_manager.mask]
+        y_raw = f["val"]["y"][-1, trainer.data_manager.mask]
 
     y_raw = y_raw.reshape(256, len(lc_model.times))
     y_raw = np.exp(y_raw)

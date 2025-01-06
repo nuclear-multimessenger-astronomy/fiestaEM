@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from fiesta.train.BenchmarkerFluxes import Benchmarker
-from fiesta.inference.lightcurve_model import AfterglowpyPCA
+from fiesta.inference.lightcurve_model import AfterglowFlux
 from fiesta.utils import Filter
 
 
@@ -18,7 +18,7 @@ for metric_name in ["$\\mathcal{L}_2$", "$\\mathcal{L}_\infty$"]:
     
     B = Benchmarker(name = name,
                 model_dir = model_dir,
-                MODEL = AfterglowpyPCA,
+                MODEL = AfterglowFlux,
                 filters = FILTERS,
                 metric_name = metric_name,
                 )
