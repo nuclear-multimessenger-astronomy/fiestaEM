@@ -55,7 +55,7 @@ class NeuralnetConfig(ConfigDict):
 
 def kld(mean, logvar):
     """
-    Kullback-Leibler divergence of a normal distribtuion with arbitrary mean and log variance to the standard normal distribution with mean 0 and unit variance.
+    Kullback-Leibler divergence of a normal distribution with arbitrary mean and log variance to the standard normal distribution with mean 0 and unit variance.
     """
     return 0.5 * jnp.sum(mean**2 + jnp.exp(logvar) - logvar -1)
 
