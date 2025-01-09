@@ -9,15 +9,11 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
 from fiesta.utils import MinMaxScalerJax, StandardScalerJax, PCAdecomposer, ImageScaler
-from fiesta import utils
-from fiesta import conversions
-from fiesta import models_utilities
 import fiesta.train.neuralnets as fiesta_nn
 
 import matplotlib.pyplot as plt
 import pickle
 import h5py
-from typing import Callable
 
 ################
 # TRAINING API #
@@ -35,7 +31,6 @@ class FluxTrainer:
     val_X: Float[Array, "n_val"]
     val_y: Float[Array, "n_val"]
     
-    preprocessing_metadata: dict  
     trained_states: dict[str, fiesta_nn.TrainState]
     
     def __init__(self, 
@@ -58,8 +53,6 @@ class FluxTrainer:
        
         # To be loaded by child classes
         self.parameter_names = None
-                
-        self.preprocessing_metadata = {}
         self.save_preprocessed_data = save_preprocessed_data
         
         self.train_X = None
@@ -73,19 +66,6 @@ class FluxTrainer:
     
     def preprocess(self):
         raise NotImplementedError
-        """
-        print("Preprocessing data by scaling to mean 0 and std 1. . .")
-        self.X_scaler = StandardScalerJax()
-        self.X = self.X_scaler.fit_transform(self.train_X_raw)
-        
-        self.y_scaler = StandardScalerJax()
-        self.y = self.y_scaler.fit_transform(self.train_y_raw)
-            
-        # Save the metadata
-        self.preprocessing_metadata["X_scaler"] = self.X_scaler
-        self.preprocessing_metadata["y_scaler"] = self.y_scaler
-        print("Preprocessing data . . . done")
-        """
     
     def fit(self, 
             config: fiesta_nn.NeuralnetConfig = None,
@@ -120,7 +100,9 @@ class FluxTrainer:
         save["times"] = self.times
         save["nus"] = self.nus
         save["parameter_names"] = self.parameter_names
-        save.update(self.preprocessing_metadata) 
+        save["parameter_distributions"] = self.parameter_distributions
+        save["X_scaler"] = self.X_scaler
+        save["y_scaler"] = self.y_scaler
 
         with open(meta_filename, "wb") as meta_file:
             pickle.dump(save, meta_file)
@@ -162,8 +144,6 @@ class PCATrainer(FluxTrainer):
         print(f"Fitting PCA model with {self.n_pca} components to the provided data.")
         self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_pca(self.n_pca)
         print(f"PCA model accounts for a share {np.sum(self.y_scaler.explained_variance_ratio_)} of the total variance in the training data. This value is hopefully close to 1.")
-        self.preprocessing_metadata["X_scaler"] = self.X_scaler 
-        self.preprocessing_metadata["y_scaler"] = self.y_scaler
         print("Preprocessing data . . . done")
     
     def fit(self,
@@ -227,8 +207,6 @@ class CVAETrainer(FluxTrainer):
     def preprocess(self)-> None:
         print(f"Preprocessing data by resampling flux array to {self.image_size} and standardizing.")
         self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_cVAE(self.image_size)
-        self.preprocessing_metadata["X_scaler"] = self.X_scaler 
-        self.preprocessing_metadata["y_scaler"] = self.y_scaler
         print("Preprocessing data . . . done")
     
     def fit(self,
@@ -295,6 +273,7 @@ class DataManager:
             self.parameter_names =  f["parameter_names"][:].astype(str).tolist()
             self.n_training_exists = f["train"]["X"].shape[0]
             self.n_val_exists = f["val"]["X"].shape[0]
+            self.parameter_distributions = f['parameter_distributions'][()].decode('utf-8')
     
     def set_up_domain_mask(self,)->None:
         """Trims the stored data down to the time and frequency range desired for training."""
@@ -348,10 +327,10 @@ class DataManager:
             loaded = y_set[:20_000, self.mask].astype(np.float16) # only load 20k cause otherwise we might run out of memory at this step
             if np.any(np.isinf(loaded)):
                 raise ValueError(f"Found inftys in training data.")
-            yscaler.fit(loaded); del loaded; gc.collect()
+            yscaler.fit(loaded); del loaded; gc.collect() # remove loaded from memory
 
             train_y = np.empty((self.n_training, n_components))
-            nchunks, rest = divmod(self.n_training, chunk_size) # create raw data in chunks of chunk_size
+            nchunks, rest = divmod(self.n_training, chunk_size) # load raw data in chunks of chunk_size
             for j, chunk in enumerate(y_set.iter_chunks()):
                 loaded = y_set[chunk][:, self.mask]
                 if np.any(np.isinf(loaded)):
@@ -379,7 +358,6 @@ class DataManager:
         
         # preprocess the training data
         with h5py.File(self.file, "r") as f:
-            # preprocess the training data
             train_X_raw = f["train"]["X"][:self.n_training]
             train_X = Xscaler.fit_transform(train_X_raw)
 
@@ -433,6 +411,7 @@ class DataManager:
         object.parameter_names = self.parameter_names
         object.times = self.times
         object.nus = self.nus
+        object.parameter_distributions = self.parameter_distributions
     
 
     def print_file_info(self,):

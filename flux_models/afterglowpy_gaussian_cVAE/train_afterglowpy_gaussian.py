@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import h5py
 
-from fiesta.train.FluxTrainer import CVAETrainer
+from fiesta.train.FluxTrainer import CVAETrainer, DataManager
 from fiesta.inference.lightcurve_model import AfterglowFlux
 from fiesta.train.neuralnets import NeuralnetConfig
 from fiesta.utils import Filter
@@ -21,16 +21,16 @@ numax = 2.5e18
 
 n_training = 70_000
 n_val = 5000
-image_size = np.array([128, 100])
+image_size = np.array([32, 25])
 
 name = "gaussian"
 outdir = f"./model/"
 file = "../afterglowpy_gaussian/model/afterglowpy_raw_data.h5"
 
 config = NeuralnetConfig(output_size= int(np.prod(image_size)),
-                         nb_epochs=10_000,
-                         hidden_layer_sizes = [2400, 1400, 400],
-                         learning_rate =8e-5)
+                         nb_epochs=200_000,
+                         hidden_layer_sizes = [600, 500, 400, 300, 200],
+                         learning_rate =5e-4)
 
 
 ###############
@@ -59,10 +59,10 @@ trainer = CVAETrainer(name,
 ### FITTING ###
 ###############
 
-"""
+
 trainer.fit(config=config)
 trainer.save()
-"""
+
 #############
 ### TEST ###
 #############

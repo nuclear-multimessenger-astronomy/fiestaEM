@@ -242,6 +242,11 @@ class PyblastafterglowData(AfterglowData):
         self.rank = rank
         self.path_to_exec = path_to_exec
         self.grb_resolution = grb_resolution
+
+        try:
+            from PyBlastAfterglowMag.wrappers import run_grb
+        except ImportError:
+            raise ImportError("PyBlastAfterglowMag is not installed. Please install it from source.")
         super().__init__(*args, **kwargs)
 
 
@@ -371,11 +376,6 @@ class RunPyblastafterglow:
         Args:
             Float[Array, "n_times"]: The flux density in mJys at the given times.
         """
-        
-        try:
-            from PyBlastAfterglowMag.wrappers import run_grb
-        except ImportError:
-            raise ImportError("PyBlastAfterglowMag is not installed. Please install it from source")
         
         # Define jet structure (analytic; gaussian) -- 3 free parameters 
         struct = dict(

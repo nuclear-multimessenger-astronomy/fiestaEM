@@ -171,7 +171,6 @@ class SurrogateLightcurveModel(LightcurveModel):
             self.X_scaler[filt] = MinMaxScalerJax(min_val=self.metadata[filt]["X_scaler_min"], max_val=self.metadata[filt]["X_scaler_max"])
             self.y_scaler[filt] = self.metadata[filt]["y_scaler"]
 
-            
     def load_times(self, times: Array = None) -> None:
         if times is None:
             times = jnp.array(self.metadata["times"])
@@ -327,12 +326,13 @@ class FluxModel(SurrogateLightcurveModel):
         filename = os.path.join(self.directory, f"{self.name}.pkl")
         if self.model_type == "MLP":
             state, _ = fiesta_nn.MLP.load_model(filename)
-            self.z = jnp.array([])  # TODO: how to get z?
+            zdim = 0
         elif self.model_type == "CVAE":
            state, _ = fiesta_nn.CVAE.load_model(filename)
-           self.z = jnp.zeros(20)
+           zdim = state.params["layers_0"]["kernel"].shape[0] - len(self.parameter_names)
         else:
             raise ValueError(f"Model type must be either 'MLP' or 'CVAE'.")
+        self.z = jnp.array(jnp.zeros(zdim)) # TODO: how to get z?
         self.models = state
     
 
@@ -402,12 +402,12 @@ class FluxModel(SurrogateLightcurveModel):
         Returns:
             log_flux [Array]: Array of log-fluxes.
         """
-
         x_tilde = self.X_scaler.transform(x)
+        x_tilde = jnp.concatenate((self.z, x_tilde))
         y = self.models.apply_fn({'params': self.models.params}, x_tilde)
 
         logflux = self.y_scaler.inverse_transform(y)
-        return logflux
+        return logflux.flatten()
 
 class AfterglowFlux(FluxModel):
     
@@ -421,3 +421,8 @@ class AfterglowFlux(FluxModel):
         
     def load_parameter_names(self) -> None:
         self.parameter_names = self.metadata["parameter_names"]
+        print(f"This surrogate {self.name} should only be used in the following parameter ranges:")
+        from ast import literal_eval
+        parameter_distributions = literal_eval(self.metadata["parameter_distributions"])
+        for key in parameter_distributions.keys():
+            print(f"\t {key}: {parameter_distributions[key][:2]}")

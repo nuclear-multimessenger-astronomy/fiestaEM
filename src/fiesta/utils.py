@@ -144,7 +144,8 @@ class PCAdecomposer(object):
 
 class ImageScaler(StandardScalerJax):
     """
-    MinMaxScaler that additionally also resizes the image it scales.
+    StandardScaler that additionally also resizes the image it scales.
+    Attention, this object works a little different than the other Scaling objects.
     """
     def __init__(self, 
                  downscale: Int[Array, "shape=(2,)"],
@@ -156,11 +157,22 @@ class ImageScaler(StandardScalerJax):
         super().__init__(mu = mu, sigma = sigma)
     
     def resize_image(self, x: Array):
-        return jax.image.resize(x, shape = (x.shape[0], *self.downscale), method = "bilinear")
+        return jax.image.resize(x, shape = (x.shape[0], *self.downscale), method = "cubic")
+    
+    @staticmethod
+    @jax.vmap
+    def fix_edges(yp: Array):
+        xp = jnp.arange(4, yp.shape[0]+4)
+        xl = jnp.arange(0,4)
+        xr = jnp.arange(yp.shape[0]+4, yp.shape[0]+8)
+        yl = jnp.interp(xl, xp, yp, left = "extrapolate", right = "extrapolate")
+        yr = jnp.interp(xr, xp, yp, left = "extrapolate", right = "extrapolate")
+        out = jnp.concatenate([yl, yp, yr])
+        return out
         
     def transform(self, x: Array)-> Array:
         x = x.reshape(-1, *self.upscale)
-        x = jax.image.resize(x, shape = (x.shape[0], *self.downscale), method = "bilinear")
+        x = jax.image.resize(x, shape = (x.shape[0], *self.downscale), method = "cubic")
         x = x.reshape(-1, jnp.prod(self.downscale))
         x = super().transform(x)
         return x
@@ -168,8 +180,9 @@ class ImageScaler(StandardScalerJax):
     def inverse_transform(self, x: Array)-> Array:
         x = super().inverse_transform(x)
         x = x.reshape(-1, *self.downscale)
-        x = jax.image.resize(x, shape = (x.shape[0], *self.upscale), method = "bilinear")
-        return x
+        x = jax.image.resize(x, shape = (x.shape[0], *self.upscale), method = "cubic")
+        out = jax.vmap(self.fix_edges)(x[:, :, 4:-4]) # this is necessary because jax.image.resize produces artefacts at the edges when upsampling
+        return out
     
         
 def inverse_svd_transform(x: Array, 
@@ -381,8 +394,7 @@ class Filter:
             bandpass = sncosmo.get_bandpass(self.name)
             self.nu = scipy.constants.c/(bandpass.wave_eff*1e-10)
         elif (self.name, None) in _BANDPASS_INTERPOLATORS._primary_loaders:
-            # FIXME: val undefined
-            bandpass = sncosmo.get_bandpass(val["name"], 3)
+            bandpass = sncosmo.get_bandpass(self.name, 0) # these bandpass interpolators require a radius (here by default 0 cm)
             self.nu = scipy.constants.c/(bandpass.wave_eff*1e-10)
         elif self.name.endswith("GHz"):
             freq = re.findall(r"[-+]?(?:\d*\.*\d+)", self.name.replace("-",""))

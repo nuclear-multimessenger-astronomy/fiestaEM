@@ -25,14 +25,24 @@ class Benchmarker:
                  model_dir: str,
                  filters: list[str],
                  MODEL = LightcurveModel,
-                 metric_name: str = "$\\mathcal{L}_\\inf$"
+                 metric_name: str = "$\\mathcal{L}_\\inf$",
+                 model_type: str = "MLP",
+                 file: str = None
                  ) -> None:
         
         self.name = name
         self.model_dir = model_dir
+
+        if file is None:
+            file = [f for f in os.listdir(self.model_dir) if f.endswith("_raw_data.h5")][0]
+            file = os.path.join(self.model_dir, file)
+        self.file = file
+
+
         self.model = MODEL(name = self.name,
                            directory = self.model_dir,
-                           filters = filters)
+                           filters = filters,
+                           model_type = model_type)
 
         self.times = self.model.times
         self.nus = self.model.metadata["nus"]
@@ -66,9 +76,7 @@ class Benchmarker:
     
     def get_test_data(self,):
 
-        file = [f for f in os.listdir(self.model_dir) if f.endswith("_raw_data.h5")][0]
-
-        with h5py.File(os.path.join(self.model_dir, file), "r") as f:
+        with h5py.File(self.file, "r") as f:
             self.parameter_distributions = ast.literal_eval(f["parameter_distributions"][()].decode('utf-8'))
             self.parameter_names =  f["parameter_names"][:].astype(str).tolist()
             self.test_X_raw = f["test"]["X"][:]

@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import h5py
 
-from fiesta.train.FluxTrainer import PCATrainer, DataManager
+from fiesta.train.FluxTrainer import PCATrainer
 from fiesta.inference.lightcurve_model import AfterglowFlux
 from fiesta.train.neuralnets import NeuralnetConfig
 from fiesta.utils import Filter
@@ -30,7 +30,7 @@ file = outdir + "afterglowpy_raw_data.h5"
 config = NeuralnetConfig(output_size=n_pca,
                          nb_epochs=100_000,
                          hidden_layer_sizes = [256, 512, 256],
-                         learning_rate =8e-3)
+                         learning_rate =4e-3)
 
 
 ###############
@@ -60,8 +60,8 @@ trainer = PCATrainer(name,
 ###############
 
 
-trainer.fit(config=config)
-trainer.save()
+#trainer.fit(config=config)
+#trainer.save()
 
 #############
 ### TEST ###
