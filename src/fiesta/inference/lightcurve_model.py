@@ -373,7 +373,6 @@ class FluxModel(SurrogateLightcurveModel):
         Returns:
             dict[str, Array]: Output array transformed to the preprocessed space.
         """
-        #y = self.pca.inverse_transform(y)
         y = self.y_scaler.inverse_transform(y)
 
         y = jnp.reshape(y, (len(self.metadata["nus"]), len(self.times)))

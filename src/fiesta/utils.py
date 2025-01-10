@@ -46,7 +46,6 @@ class MinMaxScalerJax(object):
         self.fit(x)
         return self.transform(x)
     
-
 class StandardScalerJax(object):
     """
     StandardScaler like sklearn does it, but for JAX arrays since sklearn might not be JAX-compatible?
@@ -142,46 +141,54 @@ class PCAdecomposer(object):
         self.fit(x)
         return self.transform(x)
 
-class ImageScaler(StandardScalerJax):
+class ImageScaler(object):
     """
-    StandardScaler that additionally also resizes the image it scales.
-    Attention, this object works a little different than the other Scaling objects.
+    Scaler that down samples 2D arrays of shape upscale to downscale and the inverse.
+    Note that the methods always assume that the input array x is flattened along the last axis, i.e. it will reshape the input x.reshape(-1, *upscale). 
+    The down sampled image is scaled once more with a scaler object.
+    Attention, this object has no proper fit method, because of its application in FluxTrainerCVAE and the way the data is loaded there to avoid memory issues.
     """
     def __init__(self, 
                  downscale: Int[Array, "shape=(2,)"],
                  upscale: Int[Array, "shape=(2,)"],
-                 mu: Array = None,
-                 sigma: Array = None):
+                 scaler: object):
         self.downscale = downscale
         self.upscale = upscale
-        super().__init__(mu = mu, sigma = sigma)
+        self.scaler = scaler
     
-    def resize_image(self, x: Array):
+    def resize_image(self, x: Array) -> Array:
+        x = x.reshape(-1, *self.upscale)
         return jax.image.resize(x, shape = (x.shape[0], *self.downscale), method = "cubic")
     
+    def transform(self, x: Array)-> Array:
+        x = x.reshape(-1, *self.upscale)
+        x = jax.image.resize(x, shape = (x.shape[0], *self.downscale), method = "cubic")
+        x = x.reshape(-1, jnp.prod(self.downscale))
+        x = self.scaler.transform(x)
+        return x
+
+    def inverse_transform(self, x: Array)-> Array:
+        x = self.scaler.inverse_transform(x)
+        x = x.reshape(-1, *self.downscale)
+        x = jax.image.resize(x, shape = (x.shape[0], *self.upscale), method = "cubic")
+        out = jax.vmap(self.fix_edges)(x[:, :, 4:-4]) # this is necessary because jax.image.resize produces artefacts at the edges when upsampling
+        return out
+    
+    def fit_transform_scaler(self, x: Array) -> Array:
+        """Method that will fit the scaling object. Here, the array already has to be down sampled."""
+        out = self.scaler.fit_transform(x)
+        return out
+        
     @staticmethod
     @jax.vmap
     def fix_edges(yp: Array):
+        """Extrapolate at early and late times from the reconstructed array to avoid artefacts at the edges from jax.image.resize."""
         xp = jnp.arange(4, yp.shape[0]+4)
         xl = jnp.arange(0,4)
         xr = jnp.arange(yp.shape[0]+4, yp.shape[0]+8)
         yl = jnp.interp(xl, xp, yp, left = "extrapolate", right = "extrapolate")
         yr = jnp.interp(xr, xp, yp, left = "extrapolate", right = "extrapolate")
         out = jnp.concatenate([yl, yp, yr])
-        return out
-        
-    def transform(self, x: Array)-> Array:
-        x = x.reshape(-1, *self.upscale)
-        x = jax.image.resize(x, shape = (x.shape[0], *self.downscale), method = "cubic")
-        x = x.reshape(-1, jnp.prod(self.downscale))
-        x = super().transform(x)
-        return x
-
-    def inverse_transform(self, x: Array)-> Array:
-        x = super().inverse_transform(x)
-        x = x.reshape(-1, *self.downscale)
-        x = jax.image.resize(x, shape = (x.shape[0], *self.upscale), method = "cubic")
-        out = jax.vmap(self.fix_edges)(x[:, :, 4:-4]) # this is necessary because jax.image.resize produces artefacts at the edges when upsampling
         return out
     
         
