@@ -98,6 +98,7 @@ for filt in lc_model.Filters:
     plt.fill_between(lc_model.times, lower_bound, upper_bound, color='blue', alpha=0.2)
 
     plt.ylabel(f"mag for {filt.name}")
+    plt.xlabel("$t$ in days")
     plt.legend()
     plt.gca().invert_yaxis()
     plt.xscale('log')
