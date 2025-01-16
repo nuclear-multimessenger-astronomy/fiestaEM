@@ -389,7 +389,6 @@ class FluxModel(SurrogateLightcurveModel):
         output = dict(zip(self.filters, output_array))
         
         return output
-
     
     def predict_log_flux(self, x: Array) -> Array:
         """
