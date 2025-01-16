@@ -1,17 +1,22 @@
+import fiesta.constants as constants
+from fiesta.conversions import Fnu_to_mag
+
 import jax.numpy as jnp
 from jax.scipy.stats import truncnorm
 from jaxtyping import Array, Float, Int
 import jax
+
 import numpy as np
 import pandas as pd
+from astropy.time import Time
+from sncosmo.bandpasses import _BANDPASSES, _BANDPASS_INTERPOLATORS
+from sncosmo import get_bandpass
 import scipy.interpolate as interp
 import copy
 import re
-from astropy.time import Time
+
 import astropy
-import scipy
-from sncosmo.bandpasses import _BANDPASSES, _BANDPASS_INTERPOLATORS
-import sncosmo
+
 
 
 ####################
@@ -74,7 +79,7 @@ class StandardScalerJax(object):
         self.fit(x)
         return self.transform(x)
 
-class PCAdecomposer(object):
+class PCADecomposer(object):
     """
     PCA decomposer like sklearn does it. Based on https://github.com/alonfnt/pcax/tree/main.
     """
@@ -140,6 +145,32 @@ class PCAdecomposer(object):
     def fit_transform(self, x: Array)-> Array:
         self.fit(x)
         return self.transform(x)
+    
+class SVDDecomposer(object):
+    """
+    SVDDecomposer that uses the old NMMA approach to decompose lightcurves into SVD coefficients.
+    """
+    def __init__(self,
+                 svd_ncoeff: Int):
+        self.svd_ncoeff = svd_ncoeff
+        self.scaler = MinMaxScalerJax()
+    
+    def fit(self, x: Array):
+        x = self.scaler.fit_transforms(x)
+           
+        # Do SVD decomposition on the training data
+        UA, _, VA = jnp.linalg.svd(x, full_matrices=True)
+        self.VA = VA[:self.svd_ncoeff]
+    
+    def transform(self, x: Array) -> Array:
+        x = self.scaler.transform(x)
+        x = jnp.dot(x, self.VA.T)
+        return x
+    
+    def inverse_transform(self, x: Array) -> Array:
+        x = jnp.dot(x, self.VA)
+        x = self.scaler.inverse_transform(x)
+        return x
 
 class ImageScaler(object):
     """
@@ -191,7 +222,8 @@ class ImageScaler(object):
         out = jnp.concatenate([yl, yp, yr])
         return out
     
-        
+
+# TODO: Remove this   
 def inverse_svd_transform(x: Array, 
                           VA: Array, 
                           nsvd_coeff: int = 10) -> Array:
@@ -396,27 +428,64 @@ class Filter:
 
     def __init__(self,
                  name: str,):
+        """
+        Filter class that uses the bandpass properties from sncosmo or just a simple monochromatic filter based on the name.
+        The necessary attributes are stored as jnp arrays.
+
+        Args: 
+            name (str): Name of the filter. Will be either passed to sncosmo to get the optical bandpass, or the unit at the end will be used to create a monochromatic filter. Supported units are keV and GHz.
+        """
         self.name = name
         if (self.name, None) in _BANDPASSES._primary_loaders:
-            bandpass = sncosmo.get_bandpass(self.name)
-            self.nu = scipy.constants.c/(bandpass.wave_eff*1e-10)
+            bandpass = get_bandpass(self.name) # sncosmo bandpass
+            self.nu = constants.c / (bandpass.wave_eff*1e-10)
+            self.nus = constants.c / (bandpass.wave[::-1]*1e-10)
+            self.trans = bandpass.trans[::-1] # reverse the array to get the transmission as function of frequency (not wavelength)
+            
         elif (self.name, None) in _BANDPASS_INTERPOLATORS._primary_loaders:
-            bandpass = sncosmo.get_bandpass(self.name, 0) # these bandpass interpolators require a radius (here by default 0 cm)
-            self.nu = scipy.constants.c/(bandpass.wave_eff*1e-10)
+            bandpass = get_bandpass(self.name, 0) # these bandpass interpolators require a radius (here by default 0 cm)
+            self.nu = constants.c/(bandpass.wave_eff*1e-10)
+            self.nus = constants.c / (bandpass.wave[::-1]*1e-10)
+            self.trans = bandpass.trans[::-1] # reverse the array to get the transmission as function of frequency (not wavelength)
+
         elif self.name.endswith("GHz"):
             freq = re.findall(r"[-+]?(?:\d*\.*\d+)", self.name.replace("-",""))
             freq = float(freq[-1])
             self.nu = freq*1e9
+            self.nus = jnp.array([self.nu])
+            self.trans = jnp.ones(1)
+
         elif self.name.endswith("keV"):
             energy = re.findall(r"[-+]?(?:\d*\.*\d+)", self.name.replace("-",""))
             energy = float(energy[-1])
-            self.nu = energy*1000*scipy.constants.eV / scipy.constants.h
+            self.nu = energy*1000*constants.eV / constants.h
+            self.nus = jnp.array([self.nu])
+            self.trans = jnp.ones(1)
         else:
             print(f"Warning: Filter {self.name} not recognized")
             self.nu = jnp.nan
             
-        self.wavelength = scipy.constants.c/self.nu
+        self.wavelength = constants.c/self.nu
+        self._calculate_ref_flux()
+    
+    def _calculate_ref_flux(self,):
+        """method to determine the reference flux for the magnitude conversion."""
+        if self.trans.shape[0] == 1:
+            self.ref_flux = 3631000. # mJy
+        else:
+            integrand = self.trans / (constants.h_erg_s * self.nus) # https://en.wikipedia.org/wiki/AB_magnitude
+            integral = jnp.trapezoid(y = integrand, x = self.nus)
+            self.ref_flux = 3631000. * integral.item() # mJy
+    
+    def get_mag(self, flux: Float[Array, "n_nus n_times"], nus: Float[Array, "n_nus"]) -> Float[Array, "n_times"]:
+        mag = Fnu_to_mag(flux, nus, self.nus, self.trans, self.ref_flux)
+        return mag
 
+
+
+
+
+# TODO: REMOVE THE PART BELOW
 
 def get_all_bandpass_metadata():
     # TODO: taken over from NMMA, improve
@@ -462,9 +531,9 @@ def get_default_filts_lambdas(filters: list[str]=None):
         [3561.8, 4866.46, 6214.6, 7687.0, 7127.0, 7544.6, 8679.5, 9633.3, 12350.0]
     )
     lambdas_bessel = 1e-10 * np.array([3605.07, 4413.08, 5512.12, 6585.91, 8059.88])
-    lambdas_radio = scipy.constants.c / np.array([1.25e9, 3e9, 5.5e9, 6e9])
-    lambdas_Xray = scipy.constants.c / (
-        np.array([1e3, 5e3]) * scipy.constants.eV / scipy.constants.h
+    lambdas_radio = constants.c / np.array([1.25e9, 3e9, 5.5e9, 6e9])
+    lambdas_Xray = constants.c / (
+        np.array([1e3, 5e3]) * constants.eV / constants.h
     )
 
     lambdas = np.concatenate(
@@ -482,10 +551,10 @@ def get_default_filts_lambdas(filters: list[str]=None):
             "megacampsf::z",
             "megacampsf::y",
         ]:
-            bandpass = sncosmo.get_bandpass(val["name"], 3)
+            bandpass = get_bandpass(val["name"], 3)
             bandpass.name = bandpass.name.split()[0]
         else:
-            bandpass = sncosmo.get_bandpass(val["name"])
+            bandpass = get_bandpass(val["name"])
 
         bandpasses.append(bandpass)
 
@@ -510,7 +579,7 @@ def get_default_filts_lambdas(filters: list[str]=None):
                 freq = freq.to("Hz").value
                 # adding to the list
                 filts_slice.append(filt)
-                lambdas_slice.append([scipy.constants.c / freq])
+                lambdas_slice.append([constants.c / freq])
                 transmittance_slice.append([1])
 
             elif filt.startswith("X-ray-") and filt not in filts:
@@ -522,10 +591,10 @@ def get_default_filts_lambdas(filters: list[str]=None):
                 energy_val = float(energy_string.replace(energy_unit, ""))
                 # make use of the astropy.units to be more flexible
                 energy = astropy.units.Quantity(energy_val, unit=energy_unit)
-                freq = energy.to("eV").value * scipy.constants.eV / scipy.constants.h
+                freq = energy.to("eV").value * constants.eV / constants.h
                 # adding to the list
                 filts_slice.append(filt)
-                lambdas_slice.append([scipy.constants.c / freq])
+                lambdas_slice.append([constants.c / freq])
                 transmittance_slice.append([1])
 
             else:
