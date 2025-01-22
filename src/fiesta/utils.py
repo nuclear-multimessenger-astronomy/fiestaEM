@@ -156,10 +156,11 @@ class SVDDecomposer(object):
         self.scaler = MinMaxScalerJax()
     
     def fit(self, x: Array):
-        x = self.scaler.fit_transforms(x)
+        xcopy = x.copy()
+        xcopy = self.scaler.fit_transform(xcopy)
            
         # Do SVD decomposition on the training data
-        UA, _, VA = jnp.linalg.svd(x, full_matrices=True)
+        UA, _, VA = jnp.linalg.svd(xcopy, full_matrices=True)
         self.VA = VA[:self.svd_ncoeff]
     
     def transform(self, x: Array) -> Array:
@@ -171,6 +172,10 @@ class SVDDecomposer(object):
         x = jnp.dot(x, self.VA)
         x = self.scaler.inverse_transform(x)
         return x
+    
+    def fit_transform(self, x: Array)-> Array:
+        self.fit(x)
+        return self.transform(x)
 
 class ImageScaler(object):
     """
@@ -235,6 +240,8 @@ def inverse_svd_transform(x: Array,
 #######################
 ### BULLA UTILITIES ###
 #######################
+
+# TODO: place that somewhere else?
 
 def get_filters_bulla_file(filename: str,
                            drop_times: bool = False) -> list[str]:
@@ -480,6 +487,11 @@ class Filter:
     def get_mag(self, flux: Float[Array, "n_nus n_times"], nus: Float[Array, "n_nus"]) -> Float[Array, "n_times"]:
         mag = Fnu_to_mag(flux, nus, self.nus, self.trans, self.ref_flux)
         return mag
+    
+    def get_mags(self, flux: Float[Array, "n_samples n_nus n_times"], nus: Float[Array, "n_nus"]) -> Float[Array, "n_samples n_times"]:
+        vectorized_Fnu_to_mag = jax.vmap(Fnu_to_mag, in_axes = (0, None, None, None, None))
+        mags = vectorized_Fnu_to_mag(flux, nus, self.nus, self.trans, self.ref_flux)
+        return mags
 
 
 
