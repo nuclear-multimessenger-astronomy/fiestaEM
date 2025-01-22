@@ -251,7 +251,7 @@ class DataManager:
         
         return train_X, train_y, val_X, val_y
     
-    def preprocess_svd(self, svd_ncoeff: Int, filters: list) -> tuple[Array, Array[dict], Array, Array[dict], object, object[dict]]:
+    def preprocess_svd(self, svd_ncoeff: Int, filters: list) -> tuple[Array, dict[Array], Array, dict[Array], object, dict[object]]:
         """
         Loads in the training and validation data and performs data preprocessing for the SVD decomposition using fiesta.utils.SVDDecomposer. 
         This is done *per filter* supplied in the filters argument which is equivalent to the old NMMA procedure.
@@ -262,14 +262,14 @@ class DataManager:
             filters (Filter[list]): List of fiesta.utils.filter instances that are used to convert the fluxes to magnitudes
         Returns:
             train_X (Array): Scaled training parameters.
-            train_y (Array[dict]): Dictionary of the SVD coefficients of the training magnitude lightcurves with the filter names as keys
+            train_y (dict[Array]): Dictionary of the SVD coefficients of the training magnitude lightcurves with the filter names as keys
             val_X (Array): Scaled validation parameters
-            val_y (Array[dict]): Dictionary of the SVD coefficients of the validation magnitude lightcurves with the filter names as keys
+            val_y (dict[Array]): Dictionary of the SVD coefficients of the validation magnitude lightcurves with the filter names as keys
             Xscaler (MinMaxScalerJax): MinMaxScaler object fitted to the minimum and maximum of the training data parameters. Can be used to transform and inverse transform parameter points.
-            yscaler (SVDDecomposer[dict]): Dictionary of SVDDecomposer objects with the filter names as keys. The SVDDecomposer objects are fitted to the magnitude training data. Can be used to transform and inverse transform magnitudes in this filter.
+            yscaler (dict[SVDDecomposer]): Dictionary of SVDDecomposer objects with the filter names as keys. The SVDDecomposer objects are fitted to the magnitude training data. Can be used to transform and inverse transform magnitudes in this filter.
         """
         #TODO: dealing with redshift at this step
-        Xscaler, yscaler = MinMaxScalerJax(), {filt.name: SVDDecomposer() for filt in filters}
+        Xscaler, yscaler = MinMaxScalerJax(), {filt.name: SVDDecomposer(svd_ncoeff) for filt in filters}
         train_y = {}
         val_y = {}
 
@@ -285,25 +285,26 @@ class DataManager:
             val_X_raw = f["val"]["X"][:self.n_val]
             val_X = Xscaler.transform(val_X_raw)
 
-            y_set = f["train"]["y"]
-            train_y_raw = y_set[:, self.mask].reshape(-1, self.n_nus, self.n_times)
+            train_y_raw = f["train"]["y"][:, self.mask].reshape(-1, self.n_nus, self.n_times)
+            mJys_train = np.exp(train_y_raw)
+            val_y_raw =  f["val"]["y"][:self.n_val, self.mask].reshape(-1, self.n_nus, self.n_times)
+            mJys_val = np.exp(val_y_raw)
             
             for filt in filters:
-                mag = filter.get_mag(train_y_raw, self.nus) # convert to magnitudes
+                mag = filt.get_mags(mJys_train, self.nus) # convert to magnitudes
                 train_data = yscaler[filt.name].fit_transform(mag)
 
-                # preprocess the special training data 
+                # preprocess the special training data
                 for label in self.special_training:
-                    special_train_y = f["special_train"][label]["y"][:, self.mask].reshape(-1, self.n_nus, self.n_times)
-                    special_mag = filter.get_mag(special_train_y, self.nus) # convert to magnitudes
+                    special_train_y = np.exp(f["special_train"][label]["y"][:, self.mask].reshape(-1, self.n_nus, self.n_times))
+                    special_mag = filt.get_mags(special_train_y, self.nus) # convert to magnitudes
                     special_train_data = yscaler[filt.name].transform(special_mag)
                     train_data = np.concatenate((train_data, special_train_data))
 
                 train_y[filt.name] = train_data
     
                 # preprocess validation data
-                val_y_raw = f["val"]["y"][:self.n_val, self.mask].reshape(-1, self.n_nus, self.n_times)
-                mag = filter.get_mag(self.nus, self.times, val_y_raw)
+                mag = filt.get_mags(mJys_val, self.nus) # convert to magnitudes
                 val_data = yscaler[filt.name].transform(mag)
                 val_y[filt.name] = val_data
 
