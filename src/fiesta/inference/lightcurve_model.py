@@ -3,41 +3,70 @@
 # TODO: improve them with jax treemaps, since dicts are essentially pytrees
 
 import os
-from pyexpat import model
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 from functools import partial
-from beartype import beartype as typechecker
 from flax.training.train_state import TrainState
 import pickle
 
 import fiesta.train.neuralnets as fiesta_nn
-from fiesta.utils import MinMaxScalerJax, inverse_svd_transform
-from fiesta import models_utilities
 from fiesta import utils
 
 ########################
 ### ABSTRACT CLASSES ###
 ########################
 
-class LightcurveModel:
-    """Abstract class for general light curve models"""
+class SurrogateModel:
+    """Abstract class for general surrogate models"""
     
-    name: str 
+    name: str
+    directory: str 
     filters: list[str]
     parameter_names: list[str]
     times: Array
     
     def __init__(self, 
-                 name: str) -> None:
+                 name: str,
+                 directory: str) -> None:
         self.name = name
+        self.directory = directory
+
+        self.load_metadata()
+        
         self.filters = []
-        self.parameter_names = []
-        self.times = jnp.array([])
     
     def add_name(self, x: Array):
-        return dict(zip(self.parameter_names, x))    
+        return dict(zip(self.parameter_names, x))
+    
+    def load_metadata(self) -> None:
+        print(f"Loading metadata for model {self.name}.")
+        self.metadata_filename = os.path.join(self.directory, f"{self.name}_metadata.pkl")
+        assert os.path.exists(self.metadata_filename), f"Metadata file {self.metadata_filename} not found - check the directory {self.directory}"
+        
+        # open the file
+        with open(self.metadata_filename, "rb") as meta_file:
+            self.metadata = pickle.load(meta_file)
+        
+        # make the scaler objects attributes
+        self.X_scaler = self.metadata["X_scaler"]
+        self.y_scaler = self.metadata["y_scaler"]
+
+        # load parameter names
+        self.parameter_names = self.metadata["parameter_names"]
+        print(f"This surrogate {self.name} should only be used in the following parameter ranges:")
+        from ast import literal_eval
+        parameter_distributions = literal_eval(self.metadata["parameter_distributions"])
+        for key in parameter_distributions.keys():
+            print(f"\t {key}: {parameter_distributions[key][:2]}")
+
+        #load times
+        self.times = self.metadata["times"]
+
+        #load nus
+        if "nus" in self.metadata.keys():
+            self.nus = self.metadata["nus"]
+    
     
     def project_input(self, x: Array) -> dict[str, Array]:
         """
@@ -100,27 +129,35 @@ class LightcurveModel:
         y = self.project_output(y_tilde)
         return y
     
+    def vpredict(self, X: dict[str, Array]) -> dict[str, Array]:
+        """
+        Vectorized prediction function to calculate the lightcurves y for several inputs x at the same time.
+        """
+
+        def predict_single(x):
+            param_dict = self.add_name(x)
+            return self.predict(param_dict)
+
+        X_array = jnp.array([X[name] for name in self.parameter_names]).T
+        results = jax.vmap(predict_single)(X_array)
+        return results
+    
     def __repr__(self) -> str:
         return self.name
     
-class SurrogateLightcurveModel(LightcurveModel):
-    """Abstract class for models that rely on a surrogate, in the form of a neural network."""
+class LightcurveModel(SurrogateModel):
+    """Class of surrogate models that predicts the magnitudes per filter."""
     
     directory: str
     metadata: dict
-    X_scaler: MinMaxScalerJax
-    y_scaler: dict[str, MinMaxScalerJax]
+    X_scaler: object
+    y_scaler: dict[str, object]
     models: dict[str, TrainState]
-    times: Array
-    tmin: Float
-    tmax: Float
-    parameter_names: list[str]
     
     def __init__(self,
                  name: str,
                  directory: str,
-                 filters: list[str] = None,
-                 times: Array = None) -> None:
+                 filters: list[str] = None) -> None:
         """_summary_
 
         Args:
@@ -128,70 +165,38 @@ class SurrogateLightcurveModel(LightcurveModel):
             directory (str): Directory with trained model states and projection metadata such as scalers.
             filters (list[str]): List of all the filters for which the model should be loaded.
         """
-        super().__init__(name)
-        self.directory = directory
-        self.models = {}
+        super().__init__(name, directory)
         
-        # Load the metadata for projections etc
-        self.load_metadata()
+        # Load the filters and networks
         self.load_filters(filters)
-        self.load_scalers()
-        self.load_times(times)
-        self.load_parameter_names()
         self.load_networks()
         
-    def load_metadata(self) -> None:
-        self.metadata_filename = os.path.join(self.directory, f"{self.name}_metadata.pkl")
-        assert os.path.exists(self.metadata_filename), f"Metadata file {self.metadata_filename} not found - check the directory {self.directory}"
-        meta_file = open(self.metadata_filename, "rb")
-        self.metadata = pickle.load(meta_file)
-        meta_file.close()
-        
-    def load_filters(self, filters: list[str] = None) -> None:
+    def load_filters(self, filters_args: list[str] = None) -> None:
         # Save those filters that were given and that were trained and store here already
         pkl_files = [file for file in os.listdir(self.directory) if file.endswith(".pkl") or file.endswith(".pickle")]
-        all_available_filters = [file.split(".")[0] for file in pkl_files]
+        all_available_filters = [(file.split(".")[0]).split("_")[1] for file in pkl_files]
         
-        if filters is None:
+        if filters_args is None:
             # Use all filters that the surrogate model supports
             filters = all_available_filters
         else:
             # Fetch those filters specified by the user that are available
-            filters = [f.replace(":", "_") for f in filters]
-            filters = [f for f in filters if f in all_available_filters]
+            filters = [f for f in filters_args if f in all_available_filters]
         
         if len(filters) == 0:
-            raise ValueError(f"No filters found in {self.directory} that match the given filters {filters}")
+            raise ValueError(f"No filters found in {self.directory} that match the given filters {filters_args}.")
         self.filters = filters
-        print(f"Loaded SurrogateLightcurveModel with filters {filters}")
-        
-    def load_scalers(self):
-        self.X_scaler, self.y_scaler = {}, {}
-        for filt in self.filters: 
-            self.X_scaler[filt] = MinMaxScalerJax(min_val=self.metadata[filt]["X_scaler_min"], max_val=self.metadata[filt]["X_scaler_max"])
-            self.y_scaler[filt] = self.metadata[filt]["y_scaler"]
-
-    def load_times(self, times: Array = None) -> None:
-        if times is None:
-            times = jnp.array(self.metadata["times"])
-        if times.min()<self.metadata["times"].min() or times.max()>self.metadata["times"].max():
-            times = jnp.array(self.metadata["times"])
-        self.times = times
-        self.tmin = jnp.min(times)
-        self.tmax = jnp.max(times)
+        self.Filters = [utils.Filter(filt) for filt in self.filters]
+        print(f"Loaded SurrogateLightcurveModel with filters {self.filters}.")
         
     def load_networks(self) -> None:
         self.models = {}
         for filter in self.filters:
-            filename = os.path.join(self.directory, f"{filter}.pkl")
-            state, _ = fiesta_nn.load_model(filename)
+            filename = os.path.join(self.directory, f"{self.name}_{filter}.pkl")
+            state, _ = fiesta_nn.MLP.load_model(filename)
             self.models[filter] = state
-        
-    def load_parameter_names(self) -> None:
-        """Implement in child classes"""
-        raise NotImplementedError
     
-    def project_input(self, x: Array) -> dict[str, Array]:
+    def project_input(self, x: Array) -> Array:
         """
         Project the given input to whatever preprocessed input space we are in.
 
@@ -201,10 +206,10 @@ class SurrogateLightcurveModel(LightcurveModel):
         Returns:
             dict[str, Array]: Transformed input array
         """
-        x_tilde = {filter: self.X_scaler[filter].transform(x) for filter in self.filters}
+        x_tilde = self.X_scaler.transform(x)
         return x_tilde
     
-    def compute_output(self, x: dict[str, Array]) -> dict[str, Array]:
+    def compute_output(self, x: Array) -> Array:
         """
         Apply the trained flax neural network on the given input x.
 
@@ -214,8 +219,13 @@ class SurrogateLightcurveModel(LightcurveModel):
         Returns:
             dict[str, Array]: _description_
         """
-        # TODO: too convoluted, simplify
-        return {filter: self.models[filter].apply_fn({'params': self.models[filter].params}, x[filter]) for filter in self.filters}
+        def apply_model(filter):
+            model = self.models[filter]
+            output = model.apply_fn({'params': model.params}, x)
+            return output
+        
+        y = jax.tree.map(apply_model, self.filters) # avoid for loop with jax.tree.map 
+        return dict(zip(self.filters, y))
         
     def project_output(self, y: dict[str, Array]) -> dict[str, Array]:
         """
@@ -227,78 +237,28 @@ class SurrogateLightcurveModel(LightcurveModel):
         Returns:
             dict[str, Array]: Output array transformed to the preprocessed space.
         """
-        return {filter: self.y_scaler[filter].inverse_transform(y[filter]) for filter in self.filters}   
-    
-class SVDSurrogateLightcurveModel(SurrogateLightcurveModel):
-    
-    VA: dict[str, Array]
-    svd_ncoeff: int
-    
-    def __init__(self, 
-                 name: str, 
-                 directory: str,
-                 filters: list[str] = None,
-                 times: Array = None):
-        """
-        Initialize a class to generate lightcurves from a Bulla trained model.
+        def inverse_transform(filter):
+            y_scaler = self.y_scaler[filter]
+            output = y_scaler.inverse_transform(y[filter])
+            return output
         
-        """
-        super().__init__(name=name, directory=directory, times=times, filters=filters)
-        
-        self.VA = {filt: self.metadata[filt]["VA"] for filt in filters}
-        self.svd_ncoeff = {filt: self.metadata[filt]["svd_ncoeff"] for filt in filters}
-        
-    def load_parameter_names(self) -> None:
-        raise NotImplementedError
-            
-    def project_output(self, y: dict[str, Array]) -> dict[str, Array]:
-        """
-        Apply the trained flax neural network on the given input x.
+        mag = jax.tree.map(inverse_transform, self.filters) # avoid for loop with jax.tree.map
+        return dict(zip(self.filters, mag))       
 
-        Args:
-            x (dict[str, Array]): Input array of parameters
+class FluxModel(SurrogateModel):
+    """Class of surrogate models that predicts the 2D spectral flux density array."""
 
-        Returns:
-            dict[str, Array]: _description_
-        """
-        output = {filter: inverse_svd_transform(y[filter], self.VA[filter], self.svd_ncoeff[filter]) for filter in self.filters}
-        return super().project_output(output)
-       
-class BullaLightcurveModel(SVDSurrogateLightcurveModel):
-    
-    def __init__(self, 
-                 name: str, 
-                 directory: str,
-                 filters: list[str] = None,
-                 times: Array = None):
-        
-        super().__init__(name=name, directory=directory, filters=filters, times=times)
-        
-    def load_parameter_names(self) -> None:
-        self.parameter_names = models_utilities.BULLA_PARAMETER_NAMES[self.name]
-    
-class AfterglowpyLightcurvemodel(SVDSurrogateLightcurveModel):
-    
     def __init__(self,
                  name: str,
                  directory: str,
-                 filters: list[str] = None,
-                 times: Array = None):
-        super().__init__(name=name, directory=directory, filters=filters, times=times)
-        
-    def load_parameter_names(self) -> None:
-        self.parameter_names = self.metadata["parameter_names"]
-
-class FluxModel(SurrogateLightcurveModel):
-
-    def __init__(self,
-                     name: str,
-                     directory: str,
-                     filters: list[str] = None, 
-                     times: Array = None,
-                     model_type: str = "MLP"):
+                 filters: list[str] = None, 
+                 model_type: str = "MLP"):
         self.model_type = model_type # TODO: make this switch nicer somehow maybe
-        super().__init__(name = name, directory= directory, filters = filters, times = times)
+        super().__init__(name, directory)
+
+        # Load the filters and networks
+        self.load_filters(filters)
+        self.load_networks()
 
     def load_filters(self, filters: list[str] = None) -> None:
         self.nus = self.metadata['nus']
@@ -317,10 +277,6 @@ class FluxModel(SurrogateLightcurveModel):
             raise ValueError(f"No filters found that match the trained frequency range {self.nus[0]:.3e} Hz to {self.nus[-1]:.3e} Hz.")
 
         print(f"Loaded SurrogateLightcurveModel with filters {self.filters}.")
-            
-    def load_scalers(self) -> None:
-        self.X_scaler = self.metadata["X_scaler"]
-        self.y_scaler = self.metadata["y_scaler"]
 
     def load_networks(self) -> None:
         filename = os.path.join(self.directory, f"{self.name}.pkl")
@@ -375,19 +331,13 @@ class FluxModel(SurrogateLightcurveModel):
         """
         y = self.y_scaler.inverse_transform(y)
 
-        y = jnp.reshape(y, (len(self.metadata["nus"]), len(self.times)))
-        y = jnp.exp(y)
-        
-        def compute_mag_single_filter(nu):
-            lambda_interp = lambda column: jnp.interp(nu, self.metadata["nus"], column) 
-            mJys = jax.vmap(lambda_interp)(y.T)
-            mag = -48.6 + -1 * jnp.log10(mJys) * 2.5 + -1 * (-26) * 2.5
-            return mag
-        
-        filter_nus = jnp.array([filt.nu for filt in self.Filters])
-        output_array = jax.vmap(compute_mag_single_filter)(filter_nus)
-        output = dict(zip(self.filters, output_array))
-        
+        y = jnp.reshape(y, (len(self.nus), len(self.times)))
+        mJys = jnp.exp(y)
+
+        compute_magnitude = lambda filter: filter.get_mag(mJys, self.nus)
+        output = jax.tree.map(compute_magnitude, self.Filters)
+
+        output = dict(zip(self.filters, output))
         return output
     
     def predict_log_flux(self, x: Array) -> Array:
@@ -405,7 +355,23 @@ class FluxModel(SurrogateLightcurveModel):
         y = self.models.apply_fn({'params': self.models.params}, x_tilde)
 
         logflux = self.y_scaler.inverse_transform(y)
-        return logflux.flatten()
+        logflux = logflux.reshape(len(self.nus), len(self.times))
+        return logflux
+
+
+#################
+# MODEL CLASSES #
+#################
+
+class BullaLightcurveModel(LightcurveModel):
+    
+    def __init__(self, 
+                 name: str, 
+                 directory: str,
+                 filters: list[str] = None,
+                 times: Array = None):
+        
+        super().__init__(name=name, directory=directory, filters=filters)
 
 class AfterglowFlux(FluxModel):
     
@@ -415,12 +381,5 @@ class AfterglowFlux(FluxModel):
                  filters: list[str] = None,
                  times: Array = None, 
                  model_type: str = "MLP"):
-        super().__init__(name=name, directory=directory, filters=filters, times=times, model_type=model_type)
-        
-    def load_parameter_names(self) -> None:
-        self.parameter_names = self.metadata["parameter_names"]
-        print(f"This surrogate {self.name} should only be used in the following parameter ranges:")
-        from ast import literal_eval
-        parameter_distributions = literal_eval(self.metadata["parameter_distributions"])
-        for key in parameter_distributions.keys():
-            print(f"\t {key}: {parameter_distributions[key][:2]}")
+        super().__init__(name=name, directory=directory, filters=filters, model_type=model_type)
+    
