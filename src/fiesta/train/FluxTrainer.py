@@ -74,7 +74,7 @@ class FluxTrainer:
         plt.plot([i+1 for i in range(len(val_losses))], val_losses, ls, markersize=ms, label="Validation", color="blue")
         plt.legend()
         plt.xlabel("Epoch")
-        plt.ylabel("MSE loss")
+        plt.ylabel("Loss")
         plt.yscale('log')
         plt.title("Learning curves")
         plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{self.name}.png"))
@@ -186,8 +186,6 @@ class PCATrainer(FluxTrainer):
         # Plot and save the plot if so desired
         if self.plots_dir is not None:
            self.plot_learning_curve(train_losses, val_losses)
-       
-        self.trained_state = state
         
 
 class CVAETrainer(FluxTrainer):
@@ -261,6 +259,4 @@ class CVAETrainer(FluxTrainer):
 
         # Plot and save the plot if so desired
         if self.plots_dir is not None:
-            self.plot_learning_curve(train_losses, val_losses)     
-        
-        self.trained_state = state        
+            self.plot_learning_curve(train_losses, val_losses)        
