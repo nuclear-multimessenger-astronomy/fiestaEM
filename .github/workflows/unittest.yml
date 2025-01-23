@@ -9,7 +9,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        shell: bash -el {0}
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -23,19 +23,15 @@ jobs:
       uses: conda-incubator/setup-miniconda@v3
       with:
           python-version: ${{ matrix.python-version }}
-          architecture: ${{ matrix.os }}
+          architecture: ${{ 'x86_64' }}
           miniforge-version: latest
           use-mamba: true
           mamba-version: "*"
           activate-environment: fiesta_env
-          
-    - name: Add conda to system path
-      run: |
-        # $CONDA is an environment variable pointing to the root of the miniconda directory
-        echo $CONDA/bin >> $GITHUB_PATH
-        
+                  
     - name: Install Python dependencies
       run: |
+        source activate fiesta_env
         python -m pip install --upgrade pip setuptools wheel
         python -m pip install pytest pytest-cov flake8 pytest-aiohttp sqlparse freezegun PyJWT joblib coveralls
         python -m pip install -r ./src/fiesta.egg-info/requires.txt
@@ -49,6 +45,6 @@ jobs:
           # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude flux_models, lightcurve_models
 
-    - name: Test with pytest
+    - name: Perform tests with pytest
       run: |
           python -m coverage run --source fiesta -m pytest fiesta/tests/*.py
