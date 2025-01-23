@@ -31,7 +31,6 @@ jobs:
                   
     - name: Install Python dependencies
       run: |
-        source activate fiesta_env
         python -m pip install --upgrade pip setuptools wheel
         python -m pip install pytest pytest-cov flake8 pytest-aiohttp sqlparse freezegun PyJWT joblib coveralls
         python -m pip install -r ./src/fiesta.egg-info/requires.txt
