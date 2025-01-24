@@ -174,7 +174,7 @@ class AfterglowData:
         X, y = self.fix_nans(X,y)
         self._save_to_file(X, y, "special_train", label = label, comment= comment)
 
-    def run_afterglow_model(X):
+    def run_afterglow_model(self, X):
         raise NotImplementedError
 
     def _save_to_file(self, X, y, group: str, label: str = None, comment: str = None):

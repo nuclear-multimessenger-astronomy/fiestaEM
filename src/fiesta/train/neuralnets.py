@@ -222,6 +222,7 @@ class CVAE:
         
         return state, config
     
+    @staticmethod
     def load_full_model(filename: str) -> tuple[TrainState, NeuralnetConfig]:
 
         with open(filename, "rb") as handle:
