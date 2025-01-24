@@ -106,9 +106,6 @@ class InjectionRecoveryAfterglowpy:
         
         self.jet_type = jet_type
         # Ensure given filters are also in the trained model
-        
-        if filters is None:
-            filters = model.filters
 
         self.filters = [Filter(filt) for filt in filters]
         print(f"Creating injection with filters: {filters}")
