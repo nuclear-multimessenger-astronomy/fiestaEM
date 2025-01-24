@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from fiesta.train.FluxTrainer import PCATrainer
@@ -19,8 +20,9 @@ n_val = 20
 n_pca = 10
 
 name = "tophat"
-outdir = f"."
-file = "./test_raw_data.h5"
+
+working_dir = os.path.dirname(__file__)
+file = os.path.join(working_dir, "data/test_raw_data.h5")
 
 
 config = NeuralnetConfig(output_size=n_pca,
@@ -44,7 +46,7 @@ data_manager_args =   dict(file=file,
                            special_training=["01"])
 
 trainer = PCATrainer(name,
-                     outdir,
+                     working_dir,
                      data_manager_args = data_manager_args,
                      n_pca = n_pca,
                      save_preprocessed_data=False
@@ -57,5 +59,5 @@ trainer = PCATrainer(name,
 trainer.fit(config=config)
 trainer.save()
 
-for file in Path(".").glob("*.pkl"):
+for file in Path(working_dir).glob("*.pkl"):
     file.unlink() # Deletes the files
