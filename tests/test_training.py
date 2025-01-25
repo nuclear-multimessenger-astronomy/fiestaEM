@@ -52,12 +52,11 @@ trainer = PCATrainer(name,
                      save_preprocessed_data=False
                      )
 
-###############
-### FITTING ###
-###############
 
-trainer.fit(config=config)
-trainer.save()
+def test_fit_and_save():
 
-for file in Path(working_dir).glob("*.pkl"):
-    file.unlink() # Deletes the files
+    trainer.fit(config=config)
+    trainer.save()
+
+    for file in Path(working_dir).glob("*.pkl"):
+        file.unlink() # Deletes the files
