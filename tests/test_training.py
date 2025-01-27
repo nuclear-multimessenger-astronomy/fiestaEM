@@ -19,8 +19,6 @@ n_training = 200
 n_val = 20
 n_pca = 10
 
-name = "tophat"
-
 working_dir = os.path.dirname(__file__)
 file = os.path.join(working_dir, "data/test_raw_data.h5")
 
@@ -45,15 +43,19 @@ data_manager_args =   dict(file=file,
                            numax=numax,
                            special_training=["01"])
 
-trainer = PCATrainer(name,
+
+
+
+def test_train_and_save():
+
+    name = "tophat"
+
+    trainer = PCATrainer(name,
                      working_dir,
                      data_manager_args = data_manager_args,
                      n_pca = n_pca,
                      save_preprocessed_data=False
                      )
-
-
-def test_fit_and_save():
 
     trainer.fit(config=config)
     trainer.save()
