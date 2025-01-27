@@ -1,10 +1,5 @@
-import fiesta.constants as constants
-from fiesta.conversions import Fnu_to_mag
-
-import jax.numpy as jnp
-from jax.scipy.stats import truncnorm
-from jaxtyping import Array, Float, Int
-import jax
+import copy
+import re
 
 import numpy as np
 import pandas as pd
@@ -12,10 +7,15 @@ from astropy.time import Time
 from sncosmo.bandpasses import _BANDPASSES, _BANDPASS_INTERPOLATORS
 from sncosmo import get_bandpass
 import scipy.interpolate as interp
-import copy
-import re
 
-import astropy
+import jax.numpy as jnp
+from jax.scipy.stats import truncnorm
+from jaxtyping import Array, Float, Int
+import jax
+
+from fiesta.conversions import monochromatic_AB_mag, bandpass_AB_mag
+import fiesta.constants as constants
+#from fiesta.conversions import Fnu_to_mag
 
 
 
@@ -474,6 +474,12 @@ class Filter:
             
         self.wavelength = constants.c/self.nu
         self._calculate_ref_flux()
+
+        if len(self.nus)>1:
+            self.get_mag = lambda Fnu, nus: bandpass_AB_mag(Fnu, nus, self.nus, self.trans, self.ref_flux)
+        else:
+            self.get_mag = lambda Fnu, nus: monochromatic_AB_mag(Fnu, nus, self.nus, self.trans, self.ref_flux)
+
     
     def _calculate_ref_flux(self,):
         """method to determine the reference flux for the magnitude conversion."""
@@ -484,11 +490,10 @@ class Filter:
             integral = jnp.trapezoid(y = integrand, x = self.nus)
             self.ref_flux = 3631000. * integral.item() # mJy
     
-    def get_mag(self, flux: Float[Array, "n_nus n_times"], nus: Float[Array, "n_nus"]) -> Float[Array, "n_times"]:
-        mag = Fnu_to_mag(flux, nus, self.nus, self.trans, self.ref_flux)
-        return mag
-    
-    def get_mags(self, flux: Float[Array, "n_samples n_nus n_times"], nus: Float[Array, "n_nus"]) -> Float[Array, "n_samples n_times"]:
-        vectorized_Fnu_to_mag = jax.vmap(Fnu_to_mag, in_axes = (0, None, None, None, None))
-        mags = vectorized_Fnu_to_mag(flux, nus, self.nus, self.trans, self.ref_flux)
+    def get_mags(self, fluxes: Float[Array, "n_samples n_nus n_times"], nus: Float[Array, "n_nus"]) -> Float[Array, "n_samples n_times"]:
+
+        def get_single(flux):
+            return self.get_mag(flux, nus)
+        
+        mags = jax.vmap(get_single)(fluxes)
         return mags

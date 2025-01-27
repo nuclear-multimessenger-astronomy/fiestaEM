@@ -75,13 +75,27 @@ def apply_redshift(F_nu: Float[Array, "n_nus n_times"], times: Float[Array, "n_t
 # MAGNITUDE CONVERSION #
 ########################
 
-def Fnu_to_mag(flux: Float[Array, "n_nus n_times"],
-                     nus: Float[Array, "n_nus"],
-                     nus_filt: Float[Array, "n_nus_filt"],
-                     trans_filt: Float[Array, "n_nus_filt"],
-                     ref_flux: Float) -> Float[Array, "n_times"]:
+def monochromatic_AB_mag(flux: Float[Array, "n_nus n_times"],
+                         nus: Float[Array, "n_nus"],
+                         nus_filt: Float[Array, "n_nus_filt"],
+                         trans_filt: Float[Array, "n_nus_filt"],
+                         ref_flux: Float) -> Float[Array, "n_times"]:
+    
+    interp_col = lambda col: jnp.interp(nus_filt, nus, col)
+    mJys = jax.vmap(interp_col, in_axes = 1, out_axes = 1)(flux) # apply vectorized interpolation to interpolate columns of 2D array
+
+    mJys = mJys * trans_filt[:, None]
+    mag = mJys_to_mag_jnp(mJys)
+    return mag[0]
+
+def bandpass_AB_mag(flux: Float[Array, "n_nus n_times"],
+                    nus: Float[Array, "n_nus"],
+                    nus_filt: Float[Array, "n_nus_filt"],
+                    trans_filt: Float[Array, "n_nus_filt"],
+                    ref_flux: Float) -> Float[Array, "n_times"]:
     """
-    This is a JAX-compatile equivalent of sncosmo.TimeSeriesSource().bandmag().
+    This is a JAX-compatile equivalent of sncosmo.TimeSeriesSource.bandmag(). Unlike sncosmo, we use the frequency flux and not wavelength flux,
+    but this function is tested to yield the same results as the sncosmo version.
 
     Args:
         flux (Float[Array, "n_nus n_times"]): Spectral flux density as a 2D array in mJys.
@@ -94,20 +108,6 @@ def Fnu_to_mag(flux: Float[Array, "n_nus n_times"],
     interp_col = lambda col: jnp.interp(nus_filt, nus, col)
     mJys = jax.vmap(interp_col, in_axes = 1, out_axes = 1)(flux) # apply vectorized interpolation to interpolate columns of 2D array
 
-    mag = jax.lax.cond(nus_filt.shape[0] == 1,
-                       monochromatic_AB_mag,
-                       bandpass_AB_mag,
-                       (mJys, nus_filt, trans_filt, ref_flux))
-    return mag
-
-def monochromatic_AB_mag(ops):
-    mJys, nus_filt, trans_filt, ref_flux = ops
-    mJys = mJys * trans_filt[:, None]
-    mag = mJys_to_mag_jnp(mJys)
-    return mag[0]
-
-def bandpass_AB_mag(ops):
-    mJys, nus_filt, trans_filt, ref_flux = ops
     log_mJys = jnp.log10(mJys) # go to log because of large factors
     log_mJys = log_mJys + jnp.log10(trans_filt[:, None])
     log_mJys = log_mJys - jnp.log10(h_erg_s) - jnp.log10(nus_filt[:, None])  # https://en.wikipedia.org/wiki/AB_magnitude
@@ -120,11 +120,6 @@ def bandpass_AB_mag(ops):
     log_integrated_flux = jnp.log10(norm_band_flux) + max_log_mJys # reintroduce scale here
     mag = -2.5 * log_integrated_flux + 2.5 * jnp.log10(ref_flux) 
     return mag
-
-
-
-
-
 
 @jax.jit
 def mJys_to_mag_jnp(mJys: Array):
