@@ -8,7 +8,6 @@ import jax.numpy as jnp
 
 from fiesta.inference.lightcurve_model import LightcurveModel
 from fiesta.utils import truncated_gaussian
-from fiesta.conversions import mag_app_from_mag_abs
 
 class EMLikelihood:
     
@@ -135,15 +134,13 @@ class EMLikelihood:
         """
         
         theta = {**theta, **self.fixed_params}
-        mag_abs: dict[str, Array] = self.model.predict(theta)
-        mag_app = jax.tree_util.tree_map(lambda x: mag_app_from_mag_abs(x, theta["luminosity_distance"]),
-                               mag_abs)
+        times, mag_app = self.model.predict(theta)
         
         # Interpolate the mags to the times of interest
-        mag_est_det = jax.tree_util.tree_map(lambda t, m: jnp.interp(t, self.model.times, m),
+        mag_est_det = jax.tree_util.tree_map(lambda t, m: jnp.interp(t, times, m, left = "extrapolate", right = "extrapolate"), # TODO extrapolation is maybe problematic here
                                           self.times_det, mag_app)
         
-        mag_est_nondet = jax.tree_util.tree_map(lambda t, m: jnp.interp(t, self.model.times, m),
+        mag_est_nondet = jax.tree_util.tree_map(lambda t, m: jnp.interp(t, times, m, left = "extrapolate", right = "extrapolate"),
                                           self.times_nondet, mag_app)
         
         # Get chisq

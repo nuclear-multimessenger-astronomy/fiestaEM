@@ -63,6 +63,14 @@ def Fnu_to_Flambda(F_nu: Float[Array, "n_nus n_times"], nus: Float[Array, "n_nus
 
     return F_lambda, lambdas
 
+def apply_redshift(F_nu: Float[Array, "n_nus n_times"], times: Float[Array, "n_times"], nus: Float[Array, "n_nus"], z: Float):
+    
+    F_nu = F_nu / (1 + z)
+    times = times * (1+z)
+    nus = nus / (1 + z)
+
+    return F_nu, times, nus
+
 ########################
 # MAGNITUDE CONVERSION #
 ########################
