@@ -110,10 +110,19 @@ class AfterglowData:
             self.times = f["times"][:]
             self.nus = f["nus"][:]
             self.parameter_names = f["parameter_names"][:].astype(str).tolist()
-            self.n_training_exists = (f["train"]["X"].shape)[0]
-            self.n_val_exists = (f["val"]["X"].shape)[0]
-            self.n_test_exists = (f["test"]["X"].shape)[0]
             self.parameter_distributions = ast.literal_eval(f["parameter_distributions"][()].decode('utf-8'))
+            try:
+                self.n_training_exists = (f["train"]["X"].shape)[0]
+            except KeyError:
+                self.n_training_exists = 0
+            try:
+                self.n_val_exists = (f["val"]["X"].shape)[0]
+            except KeyError:
+                self.n_val_exists = 0
+            try:
+                self.n_test_exists = (f["test"]["X"].shape)[0]
+            except KeyError:
+                self.n_test_exists = 0
 
     def create_raw_data(self, n: int, training: bool = True):
         """
@@ -290,8 +299,9 @@ class RunAfterglowpy:
         
         Z["jetType"]  = params_dict.get("jetType", self.jet_type)
         Z["specType"] = params_dict.get("specType", 0)
-        Z["z"] = params_dict.get("z", 0.0)
+        Z["z"] = params_dict.get("redshift", 0.0)
         Z["xi_N"] = params_dict.get("xi_N", 1.0)
+        Z["counterjet"] = True
             
         Z["E0"]        = 10 ** params_dict["log10_E0"]
         Z["n0"]        = 10 ** params_dict["log10_n0"]
@@ -401,7 +411,7 @@ class RunPyblastafterglow:
                 # main model parameters; Uniform ISM -- 2 free parameters
                 main=dict(
                     d_l= 3.086e19, # luminocity distance to the source [cm], fix at 10 pc, so that AB magnitude equals absolute magnitude
-                    z = 0.0,   # redshift of the source (used in Doppler shifring and EBL table)
+                    z = params_dict.get("redshift", 0.0),   # redshift of the source (used in Doppler shifring and EBL table)
                     n_ism=np.power(10, params_dict["log10_n0"]), # ISM density [cm^-3] (assuming uniform)
                     theta_obs= params_dict["inclination_EM"], # observer angle [rad] (from pol to jet axis)  
                     lc_freqs= self.lc_freqs, # frequencies for light curve calculation
