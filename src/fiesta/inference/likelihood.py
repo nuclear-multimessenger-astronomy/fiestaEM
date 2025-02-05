@@ -78,7 +78,6 @@ class EMLikelihood:
         print("Loading and preprocessing observations in likelihood . . .")
         
         processed_data = copy.deepcopy(data)
-        processed_data = {k.replace(":", "_"): v for k, v in processed_data.items()}
         
         for filt in self.filters:
             if filt not in processed_data:
