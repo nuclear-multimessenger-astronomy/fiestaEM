@@ -189,6 +189,27 @@ class Fiesta(object):
         chains = self.prior.transform(self.prior.add_name(chains.transpose(2, 0, 1)))
         return chains
     
+    def save_results(self, outdir):
+        # - training phase
+        name = os.path.join(outdir, f'results_training.npz')
+        print(f"Saving training samples to {name}")
+        state = self.Sampler.get_sampler_state(training=True)
+        chains, log_prob, local_accs, global_accs, loss_vals = state["chains"], state["log_prob"], state["local_accs"], state["global_accs"], state["loss_vals"]
+        local_accs = jnp.mean(local_accs, axis=0)
+        global_accs = jnp.mean(global_accs, axis=0)
+        jnp.savez(name, log_prob=log_prob, local_accs=local_accs,
+                global_accs=global_accs, loss_vals=loss_vals)
+        
+        #  - production phase
+        name = os.path.join(outdir, f'results_production.npz')
+        print(f"Saving production samples to {name}")
+        state = self.Sampler.get_sampler_state(training=False)
+        chains, log_prob, local_accs, global_accs = state["chains"], state["log_prob"], state["local_accs"], state["global_accs"]
+        local_accs = jnp.mean(local_accs, axis=0)
+        global_accs = jnp.mean(global_accs, axis=0)
+        jnp.savez(name, chains=chains, log_prob=log_prob,
+                    local_accs=local_accs, global_accs=global_accs)
+    
     def save_hyperparameters(self, outdir):
         
         # Convert step_size to list for JSON formatting
