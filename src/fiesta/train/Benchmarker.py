@@ -36,7 +36,7 @@ class Benchmarker:
         # Load metric
         if metric_name == "L2":
             self.metric_name = "$\\mathcal{L}_2$"
-            self.metric = lambda y: np.sqrt(trapezoid(x= self.times,y=y**2, axis = -1))
+            self.metric = lambda y: np.sqrt(trapezoid(x= np.log(self.times) ,y=y**2, axis = -1)) / (np.log(self.times[-1]) - np.log(self.times[0]))
             self.metric2d = lambda y: np.sqrt(trapezoid(x = self.nus, y =trapezoid(x = self.times, y = (y**2).reshape(-1, len(self.nus), len(self.times)) ) ))
             self.file_ending = "L2"
         else:
@@ -68,7 +68,10 @@ class Benchmarker:
             self.test_mag[Filt.name] = Filt.get_mags(mJys, nus)
         
         # get the model prediction on the test data
-        self.pred_mag = self.model.vpredict(dict(zip(self.parameter_names, self.test_X_raw.T)))         
+        param_dict = dict(zip(self.parameter_names, self.test_X_raw.T))
+        param_dict["luminosity_distance"] = np.ones(len(self.test_X_raw)) * 1e-5
+        param_dict["redshift"] = np.zeros(len(self.test_X_raw))
+        _, self.pred_mag = self.model.vpredict(param_dict)         
     
     def calculate_error(self,):
         self.error = {}
@@ -107,7 +110,7 @@ class Benchmarker:
                                   parameter_labels: list[str] = ["$\\iota$", "$\log_{10}(E_0)$", "$\\theta_c$", "$\log_{10}(n_{\mathrm{ism}})$", "$p$", "$\\epsilon_E$", "$\\epsilon_B$"]
                                   ):
         if self.metric_name == "$\\mathcal{L}_2$":
-            vline = np.sqrt(trapezoid(x = self.times, y = 0.2*np.ones(len(self.times))))
+            vline = self.metric(np.ones(len(self.times)))
             vmin, vmax = 0, vline*2
             bins = np.linspace(vmin, vmax, 25)
         else:
