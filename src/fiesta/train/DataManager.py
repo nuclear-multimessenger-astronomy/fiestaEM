@@ -7,6 +7,13 @@ import gc
 from jaxtyping import Array, Float, Int
 
 
+def array_mask_from_interval(sorted_array, amin, amax):
+    indmin = max(0, np.searchsorted(sorted_array, amin, side='right') -1)
+    indmax = min(len(sorted_array)-1, np.searchsorted(sorted_array, amax))
+    mask = np.logical_and(sorted_array>=sorted_array[indmin], sorted_array<=sorted_array[indmax])
+    return mask
+
+
 ###################
 # DATA MANAGEMENT #       
 ###################
@@ -87,13 +94,13 @@ class DataManager:
         
         if self.tmin<self.times_data.min() or self.tmax>self.times_data.max():
             print(f"\nWarning: provided time range {self.tmin, self.tmax} is too wide for the data stored in file. Using range {max(self.times_data.min(), self.tmin), min(self.times_data.max(), self.tmax)} instead.\n")
-        time_mask = np.logical_and(self.times_data>=self.tmin, self.times_data<=self.tmax)
+        time_mask = array_mask_from_interval(self.times_data, self.tmin, self.tmax)
         self.times = self.times_data[time_mask]
         self.n_times = len(self.times)
 
         if self.numin<self.nus_data.min() or self.numax>self.nus_data.max():
             print(f"\nWarning: provided frequency range {self.numin, self.numax} is too wide for the data stored in file. Using range {max(self.nus_data.min(), self.numin), min(self.nus_data.max(), self.numax)} instead.\n")
-        nu_mask = np.logical_and(self.nus_data>=self.numin, self.nus_data<=self.numax)
+        nu_mask = array_mask_from_interval(self.nus_data, self.numin, self.numax)
         self.nus = self.nus_data[nu_mask]
         self.n_nus = len(self.nus)
 
