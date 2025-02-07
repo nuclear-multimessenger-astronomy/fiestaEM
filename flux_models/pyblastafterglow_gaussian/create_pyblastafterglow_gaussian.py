@@ -2,7 +2,7 @@ import numpy as np
 
 from fiesta.train.AfterglowData import PyblastafterglowData
 from mpi4py import MPI
-comm = getattr(MPI, "COMM_WORLD")
+comm = MPI.COMM_WORLD
 size = comm.Get_size()
 rank = comm.Get_rank()
 
@@ -37,9 +37,9 @@ jet_conversion = {"tophat": -1,
                   "gaussian": 0,
                   "powerlaw": 4}
 
-n_training = 50
-n_val = 5
-n_test = 5
+n_training = 20
+n_val = 4
+n_test = 4
 
 
 
