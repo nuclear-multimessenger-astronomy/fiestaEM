@@ -13,7 +13,7 @@ from jax.scipy.stats import truncnorm
 from jaxtyping import Array, Float, Int
 import jax
 
-from fiesta.conversions import monochromatic_AB_mag, bandpass_AB_mag
+from fiesta.conversions import monochromatic_AB_mag, bandpass_AB_mag, integrated_AB_mag
 import fiesta.constants as constants
 
 
@@ -457,12 +457,14 @@ class Filter:
             self.nu = constants.c / (bandpass.wave_eff*1e-10)
             self.nus = constants.c / (bandpass.wave[::-1]*1e-10)
             self.trans = bandpass.trans[::-1] # reverse the array to get the transmission as function of frequency (not wavelength)
+            self.filt_type = "bandpass"
             
         elif (self.name, None) in _BANDPASS_INTERPOLATORS._primary_loaders:
             bandpass = get_bandpass(self.name, 0) # these bandpass interpolators require a radius (here by default 0 cm)
             self.nu = constants.c/(bandpass.wave_eff*1e-10)
             self.nus = constants.c / (bandpass.wave[::-1]*1e-10)
             self.trans = bandpass.trans[::-1] # reverse the array to get the transmission as function of frequency (not wavelength)
+            self.filt_type = "bandpass"
 
         elif self.name.endswith("GHz"):
             freq = re.findall(r"[-+]?(?:\d*\.*\d+)", self.name.replace("-",""))
@@ -470,6 +472,7 @@ class Filter:
             self.nu = freq*1e9
             self.nus = jnp.array([self.nu])
             self.trans = jnp.ones(1)
+            self.filt_type = "monochromatic"
 
         elif self.name.endswith("keV"):
             energy = re.findall(r"[-+]?(?:\d*\.*\d+)", self.name.replace("-",""))
@@ -477,24 +480,36 @@ class Filter:
             self.nu = energy*1000*constants.eV / constants.h
             self.nus = jnp.array([self.nu])
             self.trans = jnp.ones(1)
+            self.filt_type = "monochromatic"
+
+        elif self.name.startswith("XRT"):
+            energy1, energy2 = re.findall(r"\d+\.\d+|\d+", self.name)
+            nu1 = float(energy1)*1000*constants.eV / constants.h
+            nu2 = float(energy2)*1000*constants.eV / constants.h
+            self.nus = jnp.linspace(nu1, nu2, 10)
+            self.trans = jnp.ones_like(self.nus)
+            self.nu = jnp.mean(self.nus)
+            self.filt_type = "integrated"
+
         else:
-            print(f"Warning: Filter {self.name} not recognized")
-            self.nu = jnp.nan
-            
-        self.wavelength = constants.c/self.nu
+            raise ValueError(f"Filter {self.name} not recognized")
+                    
+        self.wavelength = constants.c/self.nu*1e10
         self._calculate_ref_flux()
 
-        if len(self.nus)>1:
+        if self.filt_type=="bandpass":
             self.get_mag = lambda Fnu, nus: bandpass_AB_mag(Fnu, nus, self.nus, self.trans, self.ref_flux)
-        else:
+        elif self.filt_type=="monochromatic":
             self.get_mag = lambda Fnu, nus: monochromatic_AB_mag(Fnu, nus, self.nus, self.trans, self.ref_flux)
+        elif self.filt_type=="integrated":
+            self.get_mag = lambda Fnu, nus: integrated_AB_mag(Fnu, nus, self.nus, self.trans)
 
     
     def _calculate_ref_flux(self,):
         """method to determine the reference flux for the magnitude conversion."""
-        if self.trans.shape[0] == 1:
+        if self.filt_type in ["monochromatic", "integrated"]:
             self.ref_flux = 3631000. # mJy
-        else:
+        elif self.filt_type=="bandpass":
             integrand = self.trans / (constants.h_erg_s * self.nus) # https://en.wikipedia.org/wiki/AB_magnitude
             integral = jnp.trapezoid(y = integrand, x = self.nus)
             self.ref_flux = 3631000. * integral.item() # mJy
