@@ -189,6 +189,27 @@ class Fiesta(object):
         chains = self.prior.transform(self.prior.add_name(chains.transpose(2, 0, 1)))
         return chains
     
+    def save_results(self, outdir):
+        # - training phase
+        name = os.path.join(outdir, f'results_training.npz')
+        print(f"Saving training samples to {name}")
+        state = self.Sampler.get_sampler_state(training=True)
+        chains, log_prob, local_accs, global_accs, loss_vals = state["chains"], state["log_prob"], state["local_accs"], state["global_accs"], state["loss_vals"]
+        local_accs = jnp.mean(local_accs, axis=0)
+        global_accs = jnp.mean(global_accs, axis=0)
+        jnp.savez(name, log_prob=log_prob, local_accs=local_accs,
+                global_accs=global_accs, loss_vals=loss_vals)
+        
+        #  - production phase
+        name = os.path.join(outdir, f'results_production.npz')
+        print(f"Saving production samples to {name}")
+        state = self.Sampler.get_sampler_state(training=False)
+        chains, log_prob, local_accs, global_accs = state["chains"], state["log_prob"], state["local_accs"], state["global_accs"]
+        local_accs = jnp.mean(local_accs, axis=0)
+        global_accs = jnp.mean(global_accs, axis=0)
+        jnp.savez(name, chains=chains, log_prob=log_prob,
+                    local_accs=local_accs, global_accs=global_accs)
+    
     def save_hyperparameters(self, outdir):
         
         # Convert step_size to list for JSON formatting
@@ -257,29 +278,25 @@ class Fiesta(object):
         
         zorder = 2
         # Predict and convert to apparent magnitudes
-        mag_bestfit = self.likelihood.model.predict(best_fit_params_named)
-        d = best_fit_params_named["luminosity_distance"]
-        for filt in filters:
-            mag_bestfit[filt] = mag_app_from_mag_abs(mag_bestfit[filt], d)
+        time_obs, mag_bestfit = self.likelihood.model.predict(best_fit_params_named)
+
         for i, filter_name in enumerate(filters):
             ax = plt.subplot(len(filters), 1, i + 1)
             mag = mag_bestfit[filter_name]
-            t = self.likelihood.model.times
-            mask = (t >= tmin) & (t <= tmax)
-            ax.plot(t[mask], mag[mask], color = "blue", label = "Best fit", zorder = zorder)
+            mask = (time_obs >= tmin) & (time_obs <= tmax)
+            ax.plot(time_obs[mask], mag[mask], color = "blue", label = "Best fit", zorder = zorder)
             
         # Other samples
         zorder = 1
         for sample in samples.T:
             sample_named = self.prior.add_name(sample)
             sample_named.update(self.likelihood.fixed_params)
-            mag = self.likelihood.model.predict(sample_named)
-            d = sample_named["luminosity_distance"]
-            for filt in filters:
-                mag[filt] = mag_app_from_mag_abs(mag[filt], d)
+            time_obs, mag = self.likelihood.model.predict(sample_named)
+            mask = (time_obs >= tmin) & (time_obs <= tmax)
+
             for i, filter_name in enumerate(filters):
                 ax = plt.subplot(len(filters), 1, i + 1)
-                ax.plot(self.likelihood.model.times[mask], mag[filter_name][mask], color = "gray", alpha = 0.05, zorder = zorder)
+                ax.plot(time_obs[mask], mag[filter_name][mask], color = "gray", alpha = 0.05, zorder = zorder)
         
         ### Make pretty
         for i, filter_name in enumerate(filters):

@@ -18,7 +18,6 @@ for metric_name in ["$\\mathcal{L}_2$", "$\\mathcal{L}_\infty$"]:
         file_ending = "Linf"
     
     B = Benchmarker(name = name,
-                parameter_grid = parameter_grid,
                 model_dir = model_dir,
                 MODEL = AfterglowpyLightcurvemodel,
                 filters = FILTERS,

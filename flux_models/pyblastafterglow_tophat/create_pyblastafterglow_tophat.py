@@ -2,7 +2,7 @@ import numpy as np
 
 from fiesta.train.AfterglowData import PyblastafterglowData
 from mpi4py import MPI
-comm = MPI.COMM_WORLD
+comm = getattr(MPI, "COMM_WORLD")
 size = comm.Get_size()
 rank = comm.Get_rank()
 
@@ -43,7 +43,6 @@ n_training = 100
 n_val = 10
 n_test = 10
 
-retrain_weights = None
 
 
 #######################

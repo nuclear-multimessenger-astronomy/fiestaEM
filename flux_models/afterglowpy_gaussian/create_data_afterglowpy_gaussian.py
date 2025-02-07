@@ -1,19 +1,17 @@
 import numpy as np 
-import matplotlib.pyplot as plt
-
 from fiesta.train.AfterglowData import AfterglowpyData
 
 #############
 ### SETUP ###
 #############
 
-tmin = 0.1 # days
+tmin = 1e-4 # days
 tmax = 2000 # days
-n_times = 200
+n_times = 250
 
 
 numin = 1e9 # Hz 
-numax = 2.5e18 # Hz (10 keV)
+numax = 2.5e19 # Hz (100 keV)
 n_nu = 256
 
 
@@ -34,7 +32,7 @@ jet_name = "gaussian"
 jet_conversion = {"tophat": -1,
                   "gaussian": 0}
 
-n_training = 45_000
+n_training = 20_000
 n_val = 0
 n_test = 0
 

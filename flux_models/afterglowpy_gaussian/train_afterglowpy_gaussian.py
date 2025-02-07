@@ -2,10 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import h5py
 
-from fiesta.train.FluxTrainer import PCATrainer, DataManager
-from fiesta.inference.lightcurve_model import AfterglowpyPCA
+from fiesta.train.FluxTrainer import PCATrainer
+from fiesta.inference.lightcurve_model import AfterglowFlux
 from fiesta.train.neuralnets import NeuralnetConfig
-from fiesta.utils import Filter
 
 #############
 ### SETUP ###
@@ -16,41 +15,38 @@ tmax = 2000
 
 
 numin = 1e9 # Hz 
-numax = 2.5e18
+numax = 5e18
 
-
-n_training = 70_000
-n_val = 5000
-n_pca = 100
+n_training = 80_000
+n_val = 7500
+n_pca = 200
 
 name = "gaussian"
 outdir = f"./model/"
 file = outdir + "afterglowpy_raw_data.h5"
 
 config = NeuralnetConfig(output_size=n_pca,
-                         nb_epochs=100_000,
+                         nb_epochs=150_000,
                          hidden_layer_sizes = [256, 512, 256],
-                         learning_rate =8e-3)
-
+                         learning_rate =4e-3)
 
 ###############
 ### TRAINER ###
 ###############
 
 
-data_manager = DataManager(file = file,
-                           n_training= n_training, 
+data_manager_args = dict(file = file,
+                           n_training= n_training,
                            n_val= n_val, 
                            tmin= tmin,
                            tmax= tmax,
                            numin = numin,
-                           numax = numax, 
-                           special_training=["02"])
+                           numax = numax,
+                           special_training=["01"])
 
-data_manager.print_file_info()
 trainer = PCATrainer(name,
                      outdir,
-                     data_manager = data_manager,
+                     data_manager_args = data_manager_args,
                      plots_dir=f"./benchmarks/",
                      n_pca = n_pca,
                      save_preprocessed_data=False
@@ -60,48 +56,51 @@ trainer = PCATrainer(name,
 ### FITTING ###
 ###############
 
-
 trainer.fit(config=config)
 trainer.save()
 
 #############
-### TEST ###
+### TEST  ###
 #############
 
 print("Producing example lightcurve . . .")
 FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
-lc_model = AfterglowpyPCA(name,
+lc_model = AfterglowFlux(name,
                           outdir, 
-                          filters = FILTERS)
+                          filters = FILTERS,
+                          model_type = "MLP")
 
-for filt in lc_model.Filters:
-    with h5py.File(file, "r") as f:
-        X_example = f["val"]["X"][-1]
-        y_raw = f["val"]["y"][-1, data_manager.mask]
 
-    y_raw = y_raw.reshape(256, len(lc_model.times))
-    y_raw = np.exp(y_raw)
-    y_raw = np.array([np.interp(filt.nu, lc_model.metadata["nus"], column) for column in y_raw.T]) 
-    y_raw = -48.6 + -1 * np.log10(y_raw*1e-3 / 1e23) * 2.5
-    
+with h5py.File(file, "r") as f:
+    X_example = f["val"]["X"][-1]
+    y_raw = f["val"]["y"][-1, trainer.data_manager.mask]
+    y_raw = y_raw.reshape(len(lc_model.nus), len(lc_model.times))
+    mJys = np.exp(y_raw)
+
     # Turn into a dict: this is how the model expects the input
     X_example = {k: v for k, v in zip(lc_model.parameter_names, X_example)}
     
     # Get the prediction lightcurve
-    y_predict = lc_model.predict(X_example)[filt.name]
+    _, y_predict = lc_model.predict_abs_mag(X_example)
+
     
-    plt.plot(lc_model.times, y_raw, color = "red", label="afterglowpy")
-    plt.plot(lc_model.times, y_predict, color = "blue", label="Surrogate prediction")
-    upper_bound = y_predict + 1
-    lower_bound = y_predict - 1
-    plt.fill_between(lc_model.times, lower_bound, upper_bound, color='blue', alpha=0.2)
+    for filt in lc_model.Filters:
 
-    plt.ylabel(f"mag for {filt.name}")
-    plt.legend()
-    plt.gca().invert_yaxis()
-    plt.xscale('log')
-    plt.xlim(lc_model.times[0], lc_model.times[-1])
+        y_val = filt.get_mag(mJys, lc_model.nus)
 
-    plt.savefig(f"./benchmarks/afterglowpy_{name}_{filt.name}_example.png")
-    plt.close()
+        plt.plot(lc_model.times, y_val, color = "red", label="afterglowpy")
+        plt.plot(lc_model.times, y_predict[filt.name], color = "blue", label="Surrogate prediction")
+        upper_bound = y_predict[filt.name] + 1
+        lower_bound = y_predict[filt.name] - 1
+        plt.fill_between(lc_model.times, lower_bound, upper_bound, color='blue', alpha=0.2)
+    
+        plt.ylabel(f"mag for {filt.name}")
+        plt.xlabel("$t$ in days")
+        plt.legend()
+        plt.gca().invert_yaxis()
+        plt.xscale('log')
+        plt.xlim(lc_model.times[0], lc_model.times[-1])
+    
+        plt.savefig(f"./benchmarks/afterglowpy_{name}_{filt.name}_example.png")
+        plt.close()

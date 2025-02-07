@@ -1,25 +1,16 @@
+from jax.random import PRNGKey
 import numpy as np 
+
 from fiesta.train.AfterglowData import AfterglowpyData
+from fiesta.inference.prior_dict import ConstrainedPrior
+from fiesta.inference.prior import Uniform, Constraint
 
 #############
 ### SETUP ###
 #############
 
 
-parameter_distributions = {
-    'inclination_EM': (0, np.pi/2, "uniform"),
-    'log10_E0': (47, 57, "uniform"),
-    'thetaCore': (0.01, np.pi/5, "loguniform"),
-    'alphaWing': (0.2, 3.5, "uniform"),
-    'log10_n0': (-6, 2, "uniform"),
-    'p': (2.01, 3, "uniform"),
-    'log10_epsilon_e': (-4, 0, "uniform"),
-    'log10_epsilon_B': (-8, 0, "uniform")
-}
-
-    
-
-name = "tophat"
+name = "gaussian"
 outdir = f"./model/"
 
 n_training = 0
@@ -27,6 +18,7 @@ n_val = 0
 n_test = 0
 
 n_pool = 24
+
 size = 20_000
 
 
@@ -39,26 +31,28 @@ creator = AfterglowpyData(outdir = outdir,
                           n_test = 0,
                           n_pool = n_pool)
 
-#import h5py
-#with h5py.File(creator.outfile, "r+") as f:
-#    unproblematic = np.unique(np.where(~np.isinf(f["special_train"]["01"]["y"]))[0])
-#
-#    X = f["special_train"]["01"]["X"][unproblematic]
-#    y = f["special_train"]["01"]["y"][unproblematic]
-#    breakpoint()
-#    creator._save_to_file(X, y, group = "special_train", label = "02", comment = "log10_E0 (54, 57)  log10_n0 (-6, -4) thetaCore (0.4, np.pi/5)")
-    
-    
+def conversion_function(sample):
+    converted_sample = sample
+    converted_sample["thetaWing"] = converted_sample["thetaCore"] * converted_sample["alphaWing"]
+    converted_sample["epsilon_tot"] = 10**(converted_sample["log10_epsilon_B"]) + 10**(converted_sample["log10_epsilon_e"]) 
+    return converted_sample
 
-inclination = np.random.uniform(0, np.pi/2, size = size)
-log10_E0 = np.random.uniform(54, 57, size = size)
-thetaCore = np.random.uniform(0.4, np.pi/5, size= size)
-alphaWing = np.random.uniform(0.2, 3.5, size = size)
-log10_n0 = np.random.uniform(-6, -4, size = size)
-p = np.random.uniform(2, 3, size = size)
-log10_epsilon_e = np.random.uniform(-4, 0, size = size)
-log10_epsilon_B = np.random.uniform(-8, 0, size = size)
+prior = ConstrainedPrior([
+                    Uniform(xmin=0., xmax=np.pi/2, naming=["inclination_EM"]),
+                    Uniform(xmin=54., xmax=57., naming=["log10_E0"]),
+                    Uniform(xmin=0.35, xmax=np.pi/5, naming=["thetaCore"]),
+                    Uniform(0.2, 3.5, naming=["alphaWing"]),
+                    Uniform(xmin=-6.,xmax=-4.,naming=["log10_n0"]),
+                    Uniform(xmin=2., xmax=3., naming=["p"]),
+                    Uniform(xmin=-4., xmax=0., naming=["log10_epsilon_e"]),
+                    Uniform(xmin=-8.,xmax=0., naming=["log10_epsilon_B"]),
+                    Constraint(xmin=0., xmax=1., naming=["epsilon_tot"]),
+                    Constraint(xmin=0., xmax=np.pi/2, naming=["thetaWing"])
+                    ],
+                    conversion_function)
 
-X = np.array([inclination, log10_E0, thetaCore, alphaWing, log10_n0, p, log10_epsilon_e, log10_epsilon_B]).T
+X = prior.sample(PRNGKey(2728), n_samples=size)
+X = [X[p] for p in creator.parameter_names]
+X = np.transpose(X)
 
-creator.create_special_data(X, label = "01", comment = "log10_E0 (54, 57)  log10_n0 (-6, -4) thetaCore (0.4, np.pi/5)")
+creator.create_special_data(X, label = "01", comment = "log10_E0 (54, 57)  log10_n0 (-6, -4) thetaCore (0.35, np.pi/5)")
