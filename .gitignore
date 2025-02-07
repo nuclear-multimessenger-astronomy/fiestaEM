@@ -1,1 +1,11 @@
 __pycache__
+.coverage
+*egg-info
+/flux_models/*/benchmarks
+/lightcurve_models/*/benchmarks
+/flux_models/*/model/*.h5
+/lightcurve_models/*/model/*.h5
+*nohup.out
+*.sbatch
+*/log
+*/err

@@ -2,19 +2,16 @@
 # TODO: for now, we will only support creating injections from a given model
 
 import argparse
-import copy
-import numpy as np
-import jax
-import jax.numpy as jnp
+
+import h5py
 from jaxtyping import Float, Array
+import numpy as np
 
 from fiesta.inference.lightcurve_model import LightcurveModel
-from fiesta.conversions import mag_app_from_mag_abs
+from fiesta.conversions import mag_app_from_mag_abs, apply_redshift
 from fiesta.utils import Filter
-from fiesta.constants import days_to_seconds, c
-from fiesta import conversions
 
-from fiesta.train.AfterglowData import RunAfterglowpy
+from fiesta.train.AfterglowData import RunAfterglowpy, RunPyblastafterglow
 
 # TODO: get the parser going
 def get_parser(**kwargs):
@@ -24,124 +21,216 @@ def get_parser(**kwargs):
         description="Inference on kilonova and GRB parameters.",
         add_help=add_help,
     )
-    
-
-class InjectionRecovery:
-    
-    def __init__(self, 
-                 model: LightcurveModel,
-                 injection_dict: dict[str, Float],
-                 filters: list[str] = None,
-                 tmin: Float = 0.1,
-                 tmax: Float = 14.0,
-                 N_datapoints: int = 10,
-                 error_budget: Float = 1.0,
-                 randomize_nondetections: bool = False,
-                 randomize_nondetections_fraction: Float = 0.2):
-        
-        self.model = model
-        # Ensure given filters are also in the trained model
-        if filters is None:
-            filters = model.filters
-        else:
-            for filt in filters:
-                if filt not in model.filters:
-                    print(f"Filter {filt} not in model filters. Removing from list")
-                    filters.remove(filt)
-     
-        print(f"Creating injection with filters: {filters}")
-        self.filters = filters
-        self.injection_dict = injection_dict
-        self.tmin = tmin
-        self.tmax = tmax
-        self.N_datapoints = N_datapoints
-        self.error_budget = error_budget
-        self.randomize_nondetections = randomize_nondetections
-        self.randomize_nondetections_fraction = randomize_nondetections_fraction
-        
-    def create_injection(self):
-        """Create a synthetic injection from the given model and parameters."""
-        
-        self.data = {}
-        all_mag_abs = self.model.predict(self.injection_dict)
-        
-        for filt in self.filters:
-            times = self.create_timegrid()
-            all_mag_app = mag_app_from_mag_abs(all_mag_abs[filt], self.injection_dict["luminosity_distance"])
-            mag_app = np.interp(times, self.model.times, all_mag_app)
-            mag_err = self.error_budget * np.ones_like(times)
-            
-            # Randomize to get some non-detections if so desired:
-            if self.randomize_nondetections:
-                n_nondetections = int(self.randomize_nondetections_fraction * len(times))
-                nondet_indices = np.random.choice(len(times), size = n_nondetections, replace = False)
-                
-                mag_app[nondet_indices] -= 5.0 # randomly bump down the magnitude
-                mag_err[nondet_indices] = np.inf
-            
-            array = np.array([times, mag_app, mag_err]).T
-            self.data[filt] = array
-    
-    def create_timegrid(self):
-        """Create a time grid for the injection."""
-        
-        # TODO: create more interesting grids than uniform and same accross all filters?
-        return np.linspace(self.tmin, self.tmax, self.N_datapoints)
 
 
+class InjectionBase:
 
-class InjectionRecoveryAfterglowpy:
-    
     def __init__(self,
-                 injection_dict: dict[str, Float],
-                 trigger_time: Float,
                  filters: list[str],
-                 jet_type = -1,
+                 trigger_time: float,
                  tmin: Float = 0.1,
                  tmax: Float = 1000.0,
                  N_datapoints: int = 10,
+                 t_detect: dict[str, Array] = None,
                  error_budget: Float = 1.0,
-                 randomize_nondetections: bool = False,
-                 randomize_nondetections_fraction: Float = 0.2):
+                 nondetections: bool = False,
+                 nondetections_fraction: Float = 0.2):
+        
+        self.Filters = [Filter(filt) for filt in filters]
+        print(f"Creating injection with filters: {filters}")
+        self.trigger_time = trigger_time
+
+        if t_detect is not None:
+           self.t_detect = t_detect 
+        else:
+            self.create_t_detect(tmin, tmax, N_datapoints)
+
+        self.error_budget = error_budget
+        self.nondetections = nondetections
+        self.nondetections_fraction = nondetections_fraction
+    
+    def create_t_detect(self, tmin, tmax, N):
+        """Create a time grid for the injection data."""
+
+        self.t_detect = {}
+        points_list = np.random.multinomial(N, [1/len(self.Filters)]*len(self.Filters)) # random number of time points in each filter
+
+        for points, Filt in zip(points_list, self.Filters):
+            t = np.exp(np.random.uniform(np.log(tmin), np.log(tmax), size = points))
+            t = np.sort(t)
+            t[::2] *= np.random.uniform(1, (tmax/tmin)**(1/points), size = len(t[::2])) # correlate the time points
+            t[::3] *= np.random.uniform(1, (tmax/tmin)**(1/points), size = len(t[::3])) # correlate the time points
+            t = np.minimum(t, tmax)
+            self.t_detect[Filt.name] = np.sort(t)
+    
+    def create_injection(self,
+                         injection_dict: dict[str, Float]):
+        raise NotImplementedError
+    
+    def randomize_nondetections(self,):
+        if not self.nondetections:
+            return
+        
+        N = np.sum([len(self.t_detect[Filt.name]) for Filt in self.Filters])
+        nondets_list = np.random.multinomial(int(N*self.nondetections_fraction), [1/len(self.Filters)]*len(self.Filters)) # random number of non detections in each filter
+
+        for nondets, Filt in zip(nondets_list, self.Filters):
+            inds = np.random.choice(np.arange(len(self.data[Filt.name])), size=nondets, replace=False)
+            self.data[Filt.name][inds] += np.array([0, -5., np.inf])
+
+
+        
+    
+
+class InjectionSurrogate(InjectionBase):
+    
+    def __init__(self, 
+                 model: LightcurveModel,
+                 *args,
+                 **kwargs):
+        
+        self.model = model
+        super().__init__(*args, **kwargs)
+        
+    def create_injection(self, injection_dict):
+        """Create a synthetic injection from the given model and parameters."""
+
+        injection_dict["luminosity_distance"] = injection_dict.get('luminosity_distance', 1e-5)
+        injection_dict["redshift"] = injection_dict.get('redshift', 0)
+        
+        times, mags = self.model.predict(injection_dict)
+        self.data = {}
+
+        for Filt in self.Filters:
+            t_detect = self.t_detect[Filt.name]
+
+            mag_app = np.interp(t_detect, times, mags[Filt.name])
+
+            mag_err = self.error_budget * np.sqrt(np.random.chisquare(df=1, size = len(t_detect)))
+            mag_err = np.maximum(mag_err, 0.01)
+            mag_err = np.minimum(mag_err, 1)
+            
+            array = np.array([t_detect, mag_app, mag_err]).T
+            self.data[Filt.name] = array
+        
+        self.randomize_nondetections()
+
+class InjectionAfterglowpy(InjectionBase):
+    
+    def __init__(self,
+                 jet_type: int = -1,
+                 *args,
+                 **kwargs):
         
         self.jet_type = jet_type
-        # Ensure given filters are also in the trained model
+        super().__init__(*args, **kwargs)
         
-        if filters is None:
-            filters = model.filters
-
-        self.filters = [Filter(filt) for filt in filters]
-        print(f"Creating injection with filters: {filters}")
-        self.injection_dict = injection_dict
-        self.trigger_time = trigger_time
-        self.tmin = tmin
-        self.tmax = tmax
-        self.N_datapoints = N_datapoints
-        self.error_budget = error_budget
-        self.randomize_nondetections = randomize_nondetections
-        self.randomize_nondetections_fraction = randomize_nondetections_fraction
-        
-    def create_injection(self):
+    def create_injection(self, injection_dict):
         """Create a synthetic injection from the given model and parameters."""
-        
-        nus = [filt.nu for filt in self.filters]
-        times = np.logspace(np.log10(self.tmin), np.log10(self.tmax), 200)
-        afgpy = RunAfterglowpy(self.jet_type, times, nus, [list(self.injection_dict.values())], self.injection_dict.keys())
+
+        nus = [nu for Filter in self.Filters for nu in Filter.nus]
+        times = [t for Filter in self.Filters for t in self.t_detect[Filter.name]]
+
+        nus = np.sort(nus)
+        times = np.sort(times)
+
+        afgpy = RunAfterglowpy(self.jet_type, times, nus, [list(injection_dict.values())], injection_dict.keys())
         _, log_flux = afgpy(0)
-        mJys  = np.exp(log_flux).reshape(len(nus), 200)
+        mJys  = np.exp(log_flux).reshape(len(nus), len(times))
 
         self.data = {}
-        points = np.random.multinomial(self.N_datapoints, [1/len(self.filters)]*len(self.filters)) # random number of datapoints in each filter
-        for j, npoints, filt in zip(range(len(self.filters)), points, self.filters):
-            times_data = self.create_timegrid(npoints)
-            mJys_filter = np.interp(times_data, times, mJys[j])
-            magnitudes = conversions.mJys_to_mag_np(mJys_filter)
-            magnitudes = magnitudes + 5 * np.log10(self.injection_dict["luminosity_distance"]/(10*1e-6))
 
-            mag_err = self.error_budget * np.ones_like(times_data)
-            self.data[filt.name] = np.array([times_data + self.trigger_time, magnitudes, mag_err]).T 
+        for Filter in self.Filters:
+            t_detect = self.t_detect[Filter.name]
+
+            mag_abs = Filter.get_mag(mJys, nus) # even when 'luminosity_distance' is passed to RunAfterglowpy, it will return the abs mag (with redshift)
+            mag_app = mag_app_from_mag_abs(mag_abs, injection_dict["luminosity_distance"])
+            mag_app = np.interp(t_detect, times, mag_app)
+
+            mag_err = self.error_budget * np.sqrt(np.random.chisquare(df=1, size = len(t_detect)))
+            mag_err = np.maximum(mag_err, 0.01)
+            mag_err = np.minimum(mag_err, 1)
+
+            self.data[Filter.name] = np.array([t_detect + self.trigger_time, mag_app, mag_err]).T
+        
+        self.randomize_nondetections()
+
+class InjectionPyblastafterglow(InjectionBase):
     
-    def create_timegrid(self, npoints):
-        """Create a time grid for the injection."""
+    def __init__(self,
+                 jet_type: str = "tophat",
+                 *args,
+                 **kwargs):
+        
+        self.jet_type = jet_type
+        super().__init__(*args, **kwargs)
+        
+    def create_injection(self, injection_dict):
+        """Create a synthetic injection from the given model and parameters."""
 
-        return np.linspace(self.tmin, self.tmax, npoints)
+        nus = [nu for Filter in self.Filters for nu in Filter.nus]
+        times = [t for Filter in self.Filters for t in self.t_detect[Filter.name]]
+
+        nus = np.sort(nus)
+        times = np.sort(times)
+        nus = np.logspace(np.log10(nus[0]), np.log10(nus[-1]), len(nus)) #pbag only takes log (or linear) spaced arrays
+        nus = np.logspace(np.log10(times[0]), np.log10(times[-1]), len(times))
+
+        pbag = RunPyblastafterglow(self.jet_type, times, nus, [list(injection_dict.values())], injection_dict.keys())
+        _, log_flux = pbag(0)
+        mJys  = np.exp(log_flux).reshape(len(nus), len(times))
+
+        self.data = {}
+
+        for Filter in self.Filters:
+            t_detect = self.t_detect[Filter.name]
+
+            mag_abs = Filter.get_mag(mJys, nus)
+            mag_app = mag_app_from_mag_abs(mag_abs, injection_dict["luminosity_distance"])
+            mag_app = np.interp(t_detect, times, mag_app)
+
+            mag_err = self.error_budget * np.sqrt(np.random.chisquare(df=1, size = len(t_detect)))
+            mag_err = np.maximum(mag_err, 0.01)
+            mag_err = np.minimum(mag_err, 1)
+
+            self.data[Filter.name] = np.array([t_detect + self.trigger_time, mag_app, mag_err]).T
+        
+        self.randomize_nondetections()
+    
+    def create_injection_from_file(self, file, injection_dict):
+        with h5py.File(file) as f:
+            times = f["times"][:]
+            nus = f["nus"][:]
+            parameter_names = f["parameter_names"][:].astype(str).tolist()
+            test_X_raw = f["test"]["X"][:]
+
+            X = np.array([injection_dict[p] for p in parameter_names])
+            
+            ind = np.argmin(np.sum( ( (test_X_raw - X)/(np.max(test_X_raw, axis=0) - np.min(test_X_raw, axis=0)) )**2, axis=1))
+            X = test_X_raw[ind]
+
+            log_flux = f["test"]["y"][ind]
+        
+        print(f"Found suitable injection with {dict(zip(parameter_names, X))}")
+        mJys = np.exp(log_flux).reshape(len(nus), len(times))
+        mJys, times, nus = apply_redshift(mJys, times, nus, injection_dict.get("redshift", 0.0))
+
+        self.data = {}
+
+        for Filter in self.Filters:
+            t_detect = self.t_detect[Filter.name]
+
+            mag_abs = Filter.get_mag(mJys, nus)
+            mag_app = mag_app_from_mag_abs(mag_abs, injection_dict["luminosity_distance"])
+            mag_app = np.interp(t_detect, times, mag_app)
+
+            mag_err = self.error_budget * np.sqrt(np.random.chisquare(df=1, size = len(t_detect)))
+            mag_err = np.maximum(mag_err, 0.01)
+            mag_err = np.minimum(mag_err, 1)
+
+            self.data[Filter.name] = np.array([t_detect + self.trigger_time, mag_app, mag_err]).T
+        
+        self.randomize_nondetections()
+        return dict(zip(parameter_names, X))
+
+
