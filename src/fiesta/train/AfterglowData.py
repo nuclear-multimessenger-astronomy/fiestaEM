@@ -245,34 +245,74 @@ class AfterglowpyData(AfterglowData):
 
 class PyblastafterglowData(AfterglowData):
 
-    def __init__(self, path_to_exec: str, rank: int = 0, grb_resolution: int = 12, *args, **kwargs):
+    def __init__(self, path_to_exec: str, pbag_kwargs: dict = None, rank: int = 0, *args, **kwargs):
         self.outfile = f"pyblastafterglow_raw_data_{rank}.h5"
         self.chunk_size = 10
         self.rank = rank
         self.path_to_exec = path_to_exec
-        self.grb_resolution = grb_resolution
+        self.pbag_kwargs = pbag_kwargs
         super().__init__(*args, **kwargs)
 
 
     def run_afterglow_model(self, X):
         """Should be run in parallel with different mpi processes to run pyblastafterglow on the parameters in the array X."""
         y = np.empty((len(X), len(self.times)*len(self.nus)))
-        pbag = RunPyblastafterglow(self.jet_type, self.times, self.nus, X, self.parameter_names, self.fixed_parameters, rank=self.rank, path_to_exec = self.path_to_exec, grb_resolution  = self.grb_resolution)
-        for j in tqdm.tqdm(range(len(X)), desc = f"Computing {len(X)} pyblastafterglow calculations.", leave = False):
+
+        pbag = RunPyblastafterglow(self.jet_type,
+                                   self.times, 
+                                   self.nus, 
+                                   X, 
+                                   self.parameter_names, 
+                                   self.fixed_parameters, 
+                                   rank=self.rank, 
+                                   path_to_exec=self.path_to_exec,
+                                   **self.pbag_kwargs)
+        
+        for j in range(len(X)):
             try:
                 idx, out = pbag(j)
                 y[idx] = out
             except:
                 try: 
-                    pbag.n_tb = 3000 # increase blast wave evolution time grid if there is an error
+                    # increase blast wave evolution time grid if there is an error
+                    pbag.ntb = 3000 
                     idx, out = pbag(j)
                     y[idx] = out
-                    pbag.n_tb = 1000
+                    pbag.ntb = self.pbag_kwargs["ntb"]
                 except:
-                    y[j] = np.full(len(self.times)*len(self.nus), np.nan)
-                     
+                    y[j] = np.full(len(self.times)*len(self.nus), np.nan)           
         return X, y
+    
+    def supplement_time(self,t_supp):
+        self.times = t_supp
 
+        for group in ["train", "val", "test"]:
+            with h5py.File(self.outfile) as f:
+                if "y" not in f[group].keys():
+                    continue
+                if f[group]["y"].shape[1]>f["times"].shape[0] * f["nus"].shape[0]:
+                    continue
+                X = f[group]["X"][:]
+
+            _, y_new = self.run_afterglow_model(X)
+            y_new = y_new.reshape(-1, len(self.nus), len(self.times))
+
+            with h5py.File(self.outfile, "r+") as f:
+                y_old = f[group]["y"][:]
+                y_old = y_old.reshape(-1, f["nus"].shape[0], f["times"].shape[0])
+                y = np.concatenate((y_new, y_old), axis=-1)
+
+                new_time_shape = len(self.times) + f["times"].shape[0]
+                y = y.reshape(-1, new_time_shape * len(self.nus))
+                del f[group]["y"]
+                f[group].create_dataset("y", data=y, maxshape=(None, new_time_shape*len(self.nus)), chunks = (self.chunk_size, new_time_shape*len(self.nus)) )
+        
+
+        with h5py.File(self.outfile,"r+") as f:
+            t_old = f["times"][:]
+            del f["times"]
+            time = np.concatenate((t_supp, t_old))
+            f.create_dataset("times", data=time)
 
 class RunAfterglowpy:
     def __init__(self, jet_type, times, nus, X, parameter_names, fixed_parameters = {}):
@@ -344,11 +384,26 @@ class RunAfterglowpy:
 
 
 class RunPyblastafterglow:
-    def __init__(self, jet_type, times, nus, X, parameter_names, fixed_parameters = {}, rank = 0, path_to_exec = "./pba.out", grb_resolution = 12):
-        self.jet_type = jet_type
+    def __init__(self,
+                 jet_type: int,
+                 times, 
+                 nus, 
+                 X, 
+                 parameter_names, 
+                 fixed_parameters={}, 
+                 rank = 0, 
+                 path_to_exec: str="./pba.out", 
+                 grb_resolution: int=12,
+                 ntb: int=1000,
+                 tb0: float=1e1,
+                 tb1: float=1e11,
+                 rtol: float=1e-1,
+                 loglevel: str="err",
+                 ):
+        
         jet_conversion = {"-1": "tophat",
                           "0": "gaussian"}
-        self.jet_type = jet_conversion[str(self.jet_type)]
+        self.jet_type = jet_conversion[str(jet_type)]
         times_seconds = times * days_to_seconds # pyblastafterglow takes seconds as input
 
         # preparing the pyblastafterglow string argument for time array
@@ -370,7 +425,11 @@ class RunPyblastafterglow:
         self.rank = rank
         self.path_to_exec = path_to_exec
         self.grb_resolution = grb_resolution
-        self.n_tb = 1000 # set default blast wave evolution timegrid to 1000
+        self.ntb = ntb
+        self.tb0 = tb0
+        self.tb1 = tb1
+        self.rtol = rtol
+        self.loglevel = loglevel
 
     def _call_pyblastafterglow(self,
                          params_dict: dict[str, float]):
@@ -416,7 +475,7 @@ class RunPyblastafterglow:
                     theta_obs= params_dict["inclination_EM"], # observer angle [rad] (from pol to jet axis)  
                     lc_freqs= self.lc_freqs, # frequencies for light curve calculation
                     lc_times= self.lc_times, # times for light curve calculation
-                    tb0=1e1, tb1=1e11, ntb=self.n_tb, # burster frame time grid boundary, resolution, for the simulation
+                    tb0=self.tb0, tb1=self.tb1, ntb=self.ntb, # burster frame time grid boundary, resolution, for the simulation
                 ),
 
                 # ejecta parameters; FS only -- 3 free parameters 
@@ -426,7 +485,7 @@ class RunPyblastafterglow:
                     eps_b_fs=np.power(10, params_dict["log10_epsilon_B"]), # microphysics - FS - frac. energy in magnetic fields
                     p_fs= params_dict["p"], # microphysics - FS - slope of the injection electron spectrum
                     do_lc='yes',      # task - compute light curves
-                    rtol_theta = 1e-1,
+                    rtol_theta = self.rtol,
                     # save_spec='yes' # save comoving spectra 
                     # method_synchrotron_fs = 'Joh06',
                     # method_ne_fs = 'usenprime',
@@ -438,9 +497,10 @@ class RunPyblastafterglow:
                               P=P,                     # all parameters 
                               run=True,                # run code itself (if False, it will try to load results)
                               path_to_cpp=self.path_to_exec, # absolute path to the C++ executable of the code
-                              loglevel="err",         # logging level of the code (info or err)
+                              loglevel=self.loglevel,         # logging level of the code (info or err)
                               process_skymaps=False    # process unstractured sky maps. Only useed if `do_skymap = yes`
                              )
+        
         mJys = pba_run.GRB.get_lc()
         return mJys
 
