@@ -278,29 +278,25 @@ class Fiesta(object):
         
         zorder = 2
         # Predict and convert to apparent magnitudes
-        mag_bestfit = self.likelihood.model.predict(best_fit_params_named)
-        d = best_fit_params_named["luminosity_distance"]
-        for filt in filters:
-            mag_bestfit[filt] = mag_app_from_mag_abs(mag_bestfit[filt], d)
+        time_obs, mag_bestfit = self.likelihood.model.predict(best_fit_params_named)
+
         for i, filter_name in enumerate(filters):
             ax = plt.subplot(len(filters), 1, i + 1)
             mag = mag_bestfit[filter_name]
-            t = self.likelihood.model.times
-            mask = (t >= tmin) & (t <= tmax)
-            ax.plot(t[mask], mag[mask], color = "blue", label = "Best fit", zorder = zorder)
+            mask = (time_obs >= tmin) & (time_obs <= tmax)
+            ax.plot(time_obs[mask], mag[mask], color = "blue", label = "Best fit", zorder = zorder)
             
         # Other samples
         zorder = 1
         for sample in samples.T:
             sample_named = self.prior.add_name(sample)
             sample_named.update(self.likelihood.fixed_params)
-            mag = self.likelihood.model.predict(sample_named)
-            d = sample_named["luminosity_distance"]
-            for filt in filters:
-                mag[filt] = mag_app_from_mag_abs(mag[filt], d)
+            time_obs, mag = self.likelihood.model.predict(sample_named)
+            mask = (time_obs >= tmin) & (time_obs <= tmax)
+
             for i, filter_name in enumerate(filters):
                 ax = plt.subplot(len(filters), 1, i + 1)
-                ax.plot(self.likelihood.model.times[mask], mag[filter_name][mask], color = "gray", alpha = 0.05, zorder = zorder)
+                ax.plot(time_obs[mask], mag[filter_name][mask], color = "gray", alpha = 0.05, zorder = zorder)
         
         ### Make pretty
         for i, filter_name in enumerate(filters):
