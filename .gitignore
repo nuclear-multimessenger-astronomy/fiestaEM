@@ -3,5 +3,9 @@ __pycache__
 *egg-info
 /flux_models/*/benchmarks
 /lightcurve_models/*/benchmarks
-/flux_models/*/model/*raw_data.h5
-/lightcurve_models/*/model/*raw_data.h5
+/flux_models/*/model/*.h5
+/lightcurve_models/*/model/*.h5
+*nohup.out
+*.sbatch
+*/log
+*/err
