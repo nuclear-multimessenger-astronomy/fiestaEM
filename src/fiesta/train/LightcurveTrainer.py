@@ -7,7 +7,7 @@ import jax
 from jaxtyping import Array, Float, Int
 from typing import Dict
 from fiesta.utils import MinMaxScalerJax
-from fiesta.utils import Filter
+from fiesta.filters import Filter
 from fiesta.train.DataManager import DataManager
 import fiesta.train.neuralnets as fiesta_nn
 
