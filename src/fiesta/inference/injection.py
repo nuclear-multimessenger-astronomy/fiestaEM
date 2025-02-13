@@ -9,7 +9,7 @@ import numpy as np
 
 from fiesta.inference.lightcurve_model import LightcurveModel
 from fiesta.conversions import mag_app_from_mag_abs, apply_redshift
-from fiesta.utils import Filter
+from fiesta.filters import Filter
 
 from fiesta.train.AfterglowData import RunAfterglowpy, RunPyblastafterglow
 
