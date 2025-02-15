@@ -40,7 +40,7 @@ class ConstrainedPrior(CompositePrior):
         converted_sample = self.conversion(samples)
         log_prob = jnp.zeros_like(samples[self.naming[0]])
         for constraint in self.constraints:
-            log_prob+=constraint.log_prob(samples)
+            log_prob+=constraint.log_prob(converted_sample)
         return log_prob
     
     def sample(
@@ -63,7 +63,8 @@ class ConstrainedPrior(CompositePrior):
             constr = constr.at[idx].set(new_constr)
         
         for constraint in self.constraints:
-            del samples[constraint.naming[0]]
+            if constraint.naming[0] in samples.keys():
+                del samples[constraint.naming[0]]
 
         return samples
             
