@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 import numpy as np
 
-from fiesta.constants import pc_to_cm, h_erg_s, c
+from fiesta.constants import pc_to_cm, h_erg_s, c, H0
 
 
 #######################
@@ -12,6 +12,24 @@ from fiesta.constants import pc_to_cm, h_erg_s, c
 
 def Mpc_to_cm(d: float):
     return d * 1e6 * pc_to_cm
+
+def redshift_to_luminosity_distance(z: Array, Omega_m=0.321):
+    
+    def correction_factor(z: Float):
+        z_arr = jnp.linspace(0, z, 100)
+        integrand = ( Omega_m* (1+z_arr)**3 + (1-Omega_m) )**(-0.5)
+        return jnp.trapezoid(x=z_arr, y=integrand)
+    
+    correction = jax.vmap(correction_factor)(z)
+    luminosity_distance = c / H0 * (1+z) * correction
+    return luminosity_distance
+
+z_arr = jnp.logspace(-6, jnp.log10(15), 200)
+dL_arr = redshift_to_luminosity_distance(z_arr)
+
+def luminosity_distance_to_redshift(dL: Array):
+    return jnp.interp(dL, dL_arr, z_arr)
+    
 
 ###################
 # FLUX CONVERSION #
