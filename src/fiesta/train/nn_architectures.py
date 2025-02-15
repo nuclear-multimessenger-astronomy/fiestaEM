@@ -87,11 +87,11 @@ class CVAE(nn.Module):
     """Conditional Variational Autoencoder consisting of an Encoder and a Decoder."""
     hidden_layer_sizes: Sequence[Int] # used for both the encoder and decoder
     output_size: Int
-    z_dim: Int = 20
+    latent_dim: Int = 20
 
     def setup(self):
-        self.encoder = Encoder([*self.hidden_layer_sizes, self.z_dim])
-        self.decoder = Decoder(layer_sizes = [*self.hidden_layer_sizes[::-1], self.output_size], act_func=nn.relu)
+        self.encoder = Encoder([*self.hidden_layer_sizes, self.latent_dim])
+        self.decoder = Decoder(layer_sizes=[*self.hidden_layer_sizes[::-1], self.output_size], act_func=nn.relu)
     
     def __call__(self, y: Array, x: Array, z_rng: jax.random.PRNGKey):
         y = jnp.concatenate([y, x.copy()], axis = -1)
