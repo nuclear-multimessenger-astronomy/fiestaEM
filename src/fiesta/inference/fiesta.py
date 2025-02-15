@@ -107,6 +107,7 @@ class Fiesta(object):
         if initial_guess.size == 0:
             initial_guess_named = self.prior.sample(key, self.Sampler.n_chains)
             initial_guess = jnp.stack([initial_guess_named[key] for key in self.prior.naming]).T
+        
         self.Sampler.sample(initial_guess, None)  # type: ignore
 
     def print_summary(self, transform: bool = True):
@@ -278,6 +279,7 @@ class Fiesta(object):
         
         zorder = 2
         # Predict and convert to apparent magnitudes
+        best_fit_params_named = self.likelihood.conversion(best_fit_params_named)
         time_obs, mag_bestfit = self.likelihood.model.predict(best_fit_params_named)
 
         for i, filter_name in enumerate(filters):
@@ -291,6 +293,7 @@ class Fiesta(object):
         for sample in samples.T:
             sample_named = self.prior.add_name(sample)
             sample_named.update(self.likelihood.fixed_params)
+            sample_named = self.likelihood.conversion(sample_named)
             time_obs, mag = self.likelihood.model.predict(sample_named)
             mask = (time_obs >= tmin) & (time_obs <= tmax)
 
