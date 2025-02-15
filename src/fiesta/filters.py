@@ -33,6 +33,11 @@ class Filter:
             self.nu = constants.c / (bandpass.wave_eff*1e-10)
             self.nus = constants.c / (bandpass.wave[::-1]*1e-10)
             self.trans = bandpass.trans[::-1] # reverse the array to get the transmission as function of frequency (not wavelength)
+
+            if len(self.nus)>100: # to avoid memory issues later
+                self.nus = jnp.linspace(self.nus[0], self.nus[-1], 100)
+                self.trans = bandpass(constants.c / self.nus * 1e10)
+
             self.filt_type = "bandpass"
             
         elif (self.name, None) in _BANDPASS_INTERPOLATORS._primary_loaders:
@@ -40,6 +45,11 @@ class Filter:
             self.nu = constants.c/(bandpass.wave_eff*1e-10)
             self.nus = constants.c / (bandpass.wave[::-1]*1e-10)
             self.trans = bandpass.trans[::-1] # reverse the array to get the transmission as function of frequency (not wavelength)
+
+            if len(self.nus)>100: # to avoid memory issues later
+                self.nus = jnp.linspace(self.nus[0], self.nus[-1], 100)
+                self.trans = bandpass(constants.c / self.nus * 1e10)
+                
             self.filt_type = "bandpass"
 
         elif self.name.endswith("GHz"):
