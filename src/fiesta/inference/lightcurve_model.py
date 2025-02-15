@@ -12,7 +12,7 @@ import pickle
 
 import fiesta.train.neuralnets as fiesta_nn
 from fiesta.conversions import mag_app_from_mag_abs, apply_redshift
-from fiesta import utils
+from fiesta import filters as fiesta_filters
 
 
 ########################
@@ -206,7 +206,7 @@ class LightcurveModel(SurrogateModel):
         if len(filters) == 0:
             raise ValueError(f"No filters found in {self.directory} that match the given filters {filters_args}.")
         self.filters = filters
-        self.Filters = [filters.Filter(filt) for filt in self.filters]
+        self.Filters = [fiesta_filters.Filter(filt) for filt in self.filters]
         print(f"Loaded SurrogateLightcurveModel with filters {self.filters}.")
         
     def load_networks(self) -> None:
@@ -290,7 +290,7 @@ class FluxModel(SurrogateModel):
         self.Filters = []
         for filter in filters:
             try:
-                Filter = filters.Filter(filter)
+                Filter = fiesta_filters.Filter(filter)
                 if Filter.nu<self.nus[0] or Filter.nu>self.nus[-1]:
                     continue
                 self.Filters.append(Filter)
