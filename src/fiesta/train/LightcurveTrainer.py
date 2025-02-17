@@ -131,6 +131,8 @@ class LightcurveTrainer:
         save["X_scaler"] = self.X_scaler
         save["y_scaler"] = self.y_scaler
 
+        save["model_type"] = "MLP"
+
         with open(meta_filename, "wb") as meta_file:
             pickle.dump(save, meta_file)
         
