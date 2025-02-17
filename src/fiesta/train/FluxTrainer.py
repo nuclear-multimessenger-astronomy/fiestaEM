@@ -96,6 +96,7 @@ class FluxTrainer:
         save["parameter_distributions"] = self.parameter_distributions
         save["X_scaler"] = self.X_scaler
         save["y_scaler"] = self.y_scaler
+        save["model_type"] = self.model_type
 
         with open(meta_filename, "wb") as meta_file:
             pickle.dump(save, meta_file)
@@ -135,6 +136,8 @@ class PCATrainer(FluxTrainer):
                          outdir = outdir,
                          plots_dir = plots_dir,
                          save_preprocessed_data = save_preprocessed_data)
+        
+        self.model_type = "MLP"
 
         self.n_pca = n_pca
 
@@ -215,6 +218,8 @@ class CVAETrainer(FluxTrainer):
                        outdir = outdir,
                        plots_dir = plots_dir, 
                        save_preprocessed_data = save_preprocessed_data)
+        
+        self.model_type = "CVAE"
         
         self.data_manager = DataManager(**data_manager_args)
         self.data_manager.print_file_info()

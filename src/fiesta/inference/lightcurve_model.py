@@ -1,6 +1,7 @@
 """Store classes to load in trained models and give routines to let them generate lightcurves."""
 
 # TODO: improve them with jax treemaps, since dicts are essentially pytrees
+from ast import literal_eval
 
 import os
 import jax
@@ -43,31 +44,33 @@ class SurrogateModel:
     
     def load_metadata(self) -> None:
         print(f"Loading metadata for model {self.name}.")
-        self.metadata_filename = os.path.join(self.directory, f"{self.name}_metadata.pkl")
-        assert os.path.exists(self.metadata_filename), f"Metadata file {self.metadata_filename} not found - check the directory {self.directory}"
+        metadata_filename = os.path.join(self.directory, f"{self.name}_metadata.pkl")
+        assert os.path.exists(metadata_filename), f"Metadata file {metadata_filename} not found - check the directory {self.directory}"
         
         # open the file
-        with open(self.metadata_filename, "rb") as meta_file:
-            self.metadata = pickle.load(meta_file)
+        with open(metadata_filename, "rb") as meta_file:
+            metadata = pickle.load(meta_file)
         
         # make the scaler objects attributes
-        self.X_scaler = self.metadata["X_scaler"]
-        self.y_scaler = self.metadata["y_scaler"]
+        self.X_scaler = metadata["X_scaler"]
+        self.y_scaler = metadata["y_scaler"]
+        
+        # check the model type
+        self.model_type = metadata["model_type"]
 
         # load parameter names
-        self.parameter_names = self.metadata["parameter_names"]
+        self.parameter_names = metadata["parameter_names"]
         print(f"This surrogate {self.name} should only be used in the following parameter ranges:")
-        from ast import literal_eval
-        parameter_distributions = literal_eval(self.metadata["parameter_distributions"])
+        parameter_distributions = literal_eval(metadata["parameter_distributions"])
         for key in parameter_distributions.keys():
             print(f"\t {key}: {parameter_distributions[key][:2]}")
 
         #load times
-        self.times = self.metadata["times"]
+        self.times = metadata["times"]
 
         #load nus
-        if "nus" in self.metadata.keys():
-            self.nus = self.metadata["nus"]
+        if "nus" in metadata.keys():
+            self.nus = metadata["nus"]
     
     
     def project_input(self, x: Array) -> dict[str, Array]:
@@ -276,9 +279,7 @@ class FluxModel(SurrogateModel):
     def __init__(self,
                  name: str,
                  directory: str,
-                 filters: list[str] = None, 
-                 model_type: str = "MLP"):
-        self.model_type = model_type # TODO: make this switch nicer somehow maybe
+                 filters: list[str] = None):
         super().__init__(name, directory)
 
         # Load the filters and networks
@@ -286,7 +287,6 @@ class FluxModel(SurrogateModel):
         self.load_networks()
 
     def load_filters(self, filters: list[str] = None) -> None:
-        self.nus = self.metadata['nus']
         self.Filters = []
         for filter in filters:
             try:
@@ -410,7 +410,6 @@ class AfterglowFlux(FluxModel):
     def __init__(self,
                  name: str,
                  directory: str,
-                 filters: list[str] = None,
-                 model_type: str = "MLP"):
-        super().__init__(name=name, directory=directory, filters=filters, model_type=model_type)
+                 filters: list[str] = None):
+        super().__init__(name=name, directory=directory, filters=filters)
     
