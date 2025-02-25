@@ -606,15 +606,14 @@ class RunPyblastafterglow:
         # NOTE: pyblastafterglow takes seconds as input
         times_seconds = times * days_to_seconds
 
-        # Preparing the pyblastafterglow string argument for time array
-        is_log_uniform = np.allclose(np.diff(np.log(times_seconds)), np.log(times_seconds[1]) - np.log(times_seconds[0]))
+        # preparing the pyblastafterglow string argument for time array
+        is_log_uniform = np.allclose(np.diff(np.log(times_seconds)), np.log(times_seconds[1])-np.log(times_seconds[0]), atol=0.01)
         if is_log_uniform:
             log_dt = np.log(times_seconds[1]) - np.log(times_seconds[0])
             # pyblastafterglow only takes the following string format
             self.lc_times = f'array logspace {times_seconds[0]:e} {np.exp(log_dt)*times_seconds[-1]:e} {len(times_seconds)}' 
         else:
-            dt = times_seconds[1] - times_seconds[0]
-            self.lc_times = f'array uniform {times_seconds[0]:e} {times_seconds[-1]+dt:e} {len(times_seconds)}'
+            raise ValueError("Time array must be loguniform.")
 
         # preparing the pyblastafterglow string argument for frequency array
         log_dnu = np.log(nus[1]/nus[0])

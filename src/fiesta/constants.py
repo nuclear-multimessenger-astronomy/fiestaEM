@@ -9,3 +9,4 @@ h = 6.62607015e-34 # J s
 h_erg_s = 6.6261e-27 # cm^2 g s^{-1} (i.e. erg s)
 eV = 1.602176634e-19  # J
 dL_at_10pc = 10 * pc_to_cm # luminosity distance at 10 pc, commmonly used in afterglowpy etc
+H0 = 67400 # m/s / Mpc Planck 2018: arxiv.org/abs/1807.06209

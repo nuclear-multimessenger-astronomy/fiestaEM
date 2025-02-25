@@ -189,7 +189,7 @@ class Benchmarker:
         for cax, filt in zip(ax, self.Filters):
             error = np.abs(self.pred_mag[filt.name] - self.test_mag[filt.name])
             indices = np.linspace(5, len(self.times)-1, 10).astype(int)
-            cax.violinplot(error[:, indices], positions = self.times[indices], widths = self.times[indices]/3)
+            cax.violinplot(error[:, indices], positions=self.times[indices], widths=self.times[indices]/3, points=400)
             cax.set(xlabel = "$t$ in days", ylabel = "error in mag", xscale = "log", xlim = (self.times[0], self.times[-1]), ylim = (0,1.5))
             cax.set_title(f"{filt.name}", loc = "right", pad = -20)
         
