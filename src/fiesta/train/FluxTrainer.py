@@ -1,16 +1,17 @@
 """Method to train the surrogate models"""
 
-import fiesta.train.neuralnets as fiesta_nn
-from fiesta.train.DataManager import DataManager
-
+import dill
 import os
-import numpy as np
+import pickle
 
 import jax
 from jaxtyping import Array, Float, Int
+import numpy as np
 
 import matplotlib.pyplot as plt
-import pickle
+
+import fiesta.train.neuralnets as fiesta_nn
+from fiesta.train.DataManager import DataManager
 
 ################
 # TRAINING API #
@@ -99,14 +100,14 @@ class FluxTrainer:
         save["model_type"] = self.model_type
 
         with open(meta_filename, "wb") as meta_file:
-            pickle.dump(save, meta_file)
+            dill.dump(save, meta_file)
         
         # Save the NN
-        self.network.save_model(outfile = os.path.join(self.outdir, f"{self.name}.pkl"))
+        self.network.save_model(outfile=os.path.join(self.outdir, f"{self.name}.pkl"))
     
     def _save_preprocessed_data(self) -> None:
         print("Saving preprocessed data . . .")
-        np.savez(os.path.join(self.outdir, f"{self.name}_preprocessed_data.npz"), train_X=self.train_X, train_y= self.train_y, val_X = self.val_X, val_y = self.val_y)
+        np.savez(os.path.join(self.outdir, f"{self.name}_preprocessed_data.npz"), train_X=self.train_X, train_y=self.train_y, val_X=self.val_X, val_y=self.val_y)
         print("Saving preprocessed data . . . done")
 
 class PCATrainer(FluxTrainer):
@@ -116,6 +117,7 @@ class PCATrainer(FluxTrainer):
                  outdir: str,
                  data_manager_args: dict,
                  n_pca: Int = 100,
+                 conversion: str = None,
                  plots_dir: str = None,
                  save_preprocessed_data: bool = False) -> None:
         """
@@ -128,6 +130,7 @@ class PCATrainer(FluxTrainer):
             outdir (str): Directory where the NN and its metadata will be written to file.
             data_manager_args (dict): Arguments for the DataManager class instance that will be used to read the data from the .h5 file in outdir and preprocess it.
             n_pca (int): Number of PCA components that will be kept when performing data preprocessing. Defaults to 100.
+            conversion (str): references how to convert the parameters for the training. Defaults to None, in which case it's the identity.
             plots_dir (str): Directory where the loss curves will be plotted. If None, the plot will not be created. Defaults to None.
             save_preprocessed_data (bool): Whether the preprocessed (i.e. PCA decomposed) training and validation data will be written to file. Defaults to False.
         """
@@ -140,25 +143,22 @@ class PCATrainer(FluxTrainer):
         self.model_type = "MLP"
 
         self.n_pca = n_pca
+        self.conversion = conversion
 
         self.data_manager = DataManager(**data_manager_args)
         self.data_manager.print_file_info()
         self.data_manager.pass_meta_data(self)
-
-        self.preprocess()
-        if self.save_preprocessed_data:
-            self._save_preprocessed_data()
-        
+       
     def preprocess(self):
         """
         Preprocessing method to get the PCA coefficients of the standardized training data.
         It assigns the attributes self.train_X, self.train_y, self.val_X, self.val_y that are passed to the fitting method.
         """
         print(f"Fitting PCA model with {self.n_pca} components to the provided data.")
-        self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_pca(self.n_pca)
+        self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_pca(self.n_pca, self.conversion)
         if np.any(np.isnan(self.train_y)) or np.any(np.isnan(self.val_y)):
             raise ValueError(f"Data preprocessing introduced nans. Check raw data for nans of infs or vanishing variance in a specific entry.")
-        print(f"PCA model accounts for a share {np.sum(self.y_scaler.explained_variance_ratio_)} of the total variance in the training data. This value is hopefully close to 1.")
+        print(f"PCA model accounts for a share {np.sum(self.y_scaler.scalers[0].explained_variance_ratio_)} of the total variance in the training data. This value is hopefully close to 1.")
         print("Preprocessing data . . . done")
     
     def fit(self,
@@ -174,10 +174,14 @@ class PCATrainer(FluxTrainer):
             key (jax.random.PRNGKey, optional): jax.random.PRNGKey used to initialize the parameters of the network. Defaults to jax.random.PRNGKey(0).
             verbose (bool, optional): Whether the train and validation loss is printed to terminal in certain intervals. Defaults to True.
         """
+
+        self.preprocess()
+        if self.save_preprocessed_data:
+            self._save_preprocessed_data()
         
         self.config = config
         self.config.output_size = self.n_pca # the config.output_size has to be equal to the number of PCA components
-        input_ndim = len(self.parameter_names)
+        input_ndim = self.train_X.shape[1]
 
         
         # Create neural network and initialize the state
@@ -198,6 +202,7 @@ class CVAETrainer(FluxTrainer):
                  outdir,
                  data_manager_args,
                  image_size: tuple[Int],
+                 conversion: str = None,
                  plots_dir: str = None,
                  save_preprocessed_data=False)->None:
         """
@@ -210,6 +215,7 @@ class CVAETrainer(FluxTrainer):
             outdir (str): Directory where the NN and its metadata will be written to file.
             data_manager_args (dict): Arguments for the DataManager class instance that will be used to read the data from the .h5 file in outdir and preprocess it.
             image_size (tuple(Int)): Size the 2D flux array will be down-sampled to with jax.image.resize when performing data preprocessing.
+            conversion (str): references how to convert the parameters for the training. Defaults to None, in which case it's the identity.
             plots_dir (str): Directory where the loss curves will be plotted. If None, the plot will not be created. Defaults to None.
             save_preprocessed_data (bool): Whether the preprocessed (i.e. down sampled and standardized) training and validation data will be written to file. Defaults to False.
         """
@@ -226,10 +232,7 @@ class CVAETrainer(FluxTrainer):
         self.data_manager.pass_meta_data(self)
 
         self.image_size = image_size
-
-        self.preprocess()
-        if self.save_preprocessed_data:
-            self._save_preprocessed_data()
+        self.conversion = conversion
         
     def preprocess(self)-> None:
         """
@@ -237,13 +240,13 @@ class CVAETrainer(FluxTrainer):
         It assigns the attributes self.train_X, self.train_y, self.val_X, self.val_y that are passed to the fitting method.
         """
         print(f"Preprocessing data by resampling flux array to {self.image_size} and standardizing.")
-        self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_cVAE(self.image_size)
+        self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_cVAE(self.image_size, self.conversion)
         if np.any(np.isnan(self.train_y)) or np.any(np.isnan(self.val_y)):
             raise ValueError(f"Data preprocessing introduced nans. Check raw data for nans of infs or vanishing variance in a specific entry.")
         print("Preprocessing data . . . done")
     
     def fit(self,
-            config: fiesta_nn.NeuralnetConfig = None,
+            config: fiesta_nn.NeuralnetConfig,
             key: jax.random.PRNGKey = jax.random.PRNGKey(0),
             verbose: bool = True) -> None:
         """
@@ -256,12 +259,16 @@ class CVAETrainer(FluxTrainer):
             verbose (bool, optional): Whether the train and validation loss is printed to terminal in certain intervals. Defaults to True.
         """
 
+        self.preprocess()
+        if self.save_preprocessed_data:
+            self._save_preprocessed_data()
+
         self.config = config
         config.output_size = int(np.prod(self.image_size)) # Output must be equal to the product of self.image_size.
 
-        self.network = fiesta_nn.CVAE(config = self.config, conditional_dim = len(self.parameter_names), key = key)
-        state, train_losses, val_losses = self.network.train_loop(self.train_X, self.train_y, self.val_X, self.val_y, verbose = verbose)
+        self.network = fiesta_nn.CVAE(config=self.config, conditional_dim=self.train_X.shape[1], key=key)
+        state, train_losses, val_losses = self.network.train_loop(self.train_X, self.train_y, self.val_X, self.val_y, verbose=verbose)
 
         # Plot and save the plot if so desired
         if self.plots_dir is not None:
-            self.plot_learning_curve(train_losses, val_losses)        
+            self.plot_learning_curve(train_losses, val_losses)

@@ -1,4 +1,4 @@
-from fiesta.utils import MinMaxScalerJax, StandardScalerJax, PCADecomposer, ImageScaler, SVDDecomposer
+from typing import Callable
 
 import numpy as np
 import jax.numpy as jnp
@@ -6,6 +6,9 @@ import h5py
 import gc
 from jaxtyping import Array, Float, Int
 
+#from fiesta.utils import MinMaxScalerJax, StandardScalerJax, PCADecomposer, ImageScaler, SVDDecomposer
+import fiesta.scalers as scalers
+from fiesta.scalers import ParameterScaler, DataScaler
 
 def array_mask_from_interval(sorted_array, amin, amax):
     indmin = max(0, np.searchsorted(sorted_array, amin, side='right') -1)
@@ -142,7 +145,9 @@ class DataManager:
             self.val_X_raw = f["val"]["X"][:self.n_val]
             self.val_y_raw = f["val"]["y"][:self.n_val, self.mask]
     
-    def preprocess_pca(self, n_components: int) -> tuple[Array, Array, Array, Array, object, object]:
+    def preprocess_pca(self, 
+                       n_components: int,
+                       conversion: str=None) -> tuple[Array, Array, Array, Array, object, object]:
         """
         Loads in the training and validation data and performs PCA decomposition using fiesta.utils.PCADecomposer. 
         Because of memory issues, the training data set is loaded in chunks.
@@ -150,6 +155,8 @@ class DataManager:
 
         Args:
             n_components(int): Number of PCA components to keep.
+            conversion (str): references how to convert the parameters for the training. Defaults to None, in which case it's the identity.
+
         Returns:
             train_X (Array): Standardized training parameters.
             train_y (Array): PCA coefficients of the training data. 
@@ -158,7 +165,10 @@ class DataManager:
             Xscaler (StandardScalerJax): Standardizer object fitted to the mean and sigma of the raw training data. Can be used to transform and inverse transform parameter points.
             yscaler (PCAdecomposer): PCADecomposer object fitted to part of the raw training data. Can be used to transform and inverse transform log spectral flux densities.
         """
-        Xscaler, yscaler = StandardScalerJax(), PCADecomposer(n_components=n_components)
+        Xscaler = ParameterScaler(scaler=scalers.StandardScalerJax(),
+                                  parameter_names=self.parameter_names,
+                                  conversion=conversion)
+        yscaler = DataScaler([scalers.PCADecomposer(n_components=n_components)])
         
         # preprocess the training data
         with h5py.File(self.file, "r") as f:
@@ -177,11 +187,11 @@ class DataManager:
             chunk_size = y_set.chunks[0] # load raw data in chunks of chunk_size
             nchunks, rest = divmod(self.n_training, chunk_size) # load raw data in chunks of chunk_size
             for j, chunk in enumerate(y_set.iter_chunks()):
+                if j >= nchunks:
+                    break
                 loaded = y_set[chunk][:, self.mask]
                 assert not np.any(np.isinf(loaded)), f"Found inftys in training data."
                 train_y[j*chunk_size:(j+1)*chunk_size] = yscaler.transform(loaded)
-                if j>= nchunks-1:
-                    break
             if rest > 0:
                 loaded = y_set[-rest:, self.mask]
                 assert not np.any(np.isinf(loaded)), f"Found inftys in training data."
@@ -192,7 +202,9 @@ class DataManager:
 
         return train_X, train_y, val_X, val_y, Xscaler, yscaler
     
-    def preprocess_cVAE(self, image_size: Int[Array, "shape=(2,)"]) -> tuple[Array, Array, Array, Array, object, object]:
+    def preprocess_cVAE(self,
+                        image_size: Int[Array, "shape=(2,)"],
+                        conversion: str=None) -> tuple[Array, Array, Array, Array, object, object]:
         """
         Loads in the training and validation data and performs data preprocessing for the CVAE using fiesta.utils.ImageScaler. 
         Because of memory issues, the training data set is loaded in chunks.
@@ -200,6 +212,7 @@ class DataManager:
 
         Args:
             image_size (Array[Int]): Image size the 2D flux arrays are down sampled to with jax.image.resize
+            conversion (str): references how to convert the parameters for the training. Defaults to None, in which case it's the identity.
         Returns:
             train_X (Array): Standardized training parameters.
             train_y (Array): PCA coefficients of the training data. 
@@ -208,7 +221,10 @@ class DataManager:
             Xscaler (StandardScalerJax): Standardizer object fitted to the mean and sigma of the raw training data. Can be used to transform and inverse transform parameter points.
             yscaler (ImageScaler): ImageScaler object fitted to part of the raw training data. Can be used to transform and inverse transform log spectral flux densities.
         """
-        Xscaler, yscaler = StandardScalerJax(), ImageScaler(downscale = image_size, upscale = (self.n_nus, self.n_times), scaler = StandardScalerJax())
+        Xscaler = ParameterScaler(scaler=scalers.StandardScalerJax(),
+                                  parameter_names=self.parameter_names,
+                                  conversion=conversion)
+        yscaler = DataScaler(scalers=[scalers.ImageScaler(downscale=image_size, upscale=(self.n_nus, self.n_times)), scalers.StandardScalerJax()])
         
         # preprocess the training data
         with h5py.File(self.file, "r") as f:
@@ -222,17 +238,18 @@ class DataManager:
             chunk_size = y_set.chunks[0]
             nchunks, rest = divmod(self.n_training, chunk_size) # create raw data in chunks of chunk_size
             for j, chunk in enumerate(y_set.iter_chunks()):
+                if j>= nchunks:
+                    break
                 loaded = y_set[chunk][:, self.mask].astype(jnp.float16)
                 assert not np.any(np.isinf(loaded)), f"Found inftys in training data."
-                train_y[j*chunk_size:(j+1)*chunk_size] = yscaler.resize_image(loaded).reshape(-1, jnp.prod(image_size))
-                if j>= nchunks-1:
-                    break
+                train_y[j*chunk_size:(j+1)*chunk_size] = yscaler.scalers[0].transform(loaded).reshape(-1, jnp.prod(image_size))
+
             if rest > 0:
                 loaded = y_set[-rest:, self.mask].astype(jnp.float16)
                 assert not np.any(np.isinf(loaded)), f"Found inftys in training data."
-                train_y[-rest:] = yscaler.resize_image(loaded).reshape(-1, jnp.prod(image_size))
+                train_y[-rest:] = yscaler.scalers[0].transform(loaded).reshape(-1, jnp.prod(image_size))
             
-            train_y = yscaler.fit_transform_scaler(train_y) # this standardizes now the down sampled fluxes
+            train_y = yscaler.scalers[1].fit_transform(train_y) # this standardizes now the down sampled fluxes
 
         # preprocess the special training data as well ass the validation data
         train_X, train_y, val_X, val_y = self.__preprocess__special_and_val_data(train_X, train_y, Xscaler, yscaler)
@@ -258,7 +275,10 @@ class DataManager:
         
         return train_X, train_y, val_X, val_y
     
-    def preprocess_svd(self, svd_ncoeff: Int, filters: list) -> tuple[Array, dict[Array], Array, dict[Array], object, dict[object]]:
+    def preprocess_svd(self,
+                       svd_ncoeff: Int,
+                       filters: list,
+                       conversion: str=None) -> tuple[Array, dict[Array], Array, dict[Array], object, dict[object]]:
         """
         Loads in the training and validation data and performs data preprocessing for the SVD decomposition using fiesta.utils.SVDDecomposer. 
         This is done *per filter* supplied in the filters argument which is equivalent to the old NMMA procedure.
@@ -267,16 +287,20 @@ class DataManager:
         Args:
             svd_ncoeff (Int): Number of SVD coefficients to keep
             filters (Filter[list]): List of fiesta.utils.filter instances that are used to convert the fluxes to magnitudes
+            conversion (str): references how to convert the parameters for the training. Defaults to None, in which case it's the identity.
+
         Returns:
             train_X (Array): Scaled training parameters.
             train_y (dict[Array]): Dictionary of the SVD coefficients of the training magnitude lightcurves with the filter names as keys
             val_X (Array): Scaled validation parameters
             val_y (dict[Array]): Dictionary of the SVD coefficients of the validation magnitude lightcurves with the filter names as keys
-            Xscaler (MinMaxScalerJax): MinMaxScaler object fitted to the minimum and maximum of the training data parameters. Can be used to transform and inverse transform parameter points.
+            Xscaler (ParameterScaler): MinMaxScaler object fitted to the minimum and maximum of the training data parameters. Can be used to transform and inverse transform parameter points.
             yscaler (dict[SVDDecomposer]): Dictionary of SVDDecomposer objects with the filter names as keys. The SVDDecomposer objects are fitted to the magnitude training data. Can be used to transform and inverse transform magnitudes in this filter.
         """
         #TODO: dealing with redshift at this step
-        Xscaler, yscaler = MinMaxScalerJax(), {filt.name: SVDDecomposer(svd_ncoeff) for filt in filters}
+        Xscaler = ParameterScaler(conversion=conversion,
+                                  scaler=scalers.MinMaxScalerJax())
+        yscaler = {filt.name: DataScaler([scalers.SVDDecomposer(svd_ncoeff)]) for filt in filters}
         train_y = {}
         val_y = {}
 

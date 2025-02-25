@@ -2,14 +2,16 @@
 
 # TODO: improve them with jax treemaps, since dicts are essentially pytrees
 from ast import literal_eval
-
+import dill
+from functools import partial
 import os
+import pickle
+
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
-from functools import partial
+
 from flax.training.train_state import TrainState
-import pickle
 
 import fiesta.train.neuralnets as fiesta_nn
 from fiesta.conversions import mag_app_from_mag_abs, apply_redshift
@@ -43,13 +45,12 @@ class SurrogateModel:
         return dict(zip(self.parameter_names, x))
     
     def load_metadata(self) -> None:
-        print(f"Loading metadata for model {self.name}.")
         metadata_filename = os.path.join(self.directory, f"{self.name}_metadata.pkl")
         assert os.path.exists(metadata_filename), f"Metadata file {metadata_filename} not found - check the directory {self.directory}"
         
         # open the file
         with open(metadata_filename, "rb") as meta_file:
-            metadata = pickle.load(meta_file)
+            metadata = dill.load(meta_file)
         
         # make the scaler objects attributes
         self.X_scaler = metadata["X_scaler"]
@@ -229,7 +230,7 @@ class LightcurveModel(SurrogateModel):
         Returns:
             dict[str, Array]: Transformed input array
         """
-        x_tilde = self.X_scaler.transform(x)
+        x_tilde = self.X_scaler.transform(self.X_scaler.state, x)
         return x_tilde
     
     def compute_output(self, x: Array) -> Array:
@@ -310,7 +311,8 @@ class FluxModel(SurrogateModel):
             latent_dim = 0
         elif self.model_type == "CVAE":
            state, _ = fiesta_nn.CVAE.load_model(filename)
-           latent_dim = state.params["layers_0"]["kernel"].shape[0] - len(self.parameter_names)
+           x_tilde_dim = self.X_scaler.transform(jnp.zeros(len(self.parameter_names)).reshape(1, -1) ).shape[1]
+           latent_dim = state.params["layers_0"]["kernel"].shape[0] - x_tilde_dim
         else:
             raise ValueError(f"Model type must be either 'MLP' or 'CVAE'.")
         self.latent_vector = jnp.array(jnp.zeros(latent_dim)) # TODO: how to get latent vector?
@@ -326,7 +328,9 @@ class FluxModel(SurrogateModel):
         Returns:
             Array: Transformed input array
         """
+        x = x.reshape(1,-1)
         x_tilde = self.X_scaler.transform(x)
+        x_tilde = x_tilde.reshape(-1)
         return x_tilde
     
     def compute_output(self, x: Array) -> Array:
@@ -383,7 +387,9 @@ class FluxModel(SurrogateModel):
         Returns:
             log_flux [Array]: Array of log-fluxes.
         """
+        x = x.reshape(1,-1)
         x_tilde = self.X_scaler.transform(x)
+        x_tilde = x_tilde.reshape(-1)
         x_tilde = jnp.concatenate((self.latent_vector, x_tilde))
         y = self.models.apply_fn({'params': self.models.params}, x_tilde)
 
