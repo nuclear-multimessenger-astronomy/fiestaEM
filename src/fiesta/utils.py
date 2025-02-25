@@ -17,16 +17,31 @@ from fiesta.conversions import monochromatic_AB_mag, bandpass_AB_mag, integrated
 import fiesta.constants as constants
 
 
-
 ####################
 ### DATA SCALERS ###
 ####################
 
-class MinMaxScalerJax(object):
+
+class Scaler(object):
+    """Abstract scaler class to unify the scaling objects."""
+    
+    def fit(self, x: Array) -> None:
+        raise NotImplementedError("fit method not implemented")
+
+    def transform(self, x: Array) -> Array:
+        raise NotImplementedError("transform method not implemented")
+    
+    def inverse_transform(self, x: Array) -> Array:
+        raise NotImplementedError("inverse_transform method not implemented")
+    
+    def fit_transform(self, x: Array) -> Array:
+        raise NotImplementedError("fit_transform method not implemented")
+
+class MinMaxScalerJax(Scaler):
     """
     MinMaxScaler like sklearn does it, but for JAX arrays since sklearn might not be JAX-compatible?
     
-    Note: assumes that input has dynamical range: it will not catch errors due to constant input (leading to zero division)
+    TODO: catch cases where input has no dynamical range: this will give errors due to constant input (leading to zero division)
     """
     
     def __init__(self,
@@ -50,11 +65,11 @@ class MinMaxScalerJax(object):
         self.fit(x)
         return self.transform(x)
     
-class StandardScalerJax(object):
+class StandardScalerJax(Scaler):
     """
     StandardScaler like sklearn does it, but for JAX arrays since sklearn might not be JAX-compatible?
     
-    Note: assumes that input has dynamical range: it will not catch errors due to constant input (leading to zero division)
+    TODO: fix dynamical range error throwing
     """
     
     def __init__(self,
@@ -83,8 +98,20 @@ class PCADecomposer(object):
     PCA decomposer like sklearn does it. Based on https://github.com/alonfnt/pcax/tree/main.
     """
     def __init__(self, n_components: int, solver: str = "randomized"):
+        """
+        Initialize the PCA decomposer.
+
+        Args:
+            n_components (int): Number of PCA components to be used
+            solver (str, optional): String describing the solver to be used, which is either "full" or "randomized". Defaults to "randomized".
+        """
         self.n_components = n_components
+        solver = solver.lower()
+        supported_solvers = ["full", "randomized"]
+        if solver not in supported_solvers:
+            raise ValueError(f"Solver {solver} not supported. Please choose from: {supported_solvers}")
         self.solver = solver
+        print(f"PCA decomposer initialized with {n_components} components and solver {solver}")
     
     def fit(self, x: Array)-> None:
         if self.solver == "full":
@@ -96,7 +123,7 @@ class PCADecomposer(object):
             raise ValueError("solver parameter is not correct")
     
     def _fit_full(self, x: Array):
-        n_samples, n_features = x.shape
+        n_samples, _ = x.shape
         self.means = jnp.mean(x, axis=0, keepdims=True)
         x = x - self.means
 
@@ -147,18 +174,29 @@ class PCADecomposer(object):
     
 class SVDDecomposer(object):
     """
-    SVDDecomposer that uses the old NMMA approach to decompose lightcurves into SVD coefficients.
+    SVDDecomposer similar to NMMA to decompose lightcurves into SVD coefficients.
+    
+    NMMA repository: https://github.com/nuclear-multimessenger-astronomy/nmma
     """
-    def __init__(self,
-                 svd_ncoeff: Int):
+    def __init__(self, 
+                 svd_ncoeff: Int, 
+                 which_scaler: str = "minmax"):
         self.svd_ncoeff = svd_ncoeff
-        self.scaler = MinMaxScalerJax()
+        which_scaler = which_scaler.lower()
+        supported_scalers = ["minmax", "standard"]
+        if which_scaler not in supported_scalers:
+            raise ValueError(f"Scaler {which_scaler} not supported. Please choose from: {supported_scalers}")
+        
+        if which_scaler == "minmax":
+            self.scaler = MinMaxScalerJax()
+        elif which_scaler == "standard":
+            self.scaler = StandardScalerJax()
     
     def fit(self, x: Array):
         xcopy = x.copy()
         xcopy = self.scaler.fit_transform(xcopy)
            
-        # Do SVD decomposition on the training data
+        # Perform SVD decomposition on the training data
         UA, _, VA = jnp.linalg.svd(xcopy, full_matrices=True)
         self.VA = VA[:self.svd_ncoeff]
     
@@ -186,7 +224,7 @@ class ImageScaler(object):
     def __init__(self, 
                  downscale: Int[Array, "shape=(2,)"],
                  upscale: Int[Array, "shape=(2,)"],
-                 scaler: object):
+                 scaler: Scaler):
         self.downscale = downscale
         self.upscale = upscale
         self.scaler = scaler
@@ -211,8 +249,7 @@ class ImageScaler(object):
     
     def fit_transform_scaler(self, x: Array) -> Array:
         """Method that will fit the scaling object. Here, the array already has to be down sampled."""
-        out = self.scaler.fit_transform(x)
-        return out
+        return self.scaler.fit_transform(x)
         
     @staticmethod
     @jax.vmap
@@ -240,10 +277,19 @@ def inverse_svd_transform(x: Array,
 ### BULLA UTILITIES ###
 #######################
 
-# TODO: place that somewhere else?
+# TODO: move these functions
 
-def get_filters_bulla_file(filename: str,
-                           drop_times: bool = False) -> list[str]:
+def get_filters_bulla_file(filename: str, drop_times: bool = False) -> list[str]:
+    """
+    Fetch the filters that are in a Bulla model output file (type .dat)
+
+    Args:
+        filename (str): Filename from which the filters should be fetched
+        drop_times (bool, optional): Whether to drop the time array from the dat file or not. Defaults to False.
+
+    Returns:
+        list[str]: The filters that are in the file
+    """
     
     assert filename.endswith(".dat"), "File should be of type .dat"
     
@@ -259,6 +305,15 @@ def get_filters_bulla_file(filename: str,
     return names
 
 def get_times_bulla_file(filename: str) -> list[str]:
+    """
+    Fetch the times array of a Bulla model output file (type .dat)
+
+    Args:
+        filename (str): The filename from which the times should be fetched
+
+    Returns:
+        list[str]: The times array
+    """
     
     assert filename.endswith(".dat"), "File should be of type .dat"
     
@@ -317,6 +372,7 @@ def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
                      output_times: Array = None) -> dict[str, Float[Array, " n_files n_times"]]:
     """
     Interpolate NaNs and infs in the raw light curve data. 
+    Roughyl inspired by NMMA code.
 
     Args:
         data (dict[str, Float[Array, 'n_files n_times']]): The raw light curve data
@@ -370,22 +426,28 @@ def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
 def truncated_gaussian(mag_det: Array, 
                        mag_err: Array, 
                        mag_est: Array, 
-                       lim: Float = jnp.inf):
-    
+                       lim: Float = jnp.inf) -> Array:
     """
     Evaluate log PDF of a truncated Gaussian with loc at mag_est and scale mag_err, truncated at lim above.
+    # TODO: OK if we just fix this to a large number, to avoid infs?
+    
+    Args:
+        mag_det (Array): Detected magnitudes
+        mag_err (Array): Magnitude errors
+        mag_est (Array): Estimated magnitudes
+        lim (Float, optional): Limit above which the Gaussian is truncated. Defaults to jnp.inf.
 
     Returns:
-        _type_: _description_
+        Array: The logpdf values
     """
     
     loc, scale = mag_est, mag_err
-    a_trunc = -999 # TODO: OK if we just fix this to a large number, to avoid infs?
+    a_trunc = -999
     a, b = (a_trunc - loc) / scale, (lim - loc) / scale
     logpdf = truncnorm.logpdf(mag_det, a, b, loc=loc, scale=scale)
     return logpdf
 
-def load_event_data(filename):
+def load_event_data(filename: str):
     """
     Takes a file and outputs a magnitude dict with filters as keys.
     
@@ -426,6 +488,10 @@ def write_event_data(filename: str, data: dict):
     """
     Takes a magnitude dict and writes it to filename. 
     The magnitude dict should have filters as keys, the arrays should have the structure [[mjd, mag, err]].
+    
+    Args:
+        filename (str): path to file to be written
+        data (dict[str, Array]): Data dictionary with filters as keys. The array has the structure [[mjd, mag, err]].
     """
     with open(filename, "w") as out:
         for filt in data.keys():
@@ -461,8 +527,8 @@ class Filter:
             
         elif (self.name, None) in _BANDPASS_INTERPOLATORS._primary_loaders:
             bandpass = get_bandpass(self.name, 0) # these bandpass interpolators require a radius (here by default 0 cm)
-            self.nu = constants.c/(bandpass.wave_eff*1e-10)
-            self.nus = constants.c / (bandpass.wave[::-1]*1e-10)
+            self.nu = constants.c/(bandpass.wave_eff * 1e-10)
+            self.nus = constants.c / (bandpass.wave[::-1] * 1e-10)
             self.trans = bandpass.trans[::-1] # reverse the array to get the transmission as function of frequency (not wavelength)
             self.filt_type = "bandpass"
 
@@ -497,20 +563,20 @@ class Filter:
         self.wavelength = constants.c/self.nu*1e10
         self._calculate_ref_flux()
 
-        if self.filt_type=="bandpass":
+        if self.filt_type == "bandpass":
             self.get_mag = lambda Fnu, nus: bandpass_AB_mag(Fnu, nus, self.nus, self.trans, self.ref_flux)
-        elif self.filt_type=="monochromatic":
+        elif self.filt_type == "monochromatic":
             self.get_mag = lambda Fnu, nus: monochromatic_AB_mag(Fnu, nus, self.nus, self.trans, self.ref_flux)
-        elif self.filt_type=="integrated":
+        elif self.filt_type == "integrated":
             self.get_mag = lambda Fnu, nus: integrated_AB_mag(Fnu, nus, self.nus, self.trans)
 
     
     def _calculate_ref_flux(self,):
-        """method to determine the reference flux for the magnitude conversion."""
+        """Method to determine the reference flux for the magnitude conversion. See https://en.wikipedia.org/wiki/AB_magnitude"""
         if self.filt_type in ["monochromatic", "integrated"]:
             self.ref_flux = 3631000. # mJy
         elif self.filt_type=="bandpass":
-            integrand = self.trans / (constants.h_erg_s * self.nus) # https://en.wikipedia.org/wiki/AB_magnitude
+            integrand = self.trans / (constants.h_erg_s * self.nus)
             integral = jnp.trapezoid(y = integrand, x = self.nus)
             self.ref_flux = 3631000. * integral.item() # mJy
     

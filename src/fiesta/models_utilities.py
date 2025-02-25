@@ -1,4 +1,7 @@
-"""Utilities regarding (surrogate) models."""
+"""
+Utilities regarding models, such as extracting parameter values from filenames before training etc.
+"""
+
 import numpy as np
 import re
 
@@ -47,8 +50,5 @@ SUPPORTED_BULLA_MODELS = list(BULLA_PARAMETER_NAMES.keys())
 
 EXTRACT_PARAMETERS_FUNCTIONS = {"Bu2019lm": extract_Bu2019lm_parameters}
 
-### All
-
-# TODO: update this dict to include any other models
 PARAMETER_NAMES = BULLA_PARAMETER_NAMES
 SUPPORTED_MODELS = list(PARAMETER_NAMES.keys())
