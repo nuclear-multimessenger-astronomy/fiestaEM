@@ -1,18 +1,20 @@
 """Method to train the surrogate models"""
 
+import dill
 import os
+import pickle
+from typing import Callable, Dict
+
 import numpy as np
+import matplotlib.pyplot as plt
 
 import jax
 from jaxtyping import Array, Float, Int
-from typing import Dict
+
 from fiesta.utils import MinMaxScalerJax
 from fiesta.filters import Filter
 from fiesta.train.DataManager import DataManager
 import fiesta.train.neuralnets as fiesta_nn
-
-import matplotlib.pyplot as plt
-import pickle
 
 ################
 # TRAINING API #
@@ -134,7 +136,7 @@ class LightcurveTrainer:
         save["model_type"] = "MLP"
 
         with open(meta_filename, "wb") as meta_file:
-            pickle.dump(save, meta_file)
+            dill.dump(save, meta_file)
         
         # Save the NN
         for filt in self.filters:
@@ -154,6 +156,7 @@ class SVDTrainer(LightcurveTrainer):
                  filters: list[str],
                  data_manager_args: dict,
                  svd_ncoeff: Int = 50,
+                 conversion: Callable = lambda x: x,
                  plots_dir: str = None,
                  save_preprocessed_data: bool = False) -> None:
         """
@@ -165,6 +168,7 @@ class SVDTrainer(LightcurveTrainer):
             filters (list[str]): List of the filters for which the surrogate has to be trained. These have to be either bandpasses from sncosmo or specifiy the frequency through endign with GHz or keV.
             data_manager_args (dict): data_manager_args (dict): Arguments for the DataManager class instance that will be used to read the data from the .h5 file in outdir and preprocess it.
             svd_ncoeff (int, optional) : Number of SVD coefficients to use in data reduction during training. Defaults to 50.
+            conversion (str): references how to convert the parameters for the training. Defaults to None, in which case it's the identity.
             plots_dir (str, optional): Directory where the plots of the training process will be saved. Defaults to None, which means no plots will be generated.
             save_preprocessed_data (bool, optional): If True, the preprocessed data (reduced, rescaled) will be saved in the outdir. Defaults to False.
         """
@@ -175,6 +179,8 @@ class SVDTrainer(LightcurveTrainer):
                          save_preprocessed_data = save_preprocessed_data)
         
         self.svd_ncoeff = svd_ncoeff
+
+        self.conversion = conversion
         
         self.data_manager = DataManager(**data_manager_args)
         self.data_manager.print_file_info()
@@ -198,7 +204,7 @@ class SVDTrainer(LightcurveTrainer):
         Preprocessing method to get the SVD coefficients of the training and validation data. This includes scaling the inputs and outputs, as well as performing SVD decomposition.
         """
         print(f"Decomposing training data to SVD coefficients.")
-        self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_svd(self.svd_ncoeff, self.filters)
+        self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_svd(self.svd_ncoeff, self.filters, self.conversion)
         for key in self.train_y.keys():
             if np.any(np.isnan(self.train_y[key])) or np.any(np.isnan(self.val_y[key])):
                 raise ValueError(f"Data preprocessing for {key} introduced nans. Check raw data for nans of infs or vanishing variance in a specific entry.")
