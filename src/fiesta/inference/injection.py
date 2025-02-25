@@ -8,8 +8,8 @@ from jaxtyping import Float, Array
 import numpy as np
 
 from fiesta.inference.lightcurve_model import LightcurveModel
-from fiesta.conversions import mag_app_from_mag_abs, apply_redshift
-from fiesta.filters import Filter
+from fiesta.utils.conversions import mag_app_from_mag_abs, apply_redshift
+from fiesta.utils.filters import Filter
 
 from fiesta.train.AfterglowData import RunAfterglowpy, RunPyblastafterglow
 
@@ -77,10 +77,6 @@ class InjectionBase:
         for nondets, Filt in zip(nondets_list, self.Filters):
             inds = np.random.choice(np.arange(len(self.data[Filt.name])), size=nondets, replace=False)
             self.data[Filt.name][inds] += np.array([0, -5., np.inf])
-
-
-        
-    
 
 class InjectionSurrogate(InjectionBase):
     

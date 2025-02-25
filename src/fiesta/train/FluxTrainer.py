@@ -1,15 +1,15 @@
-"""Method to train the surrogate models"""
+"""
+Method to train the surrogate models
+"""
 
 import dill
 import os
-import pickle
-
 import jax
 from jaxtyping import Array, Float, Int
 import numpy as np
-
 import matplotlib.pyplot as plt
 
+from fiesta.utils.scalers import Scaler
 import fiesta.train.neuralnets as fiesta_nn
 from fiesta.train.DataManager import DataManager
 
@@ -81,7 +81,9 @@ class FluxTrainer:
         plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{self.name}.png"))
         plt.close()
     
+    
     def save(self) -> None:
+        # FIXME: is this called? If so, it might be times etc are not set?
         """
         Save the trained model and all the metadata to the outdir.
         The meta data is saved as a pickled dict to be read by fiesta.inference.lightcurve_model.SurrogateLightcurveModel.
@@ -183,7 +185,6 @@ class PCATrainer(FluxTrainer):
         self.config.output_size = self.n_pca # the config.output_size has to be equal to the number of PCA components
         input_ndim = self.train_X.shape[1]
 
-        
         # Create neural network and initialize the state
         self.network = fiesta_nn.MLP(config = config, input_ndim = input_ndim, key = key)
                 

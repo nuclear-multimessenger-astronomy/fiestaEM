@@ -6,7 +6,7 @@ import h5py
 from fiesta.train.LightcurveTrainer import SVDTrainer
 from fiesta.inference.lightcurve_model import BullaLightcurveModel
 from fiesta.train.neuralnets import NeuralnetConfig
-from fiesta.utils import Filter
+from fiesta.utils.filters import Filter
 
 #############
 ### SETUP ###
@@ -14,7 +14,6 @@ from fiesta.utils import Filter
 
 tmin = 1.5 # days
 tmax = 20
-
 
 numin = 1e13 # Hz 
 numax = 6e15

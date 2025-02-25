@@ -1,29 +1,31 @@
 """Store classes to load in trained models and give routines to let them generate lightcurves."""
 
 # TODO: improve them with jax treemaps, since dicts are essentially pytrees
+import os
 from ast import literal_eval
 import dill
 from functools import partial
-import os
-import pickle
-
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float
-
 from flax.training.train_state import TrainState
 
+from jaxtyping import Array, Float
+from typing import Union
+
+from fiesta.utils.conversions import mag_app_from_mag_abs, apply_redshift
+import fiesta.utils.filters as fiesta_filters
+import fiesta.utils.scalers as Scaler
 import fiesta.train.neuralnets as fiesta_nn
-from fiesta.conversions import mag_app_from_mag_abs, apply_redshift
-from fiesta import filters as fiesta_filters
 
 
 ########################
 ### ABSTRACT CLASSES ###
 ########################
 
+# FIXME: scalers are not treated well compared to base class, should be fixed
 class SurrogateModel:
     """Abstract class for general surrogate models"""
+    
     
     name: str
     directory: str 
@@ -36,9 +38,7 @@ class SurrogateModel:
                  directory: str) -> None:
         self.name = name
         self.directory = directory
-
         self.load_metadata()
-        
         self.filters = []
     
     def add_name(self, x: Array):
@@ -147,10 +147,11 @@ class SurrogateModel:
     
     def predict_abs_mag(self, x: dict[str, Array]) -> tuple[Array, dict[str, Array]]:
         x["luminosity_distance"] = 1e-5
-        x["redshift"] = 0.
+        x["redshift"] = 0.0
 
         return self.predict(x)
     
+    # TODO: change to predict_vmap to make more informative
     def vpredict(self, X: dict[str, Array]) -> tuple[Array, dict[str, Array]]:
         """
         Vectorized prediction function to calculate the apparent magnitudes for several inputs x at the same time.
@@ -174,7 +175,7 @@ class LightcurveModel(SurrogateModel):
     
     directory: str
     metadata: dict
-    X_scaler: object
+    X_scaler: dict[str, object]
     y_scaler: dict[str, object]
     models: dict[str, TrainState]
     
@@ -230,6 +231,7 @@ class LightcurveModel(SurrogateModel):
         Returns:
             dict[str, Array]: Transformed input array
         """
+        # FIXME: what is this state?
         x_tilde = self.X_scaler.transform(self.X_scaler.state, x)
         return x_tilde
     
@@ -266,7 +268,7 @@ class LightcurveModel(SurrogateModel):
             output = y_scaler.inverse_transform(y[filter])
             return output
         
-        y = jax.tree.map(inverse_transform, self.filters) # avoid for loop with jax.tree.map
+        y = jax.tree.map(inverse_transform, self.filters)
         return jnp.array(y)
     
     def convert_to_mag(self, y: Array, x: dict[str, Array]) -> tuple[Array, dict[str, Array]]:
@@ -276,6 +278,9 @@ class LightcurveModel(SurrogateModel):
 
 class FluxModel(SurrogateModel):
     """Class of surrogate models that predicts the 2D spectral flux density array."""
+
+    X_scaler: Scaler
+    y_scaler: Scaler
 
     def __init__(self,
                  name: str,
@@ -311,7 +316,7 @@ class FluxModel(SurrogateModel):
             latent_dim = 0
         elif self.model_type == "CVAE":
            state, _ = fiesta_nn.CVAE.load_model(filename)
-           x_tilde_dim = self.X_scaler.transform(jnp.zeros(len(self.parameter_names)).reshape(1, -1) ).shape[1]
+           x_tilde_dim = self.X_scaler.transform(jnp.zeros(len(self.parameter_names)).reshape(1, -1)).shape[1]
            latent_dim = state.params["layers_0"]["kernel"].shape[0] - x_tilde_dim
         else:
             raise ValueError(f"Model type must be either 'MLP' or 'CVAE'.")
@@ -363,16 +368,13 @@ class FluxModel(SurrogateModel):
         return y
     
     def convert_to_mag(self, y: Array, x: dict[str, Array]) -> tuple[Array, dict[str, Array]]:
-
-        mJys = jnp.exp(y)
-
-        mJys_obs, times_obs, nus_obs = apply_redshift(mJys, self.times, self.nus, x["redshift"])
         # TODO: Add EBL table here at some point
 
+        mJys = jnp.exp(y)
+        mJys_obs, times_obs, nus_obs = apply_redshift(mJys, self.times, self.nus, x["redshift"])
         mag_abs = jax.tree.map(lambda Filter: Filter.get_mag(mJys_obs, nus_obs), 
                                self.Filters)
         mag_abs = jnp.array(mag_abs)
-        
         mag_app = mag_app_from_mag_abs(mag_abs, x["luminosity_distance"])
         
         return times_obs, dict(zip(self.filters, mag_app))
@@ -402,6 +404,7 @@ class FluxModel(SurrogateModel):
 # MODEL CLASSES #
 #################
 
+# TODO: what is the purpose of these classes?
 class BullaLightcurveModel(LightcurveModel):
     
     def __init__(self, 

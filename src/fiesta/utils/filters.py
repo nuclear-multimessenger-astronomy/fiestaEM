@@ -6,20 +6,19 @@ from jaxtyping import Array, Float, Int
 from sncosmo.bandpasses import _BANDPASSES, _BANDPASS_INTERPOLATORS
 from sncosmo import get_bandpass
 
-
 from fiesta.conversions import monochromatic_AB_mag, bandpass_AB_mag, integrated_AB_mag
 import fiesta.constants as constants
 
 
-#########################
-### Filters           ###
-#########################
-
-
 class Filter:
+    
+    name: str
+    nu: Float
+    nus: Array[Float]
+    trans: Array[Float]
+    filt_type: str
 
-    def __init__(self,
-                 name: str,):
+    def __init__(self, name: str):
         """
         Filter class that uses the bandpass properties from sncosmo or just a simple monochromatic filter based on the name.
         The necessary attributes are stored as jnp arrays.

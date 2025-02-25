@@ -1,4 +1,5 @@
 from fiesta.inference.lightcurve_model import LightcurveModel, FluxModel
+from fiesta.utils.filters import Filter
 
 import os
 import ast
@@ -12,28 +13,32 @@ from scipy.integrate import trapezoid
 from scipy.interpolate import interp1d
 
 class Benchmarker:
+    """Class to facilitate making benchmarks"""
 
     def __init__(self,
                  model: LightcurveModel,
                  data_file: str,
-                 filters: list = None,
+                 filters: list[Filter] = None,
                  outdir: str = "./benchmarks",
-                 metric_name: str = "Linf",
-                 ) -> None:
+                 metric_name: str = "Linf") -> None:
         
         self.model = model
         self.times = self.model.times
         self.file = data_file
         self.outdir = outdir
         
-        # Load filters
+        # If no filters are given, use all filters from the model
         if filters is None:
             self.Filters = model.Filters
         else: 
-            self.Filters = [Filt for Filt in model.Filters if Filt.name in filters]
-        print(f"Loaded filters are: {[Filt.name for Filt in self.Filters]}.")
+            self.Filters = [filt for filt in model.Filters if filt.name in filters]
+        print(f"Loaded filters in Benchmarker class are: {[filt.name for filt in self.Filters]}.")
+
+        if metric_name not in ["L2", "Linf"]:
+            raise ValueError("Only L2 and Linf metrics are supported.")
 
         # Load metric
+        # TODO: make these a bit clearer rather than one-liners?
         if metric_name == "L2":
             self.metric_name = "$\\mathcal{L}_2$"
             self.metric = lambda y: np.sqrt(trapezoid(x= np.log(self.times) ,y=y**2, axis = -1)) / (np.log(self.times[-1]) - np.log(self.times[0]))
@@ -49,9 +54,8 @@ class Benchmarker:
         self.calculate_error()
         self.get_error_distribution()
 
-    def get_data(self,):
-        
-        # get the test data
+    def get_data(self):
+        # Get the test data
         self.test_mag = {}
         with h5py.File(self.file, "r") as f:
             self.parameter_distributions = ast.literal_eval(f["parameter_distributions"][()].decode('utf-8'))
@@ -60,20 +64,21 @@ class Benchmarker:
 
             self.test_X_raw = f["test"]["X"][:]
             test_y_raw = f["test"]["y"][:]
-            test_y_raw = test_y_raw.reshape(len(self.test_X_raw), len(f["nus"]), len(f["times"]) ) 
-            test_y_raw = interp1d(f["times"][:], test_y_raw, axis = 2)(self.times) # interpolate the test data over the time range of the model
+            test_y_raw = test_y_raw.reshape(len(self.test_X_raw), len(f["nus"]), len(f["times"]))
+            # Interpolate the test data over the time range of the model
+            test_y_raw = interp1d(f["times"][:], test_y_raw, axis = 2)(self.times) 
             mJys = np.exp(test_y_raw)
 
         for Filt in self.Filters:
             self.test_mag[Filt.name] = Filt.get_mags(mJys, nus)
         
-        # get the model prediction on the test data
+        # Get the model prediction on the test data
         param_dict = dict(zip(self.parameter_names, self.test_X_raw.T))
         param_dict["luminosity_distance"] = np.ones(len(self.test_X_raw)) * 1e-5
         param_dict["redshift"] = np.zeros(len(self.test_X_raw))
         _, self.pred_mag = self.model.vpredict(param_dict)         
     
-    def calculate_error(self,):
+    def calculate_error(self):
         self.error = {}
 
         for Filt in self.Filters:
@@ -90,7 +95,7 @@ class Benchmarker:
             max_key = max(max_errors, key=max_errors.get)
             self.error["total"] = self.error[max_key]
     
-    def get_error_distribution(self,):
+    def get_error_distribution(self):
         error_distribution = {}
         for j, p in enumerate(self.parameter_names):
             p_array = self.test_X_raw[:,j]
@@ -100,12 +105,13 @@ class Benchmarker:
 
         self.error_distribution = error_distribution
     
-    def benchmark(self,):
+    def benchmark(self):
         self.print_correlations()
         self.plot_worst_lightcurves()
         self.plot_error_over_time()
         self.plot_error_distribution()
 
+    # TODO: put these parameter labels somewhere in a utils file, to make it cleaner?
     def plot_lightcurves_mismatch(self,
                                   parameter_labels: list[str] = ["$\\iota$", "$\log_{10}(E_0)$", "$\\theta_c$", "$\log_{10}(n_{\mathrm{ism}})$", "$p$", "$\\epsilon_E$", "$\\epsilon_B$"]
                                   ):
@@ -122,10 +128,8 @@ class Benchmarker:
         label_dic = {p: label for p, label in zip(self.parameter_names, parameter_labels)}
 
         for Filt in self.Filters:
-
             mismatch = self.error[Filt.name]
             colored_mismatch = cmap(mismatch/vmax)
-
     
             fig, ax = plt.subplots(len(self.parameter_names)-1, len(self.parameter_names)-1)
             fig.suptitle(f"{Filt.name}: {self.metric_name} norm")
@@ -162,7 +166,7 @@ class Benchmarker:
             
             fig.savefig(os.path.join(self.outdir, outfile))
     
-    def plot_worst_lightcurves(self,):
+    def plot_worst_lightcurves(self):
 
         fig, ax = plt.subplots(len(self.Filters) , 1, figsize = (5, 15))
         fig.subplots_adjust(hspace = 0.5, bottom = 0.08, top = 0.98, left = 0.14, right = 0.95)
@@ -181,8 +185,7 @@ class Benchmarker:
 
         fig.savefig(os.path.join(self.outdir, f"worst_lightcurves_{self.file_ending}.pdf"), dpi = 200)
 
-    def plot_error_over_time(self,):
-
+    def plot_error_over_time(self):
         fig, ax = plt.subplots(len(self.Filters) , 1, figsize = (5, 15))
         fig.subplots_adjust(hspace = 0.5, bottom = 0.08, top = 0.98, left = 0.14, right = 0.95)
 
@@ -195,15 +198,14 @@ class Benchmarker:
         
         fig.savefig(os.path.join(self.outdir, f"error_over_time.pdf"), dpi = 200)
 
-    def print_correlations(self, ):
+    def print_correlations(self):
         for Filt in self.Filters:
             error = self.error[Filt.name]
             print(f"\n \n \nCorrelations for filter {Filt.name}:\n")
             for j, p in enumerate(self.parameter_names):
                 print(f"{p}: {np.corrcoef(self.test_X_raw[:,j], error)[0,1]}")
     
-    def plot_error_distribution(self,):
-
+    def plot_error_distribution(self):
         fig, ax = plt.subplots(len(self.parameter_names), 1, figsize = (4, 18))
         fig.subplots_adjust(hspace = 0.5, bottom = 0.08, top = 0.98, left = 0.09, right = 0.95)
                 

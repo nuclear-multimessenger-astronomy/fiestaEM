@@ -7,9 +7,33 @@ import numpy as np
 import jax
 from jaxtyping import Float, Array
 import jax.numpy as jnp
+from jax.scipy.stats import truncnorm
 
 from fiesta.inference.lightcurve_model import LightcurveModel
-from fiesta.utils import truncated_gaussian
+
+def truncated_gaussian(mag_det: Array, 
+                       mag_err: Array, 
+                       mag_est: Array, 
+                       lim: Float = jnp.inf) -> Array:
+    """
+    Evaluate log PDF of a truncated Gaussian with loc at mag_est and scale mag_err, truncated at lim above.
+    # TODO: OK if we just fix this to a large number, to avoid infs?
+    
+    Args:
+        mag_det (Array): Detected magnitudes
+        mag_err (Array): Magnitude errors
+        mag_est (Array): Estimated magnitudes
+        lim (Float, optional): Limit above which the Gaussian is truncated. Defaults to jnp.inf.
+
+    Returns:
+        Array: The logpdf values
+    """
+    
+    loc, scale = mag_est, mag_err
+    a_trunc = -999
+    a, b = (a_trunc - loc) / scale, (lim - loc) / scale
+    logpdf = truncnorm.logpdf(mag_det, a, b, loc=loc, scale=scale)
+    return logpdf
 
 class EMLikelihood:
     

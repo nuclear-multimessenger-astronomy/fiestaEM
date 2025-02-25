@@ -11,8 +11,8 @@ import matplotlib.pyplot as plt
 import jax
 from jaxtyping import Array, Float, Int
 
-from fiesta.utils import MinMaxScalerJax
-from fiesta.filters import Filter
+from fiesta.utils.scalers import MinMaxScalerJax
+from fiesta.utils.filters import Filter
 from fiesta.train.DataManager import DataManager
 import fiesta.train.neuralnets as fiesta_nn
 

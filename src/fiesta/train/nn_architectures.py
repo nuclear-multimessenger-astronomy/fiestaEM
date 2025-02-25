@@ -1,11 +1,8 @@
 from typing import Sequence, Callable
-
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Int
 from flax import linen as nn  # Linen API
-
-
 
 #####################
 ### ARCHITECTURES ###

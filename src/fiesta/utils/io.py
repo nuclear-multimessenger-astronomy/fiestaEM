@@ -1,108 +1,100 @@
 import copy
-
 import numpy as np
 import pandas as pd
 from astropy.time import Time
 import scipy.interpolate as interp
-
-import jax.numpy as jnp
-from jax.scipy.stats import truncnorm
-from jaxtyping import Array, Float, Int
+from jaxtyping import Array, Float
 
 
-#######################
-### BULLA UTILITIES ###
-#######################
+# TODO: Check if these can be moved/deleted?
 
-# TODO: move these functions
+# #######################
+# ### BULLA UTILITIES ###
+# #######################
 
-def get_filters_bulla_file(filename: str, drop_times: bool = False) -> list[str]:
-    """
-    Fetch the filters that are in a Bulla model output file (type .dat)
 
-    Args:
-        filename (str): Filename from which the filters should be fetched
-        drop_times (bool, optional): Whether to drop the time array from the dat file or not. Defaults to False.
+# def get_filters_bulla_file(filename: str, drop_times: bool = False) -> list[str]:
+#     """
+#     Fetch the filters that are in a Bulla model output file (type .dat)
 
-    Returns:
-        list[str]: The filters that are in the file
-    """
+#     Args:
+#         filename (str): Filename from which the filters should be fetched
+#         drop_times (bool, optional): Whether to drop the time array from the dat file or not. Defaults to False.
+
+#     Returns:
+#         list[str]: The filters that are in the file
+#     """
     
-    assert filename.endswith(".dat"), "File should be of type .dat"
+#     assert filename.endswith(".dat"), "File should be of type .dat"
     
-    # Open up the file and read the first line to get the header
-    with open(filename, "r") as f:
-        names = list(filter(None, f.readline().rstrip().strip("#").split(" ")))
-    # Drop the times column if required, to get only the filters
-    if drop_times:
-        names = [name for name in names if name != "t[days]"]
-    # Replace  colons with underscores
-    names = [name.replace(":", "_") for name in names]
+#     # Open up the file and read the first line to get the header
+#     with open(filename, "r") as f:
+#         names = list(filter(None, f.readline().rstrip().strip("#").split(" ")))
+#     # Drop the times column if required, to get only the filters
+#     if drop_times:
+#         names = [name for name in names if name != "t[days]"]
+#     # Replace  colons with underscores
+#     names = [name.replace(":", "_") for name in names]
     
-    return names
+#     return names
 
-def get_times_bulla_file(filename: str) -> list[str]:
-    """
-    Fetch the times array of a Bulla model output file (type .dat)
+# def get_times_bulla_file(filename: str) -> list[str]:
+#     """
+#     Fetch the times array of a Bulla model output file (type .dat)
 
-    Args:
-        filename (str): The filename from which the times should be fetched
+#     Args:
+#         filename (str): The filename from which the times should be fetched
 
-    Returns:
-        list[str]: The times array
-    """
+#     Returns:
+#         list[str]: The times array
+#     """
     
-    assert filename.endswith(".dat"), "File should be of type .dat"
+#     assert filename.endswith(".dat"), "File should be of type .dat"
     
-    names = get_filters_bulla_file(filename, drop_times=False)
+#     names = get_filters_bulla_file(filename, drop_times=False)
+#     data = pd.read_csv(filename, 
+#                        delimiter=" ", 
+#                        comment="#", 
+#                        header=None, 
+#                        names=names, 
+#                        index_col=False)
     
-    data = pd.read_csv(filename, 
-                       delimiter=" ", 
-                       comment="#", 
-                       header=None, 
-                       names=names, 
-                       index_col=False)
+#     times = data["t[days]"].to_numpy()
+
+#     return times
+
+# def read_single_bulla_file(filename: str) -> dict:
+#     """
+#     Load lightcurves from Bulla type .dat files
+
+#     Args:
+#         filename (str): Name of the file
+
+#     Returns:
+#         dict: Dictionary containing the light curve data
+#     """
     
-    times = data["t[days]"].to_numpy()
-
-    return times
-
-def read_single_bulla_file(filename: str) -> dict:
-    """
-    Load lightcurves from Bulla type .dat files
-
-    Args:
-        filename (str): Name of the file
-
-    Returns:
-        dict: Dictionary containing the light curve data
-    """
+#     # Extract the name of the file, without extensions or directories
+#     name = filename.split("/")[-1].replace(".dat", "")
+#     with open(filename, "r") as f:
+#         names = get_filters_bulla_file(filename)
     
-    # Extract the name of the file, without extensions or directories
-    name = filename.split("/")[-1].replace(".dat", "")
-    with open(filename, "r") as f:
-        names = get_filters_bulla_file(filename)
-    
-    df = pd.read_csv(
-        filename,
-        delimiter=" ",
-        comment="#",
-        header=None,
-        names=names,
-        index_col=False,
-    )
-    df.rename(columns={"t[days]": "t"}, inplace=True)
+#     df = pd.read_csv(
+#         filename,
+#         delimiter=" ",
+#         comment="#",
+#         header=None,
+#         names=names,
+#         index_col=False,
+#     )
+#     df.rename(columns={"t[days]": "t"}, inplace=True)
 
-    lc_data = df.to_dict(orient="series")
-    lc_data = {
-        k.replace(":", "_"): v.to_numpy() for k, v in lc_data.items()
-    }
+#     lc_data = df.to_dict(orient="series")
+#     lc_data = {
+#         k.replace(":", "_"): v.to_numpy() for k, v in lc_data.items()
+#     }
     
-    return lc_data
-
-#########################
-### GENERAL UTILITIES ###
-#########################
+#     return lc_data
 
 def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
                      times: Array, 
@@ -159,30 +151,6 @@ def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
                 output[filt] = np.array(mag_interp)
 
     return output
-
-def truncated_gaussian(mag_det: Array, 
-                       mag_err: Array, 
-                       mag_est: Array, 
-                       lim: Float = jnp.inf) -> Array:
-    """
-    Evaluate log PDF of a truncated Gaussian with loc at mag_est and scale mag_err, truncated at lim above.
-    # TODO: OK if we just fix this to a large number, to avoid infs?
-    
-    Args:
-        mag_det (Array): Detected magnitudes
-        mag_err (Array): Magnitude errors
-        mag_est (Array): Estimated magnitudes
-        lim (Float, optional): Limit above which the Gaussian is truncated. Defaults to jnp.inf.
-
-    Returns:
-        Array: The logpdf values
-    """
-    
-    loc, scale = mag_est, mag_err
-    a_trunc = -999
-    a, b = (a_trunc - loc) / scale, (lim - loc) / scale
-    logpdf = truncnorm.logpdf(mag_det, a, b, loc=loc, scale=scale)
-    return logpdf
 
 def load_event_data(filename: str):
     """

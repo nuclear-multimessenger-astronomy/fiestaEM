@@ -6,10 +6,10 @@ import h5py
 import gc
 from jaxtyping import Array, Float, Int
 
-#from fiesta.utils import MinMaxScalerJax, StandardScalerJax, PCADecomposer, ImageScaler, SVDDecomposer
-import fiesta.scalers as scalers
-from fiesta.scalers import ParameterScaler, DataScaler
+import fiesta.utils.scalers as scalers
+from fiesta.utils.scalers import ParameterScaler, DataScaler
 
+# TODO: documentation
 def array_mask_from_interval(sorted_array, amin, amax):
     indmin = max(0, np.searchsorted(sorted_array, amin, side='right') -1)
     indmax = min(len(sorted_array)-1, np.searchsorted(sorted_array, amax))

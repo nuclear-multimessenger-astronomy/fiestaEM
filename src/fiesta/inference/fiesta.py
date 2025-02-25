@@ -7,10 +7,8 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array, PRNGKeyArray
 
-from fiesta.inference.lightcurve_model import LightcurveModel
 from fiesta.inference.prior import Prior 
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.conversions import mag_app_from_mag_abs
 
 from flowMC.sampler.Sampler import Sampler
 from flowMC.sampler.MALA import MALA

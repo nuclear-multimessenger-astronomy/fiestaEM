@@ -258,28 +258,6 @@ class UniformVolume(Prior):
         )
         return output
     
-# class DiracDelta(Prior):
-    
-#     value: float
-    
-#     def __init__(self, 
-#                  value: float,
-#                  naming: list[str],
-#                  transforms: dict[str, tuple[str, Callable]] = {},
-#                  **kwargs):
-#         super().__init__(naming, transforms)
-#         self.value = value
-        
-#     def sample(self,
-#                 rng_key: PRNGKeyArray,
-#                 n_samples: int) -> dict[str, Float[Array, " n_samples"]]:
-#           return self.add_name(jnp.ones(n_samples) * self.value)
-      
-#     def log_prob(self, x: dict[str, Array]) -> Float:
-#         variable = x[self.naming[0]]
-#         output = jnp.where(variable == self.value, jnp.zeros_like(variable), jnp.zeros_like(variable) - jnp.inf)
-#         return output
-    
 class CompositePrior(Prior):
     priors: list[Prior] = field(default_factory=list)
 

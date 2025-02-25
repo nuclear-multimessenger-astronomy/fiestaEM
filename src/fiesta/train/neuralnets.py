@@ -99,6 +99,7 @@ def serialize(state: TrainState,
 ### TRAINING ###
 ################
 
+# TODO: might need a base class, e.g. for save_model etc?
 
 class CVAE:
     def __init__(self,

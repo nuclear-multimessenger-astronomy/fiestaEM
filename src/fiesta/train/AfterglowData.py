@@ -9,7 +9,7 @@ import tqdm
 from multiprocessing import Pool
 from jaxtyping import Array, Float, Int
 
-from fiesta.constants import days_to_seconds, dL_at_10pc
+from fiesta.utils.constants import days_to_seconds, dL_at_10pc
 import afterglowpy as grb
 
 
