@@ -1,6 +1,3 @@
-from fiesta.inference.lightcurve_model import LightcurveModel, FluxModel
-from fiesta.utils.filters import Filter
-
 import os
 import ast
 import h5py
@@ -11,6 +8,9 @@ from matplotlib.cm import ScalarMappable
 
 from scipy.integrate import trapezoid
 from scipy.interpolate import interp1d
+
+from fiesta.inference.lightcurve_model import LightcurveModel, FluxModel
+from fiesta.utils.filters import Filter
 
 class Benchmarker:
     """Class to facilitate making benchmarks"""

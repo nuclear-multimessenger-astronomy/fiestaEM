@@ -6,8 +6,8 @@ from jaxtyping import Array, Float, Int
 from sncosmo.bandpasses import _BANDPASSES, _BANDPASS_INTERPOLATORS
 from sncosmo import get_bandpass
 
-from fiesta.conversions import monochromatic_AB_mag, bandpass_AB_mag, integrated_AB_mag
-import fiesta.constants as constants
+from fiesta.utils.conversions import monochromatic_AB_mag, bandpass_AB_mag, integrated_AB_mag
+import fiesta.utils.constants as constants
 
 
 class Filter:

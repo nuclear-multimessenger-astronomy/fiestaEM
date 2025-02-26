@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 import numpy as np
 
-from fiesta.constants import pc_to_cm, h_erg_s, c, H0
+from fiesta.utils.constants import pc_to_cm, h_erg_s, c, H0
 
 
 def Mpc_to_cm(d: float) -> float:
