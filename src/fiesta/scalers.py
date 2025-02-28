@@ -278,7 +278,6 @@ class DataScaler(Scaler):
             x = scaler.fit_transform(x)
         self.scalers_transform = [scaler.transform for scaler in self.scalers]
     
-    @partial(jax.jit, static_argnames=("self",))
     def transform(self, x: Array) -> Array:
         # here we can use a for loop, 
         # as we typically only chain two or three scalers,
