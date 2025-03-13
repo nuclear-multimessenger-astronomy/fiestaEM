@@ -19,7 +19,7 @@ from flowMC.nfmodel.rqSpline import MaskedCouplingRQSpline
 from flowMC.utils.PRNG_keys import initialize_rng_keys
 
 default_hyperparameters = {
-        "seed": 0,
+        "seed": 1,
         "n_chains": 20,
         "num_layers": 10,
         "hidden_size": [128,128],
