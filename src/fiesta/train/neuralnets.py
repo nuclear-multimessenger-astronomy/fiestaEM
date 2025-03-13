@@ -23,6 +23,7 @@ class NeuralnetConfig(ConfigDict):
     output_size: Int
     hidden_layer_sizes: list[int]
     layer_sizes: list[int]
+    latent_dim: Int
     learning_rate: Float
     batch_size: Int
     nb_epochs: Int
@@ -32,6 +33,7 @@ class NeuralnetConfig(ConfigDict):
                  name: str = "MLP",
                  output_size: int = 10,
                  hidden_layer_sizes: list[int] = [64, 128, 64],
+                 latent_dim: int = 20,
                  learning_rate: Float = 1e-3,
                  batch_size: int = 128,
                  nb_epochs: Int = 1_000,
@@ -42,6 +44,7 @@ class NeuralnetConfig(ConfigDict):
         self.output_size = output_size
         self.hidden_layer_sizes = hidden_layer_sizes
         self.layer_sizes = [*hidden_layer_sizes, output_size]
+        self.latent_dim = latent_dim
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         self.nb_epochs = nb_epochs
@@ -103,7 +106,7 @@ class CVAE:
                  conditional_dim: Int,
                  key: jax.random.PRNGKey = jax.random.key(21)):
         self.config = config
-        net = nn.CVAE(hidden_layer_sizes= config.hidden_layer_sizes, output_size= config.output_size)
+        net = nn.CVAE(hidden_layer_sizes=config.hidden_layer_sizes, latent_dim=config.latent_dim, output_size=config.output_size)
         key, subkey, subkey2 = jax.random.split(key, 3)
 
         params = net.init(subkey, jnp.ones(config.output_size), jnp.ones(conditional_dim), subkey2)['params']

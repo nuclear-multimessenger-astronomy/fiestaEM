@@ -1,18 +1,21 @@
 """Store classes to load in trained models and give routines to let them generate lightcurves."""
 
 # TODO: improve them with jax treemaps, since dicts are essentially pytrees
-
+from ast import literal_eval
+import dill
+from functools import partial
 import os
+import pickle
+
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
-from functools import partial
+
 from flax.training.train_state import TrainState
-import pickle
 
 import fiesta.train.neuralnets as fiesta_nn
 from fiesta.conversions import mag_app_from_mag_abs, apply_redshift
-from fiesta import utils
+from fiesta import filters as fiesta_filters
 
 
 ########################
@@ -42,32 +45,33 @@ class SurrogateModel:
         return dict(zip(self.parameter_names, x))
     
     def load_metadata(self) -> None:
-        print(f"Loading metadata for model {self.name}.")
-        self.metadata_filename = os.path.join(self.directory, f"{self.name}_metadata.pkl")
-        assert os.path.exists(self.metadata_filename), f"Metadata file {self.metadata_filename} not found - check the directory {self.directory}"
+        metadata_filename = os.path.join(self.directory, f"{self.name}_metadata.pkl")
+        assert os.path.exists(metadata_filename), f"Metadata file {metadata_filename} not found - check the directory {self.directory}"
         
         # open the file
-        with open(self.metadata_filename, "rb") as meta_file:
-            self.metadata = pickle.load(meta_file)
+        with open(metadata_filename, "rb") as meta_file:
+            metadata = dill.load(meta_file)
         
         # make the scaler objects attributes
-        self.X_scaler = self.metadata["X_scaler"]
-        self.y_scaler = self.metadata["y_scaler"]
+        self.X_scaler = metadata["X_scaler"]
+        self.y_scaler = metadata["y_scaler"]
+        
+        # check the model type
+        self.model_type = metadata["model_type"]
 
         # load parameter names
-        self.parameter_names = self.metadata["parameter_names"]
+        self.parameter_names = metadata["parameter_names"]
         print(f"This surrogate {self.name} should only be used in the following parameter ranges:")
-        from ast import literal_eval
-        parameter_distributions = literal_eval(self.metadata["parameter_distributions"])
+        parameter_distributions = literal_eval(metadata["parameter_distributions"])
         for key in parameter_distributions.keys():
             print(f"\t {key}: {parameter_distributions[key][:2]}")
 
         #load times
-        self.times = self.metadata["times"]
+        self.times = metadata["times"]
 
         #load nus
-        if "nus" in self.metadata.keys():
-            self.nus = self.metadata["nus"]
+        if "nus" in metadata.keys():
+            self.nus = metadata["nus"]
     
     
     def project_input(self, x: Array) -> dict[str, Array]:
@@ -206,7 +210,7 @@ class LightcurveModel(SurrogateModel):
         if len(filters) == 0:
             raise ValueError(f"No filters found in {self.directory} that match the given filters {filters_args}.")
         self.filters = filters
-        self.Filters = [utils.Filter(filt) for filt in self.filters]
+        self.Filters = [fiesta_filters.Filter(filt) for filt in self.filters]
         print(f"Loaded SurrogateLightcurveModel with filters {self.filters}.")
         
     def load_networks(self) -> None:
@@ -226,7 +230,7 @@ class LightcurveModel(SurrogateModel):
         Returns:
             dict[str, Array]: Transformed input array
         """
-        x_tilde = self.X_scaler.transform(x)
+        x_tilde = self.X_scaler.transform(self.X_scaler.state, x)
         return x_tilde
     
     def compute_output(self, x: Array) -> Array:
@@ -276,9 +280,7 @@ class FluxModel(SurrogateModel):
     def __init__(self,
                  name: str,
                  directory: str,
-                 filters: list[str] = None, 
-                 model_type: str = "MLP"):
-        self.model_type = model_type # TODO: make this switch nicer somehow maybe
+                 filters: list[str] = None):
         super().__init__(name, directory)
 
         # Load the filters and networks
@@ -286,11 +288,10 @@ class FluxModel(SurrogateModel):
         self.load_networks()
 
     def load_filters(self, filters: list[str] = None) -> None:
-        self.nus = self.metadata['nus']
         self.Filters = []
         for filter in filters:
             try:
-                Filter = utils.Filter(filter)
+                Filter = fiesta_filters.Filter(filter)
                 if Filter.nu<self.nus[0] or Filter.nu>self.nus[-1]:
                     continue
                 self.Filters.append(Filter)
@@ -310,7 +311,8 @@ class FluxModel(SurrogateModel):
             latent_dim = 0
         elif self.model_type == "CVAE":
            state, _ = fiesta_nn.CVAE.load_model(filename)
-           latent_dim = state.params["layers_0"]["kernel"].shape[0] - len(self.parameter_names)
+           x_tilde_dim = self.X_scaler.transform(jnp.zeros(len(self.parameter_names)).reshape(1, -1) ).shape[1]
+           latent_dim = state.params["layers_0"]["kernel"].shape[0] - x_tilde_dim
         else:
             raise ValueError(f"Model type must be either 'MLP' or 'CVAE'.")
         self.latent_vector = jnp.array(jnp.zeros(latent_dim)) # TODO: how to get latent vector?
@@ -326,7 +328,9 @@ class FluxModel(SurrogateModel):
         Returns:
             Array: Transformed input array
         """
+        x = x.reshape(1,-1)
         x_tilde = self.X_scaler.transform(x)
+        x_tilde = x_tilde.reshape(-1)
         return x_tilde
     
     def compute_output(self, x: Array) -> Array:
@@ -383,7 +387,9 @@ class FluxModel(SurrogateModel):
         Returns:
             log_flux [Array]: Array of log-fluxes.
         """
+        x = x.reshape(1,-1)
         x_tilde = self.X_scaler.transform(x)
+        x_tilde = x_tilde.reshape(-1)
         x_tilde = jnp.concatenate((self.latent_vector, x_tilde))
         y = self.models.apply_fn({'params': self.models.params}, x_tilde)
 
@@ -410,7 +416,6 @@ class AfterglowFlux(FluxModel):
     def __init__(self,
                  name: str,
                  directory: str,
-                 filters: list[str] = None,
-                 model_type: str = "MLP"):
-        super().__init__(name=name, directory=directory, filters=filters, model_type=model_type)
+                 filters: list[str] = None):
+        super().__init__(name=name, directory=directory, filters=filters)
     

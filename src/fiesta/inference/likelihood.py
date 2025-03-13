@@ -1,6 +1,8 @@
 """Functions for computing likelihoods of data given a model."""
 
 import copy
+from typing import Callable
+
 import numpy as np
 import jax
 from jaxtyping import Float, Array
@@ -36,11 +38,13 @@ class EMLikelihood:
                  tmin: Float = 0.0,
                  tmax: Float = 999.0,
                  error_budget: Float = 1.0,
+                 conversion_function: Callable = lambda x: x,
                  fixed_params: dict[str, Float] = {},
                  detection_limit: Float = None):
         
         # Save as attributes
         self.model = model
+        self.conversion = conversion_function
         if filters is None:
             filters = model.filters
         self.filters = filters
@@ -133,6 +137,7 @@ class EMLikelihood:
         """
         
         theta = {**theta, **self.fixed_params}
+        theta = self.conversion(theta)
         times, mag_app = self.model.predict(theta)
         
         # Interpolate the mags to the times of interest
@@ -146,13 +151,13 @@ class EMLikelihood:
         chisq = jax.tree_util.tree_map(self.get_chisq_filt, 
                              mag_est_det, self.mag_det, self.sigma, self.detection_limit)
         chisq_flatten, _ = jax.flatten_util.ravel_pytree(chisq)
-        chisq_total = jnp.sum(chisq_flatten).astype(jnp.float64)
+        chisq_total = jnp.sum(chisq_flatten)#.astype(jnp.float64)
         
         # Get gaussprob:
         gaussprob = jax.tree_util.tree_map(self.get_gaussprob_filt, 
                                  mag_est_nondet, self.mag_nondet, self.error_budget)
         gaussprob_flatten, _ = jax.flatten_util.ravel_pytree(gaussprob)
-        gaussprob_total = jnp.sum(gaussprob_flatten).astype(jnp.float64)
+        gaussprob_total = jnp.sum(gaussprob_flatten)#.astype(jnp.float64)
         
         return chisq_total + gaussprob_total
     

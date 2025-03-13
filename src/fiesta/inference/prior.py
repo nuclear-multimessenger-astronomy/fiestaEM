@@ -194,6 +194,69 @@ class Normal(Prior):
     def log_prob(self, x: dict[str, Array]) -> Float:
         variable = x[self.naming[0]]
         return -1/(2*self.sigma**2) * (variable-self.mu)**2 - jnp.sqrt(2*jnp.pi*self.sigma**2)
+
+@jaxtyped(typechecker=typechecker)
+class UniformVolume(Prior):
+    xmin: float = 10.
+    xmax: float = 1e5
+
+    def __repr__(self):
+        return f"UniformVolume(xmin={self.xmin}, xmax={self.xmax})"
+
+    def __init__(
+        self,
+        xmin: Float,
+        xmax: Float,
+        naming: list[str],
+        transforms: dict[str, tuple[str, Callable]] = {},
+        **kwargs,
+    ):
+        super().__init__(naming, transforms)
+        assert self.n_dim == 1, "UniformComovingVolume needs to be 1D distributions"
+        self.xmax = xmax
+        self.xmin = xmin     
+
+    def sample(
+        self, rng_key: PRNGKeyArray, n_samples: int
+    ) -> dict[str, Float[Array, " n_samples"]]:
+        """
+        Sample luminosity distance from a distribution uniform in volume.
+
+        Parameters
+        ----------
+        rng_key : PRNGKeyArray
+            A random key to use for sampling.
+        n_samples : int
+            The number of samples to draw.
+
+        Returns
+        -------
+        samples : dict
+            Samples from the distribution. The keys are the names of the parameters.
+
+        """
+        vol_max = 4/3 * jnp.pi * self.xmax**3
+        vol_min = 4/3 * jnp.pi * self.xmin**3  
+        samples = jax.random.uniform(
+            rng_key, (n_samples,), minval= vol_min, maxval=vol_max
+        )
+        samples = (3 / (4*jnp.pi) * samples)**(1/3)
+        return self.add_name(samples[None])
+
+    def log_prob(self, x: dict[str, Array]) -> Float:
+        variable = x[self.naming[0]]
+
+        vol_max = 4/3 * jnp.pi * self.xmax**3
+        vol_min = 4/3 * jnp.pi * self.xmin**3  
+
+        output = jnp.where(
+            (variable >= self.xmax) | (variable <= self.xmin),
+            jnp.zeros_like(variable) - jnp.inf,
+            jnp.log(
+                4*jnp.pi*variable**2 / (vol_max-vol_min)
+            ),
+        )
+        return output
     
 # class DiracDelta(Prior):
     
