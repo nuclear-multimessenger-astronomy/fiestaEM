@@ -6,15 +6,38 @@ import h5py
 import gc
 from jaxtyping import Array, Float, Int
 
-#from fiesta.utils import MinMaxScalerJax, StandardScalerJax, PCADecomposer, ImageScaler, SVDDecomposer
 import fiesta.scalers as scalers
 from fiesta.scalers import ParameterScaler, DataScaler
+from fiesta.conversions import apply_redshift
 
 def array_mask_from_interval(sorted_array, amin, amax):
     indmin = max(0, np.searchsorted(sorted_array, amin, side='right') -1)
     indmax = min(len(sorted_array)-1, np.searchsorted(sorted_array, amax))
     mask = np.logical_and(sorted_array>=sorted_array[indmin], sorted_array<=sorted_array[indmax])
     return mask
+
+def concatenate_redshift(X_raw, max_z=0.5):
+    redshifts = np.random.uniform(0, max_z, size= 3*X_raw.shape[0])
+    X_raw = np.tile(X_raw, (3,1))
+    X_raw = np.append(X_raw, redshifts.reshape(-1,1), axis=1)
+    return X_raw
+
+def redshifted_magnitude(filt, mJys, nus, redshifts):
+    """
+    This is a slow and inefficient implementation to get the redshifted magnitudes as training data.
+    """
+    nnus = nus / (1+redshifts[:, None])
+    
+    sample_factor_redshift = int(len(redshifts)/len(mJys))
+    mJys = np.tile(mJys, (sample_factor_redshift, 1, 1))
+
+    mJys = mJys * (1+redshifts[:,None, None])
+
+    mag = []
+    for (mJy, nu_) in zip(mJys, nnus):
+        mag.append(filt.get_mag(mJy, nu_))
+    return np.array(mag)
+
 
 
 ###################
@@ -176,7 +199,6 @@ class DataManager:
             train_X = Xscaler.fit_transform(train_X_raw) # fit the Xscaler and transform the train_X_raw
             
             y_set = f["train"]["y"]
-
             loaded = y_set[: min(20_000, self.n_training), self.mask].astype(np.float16) # only load max. 20k cause otherwise we might run out of memory at this step
             assert not np.any(np.isinf(loaded)), f"Found inftys in training data."
             yscaler.fit(loaded) # fit the yscaler and transform with the loaded data
@@ -278,7 +300,7 @@ class DataManager:
     def preprocess_svd(self,
                        svd_ncoeff: Int,
                        filters: list,
-                       conversion: str=None) -> tuple[Array, dict[Array], Array, dict[Array], object, dict[object]]:
+                       conversion: str=None) -> tuple[Array, dict[str, Array], Array, dict[str, Array], object, dict[str, object]]:
         """
         Loads in the training and validation data and performs data preprocessing for the SVD decomposition using fiesta.utils.SVDDecomposer. 
         This is done *per filter* supplied in the filters argument which is equivalent to the old NMMA procedure.
@@ -295,11 +317,11 @@ class DataManager:
             val_X (Array): Scaled validation parameters
             val_y (dict[Array]): Dictionary of the SVD coefficients of the validation magnitude lightcurves with the filter names as keys
             Xscaler (ParameterScaler): MinMaxScaler object fitted to the minimum and maximum of the training data parameters. Can be used to transform and inverse transform parameter points.
-            yscaler (dict[SVDDecomposer]): Dictionary of SVDDecomposer objects with the filter names as keys. The SVDDecomposer objects are fitted to the magnitude training data. Can be used to transform and inverse transform magnitudes in this filter.
+            yscaler (dict[str, SVDDecomposer]): Dictionary of SVDDecomposer objects with the filter names as keys. The SVDDecomposer objects are fitted to the magnitude training data. Can be used to transform and inverse transform magnitudes in this filter.
         """
-        #TODO: dealing with redshift at this step
         Xscaler = ParameterScaler(conversion=conversion,
-                                  scaler=scalers.MinMaxScalerJax())
+                                  scaler=scalers.MinMaxScalerJax(),
+                                  parameter_names=self.parameter_names)
         yscaler = {filt.name: DataScaler([scalers.SVDDecomposer(svd_ncoeff)]) for filt in filters}
         train_y = {}
         val_y = {}
@@ -307,13 +329,18 @@ class DataManager:
         # preprocess the training data
         with h5py.File(self.file, "r") as f:
             train_X_raw = f["train"]["X"][:self.n_training]
+            train_X_raw = concatenate_redshift(train_X_raw)
             train_X = Xscaler.fit_transform(train_X_raw) # fit the Xscaler and transform the train_X_raw
 
             for label in self.special_training:
-                    special_train_X = Xscaler.transform(f["special_train"[label]["X"][:]])
+                    special_train_X_raw = f["special_train"][label]["X"][:]
+                    special_train_X_raw = concatenate_redshift(special_train_X_raw)
+                    special_train_X = Xscaler.transform(special_train_X_raw)
+
                     train_X = np.concatenate((train_X, special_train_X))
             
             val_X_raw = f["val"]["X"][:self.n_val]
+            val_X_raw = concatenate_redshift(val_X_raw)
             val_X = Xscaler.transform(val_X_raw)
 
             train_y_raw = f["train"]["y"][:, self.mask].reshape(-1, self.n_nus, self.n_times)
@@ -322,20 +349,20 @@ class DataManager:
             mJys_val = np.exp(val_y_raw)
             
             for filt in filters:
-                mag = filt.get_mags(mJys_train, self.nus) # convert to magnitudes
+                mag = redshifted_magnitude(filt, mJys_train, self.nus, train_X_raw[:,-1]) # convert to magnitudes
                 train_data = yscaler[filt.name].fit_transform(mag)
 
                 # preprocess the special training data
                 for label in self.special_training:
                     special_train_y = np.exp(f["special_train"][label]["y"][:, self.mask].reshape(-1, self.n_nus, self.n_times))
-                    special_mag = filt.get_mags(special_train_y, self.nus) # convert to magnitudes
+                    special_mag = redshifted_magnitude(filt, special_train_y, self.nus, special_train_X_raw[:,-1]) # convert to magnitudes
                     special_train_data = yscaler[filt.name].transform(special_mag)
                     train_data = np.concatenate((train_data, special_train_data))
 
                 train_y[filt.name] = train_data
     
                 # preprocess validation data
-                mag = filt.get_mags(mJys_val, self.nus) # convert to magnitudes
+                mag = redshifted_magnitude(filt, mJys_val, self.nus, val_X_raw[:,-1]) # convert to magnitudes
                 val_data = yscaler[filt.name].transform(mag)
                 val_y[filt.name] = val_data
 
