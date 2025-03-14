@@ -1,15 +1,17 @@
-from fiesta.inference.lightcurve_model import LightcurveModel, FluxModel
-
 import os
 import ast
+
 import h5py
 import numpy as np
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 from matplotlib.cm import ScalarMappable
 
 from scipy.integrate import trapezoid
 from scipy.interpolate import interp1d
+
+from fiesta.inference.lightcurve_model import LightcurveModel, FluxModel
 
 class Benchmarker:
 
@@ -54,23 +56,31 @@ class Benchmarker:
         # get the test data
         self.test_mag = {}
         with h5py.File(self.file, "r") as f:
-            self.parameter_distributions = ast.literal_eval(f["parameter_distributions"][()].decode('utf-8'))
-            self.parameter_names =  f["parameter_names"][:].astype(str).tolist()
+            self.parameter_distributions = self.model.parameter_distributions
+            self.parameter_names =  self.model.parameter_names
             nus = f["nus"][:]
 
             self.test_X_raw = f["test"]["X"][:]
             test_y_raw = f["test"]["y"][:]
-            test_y_raw = test_y_raw.reshape(len(self.test_X_raw), len(f["nus"]), len(f["times"]) ) 
+            test_y_raw = test_y_raw.reshape(len(self.test_X_raw), len(f["nus"]), len(f["times"]) )
+
             test_y_raw = interp1d(f["times"][:], test_y_raw, axis = 2)(self.times) # interpolate the test data over the time range of the model
             mJys = np.exp(test_y_raw)
-
-        for Filt in self.Filters:
-            self.test_mag[Filt.name] = Filt.get_mags(mJys, nus)
+        
+        if "redshift" in self.parameter_names:
+            from fiesta.train.DataManager import concatenate_redshift, redshifted_magnitude
+            self.test_X_raw = concatenate_redshift(self.test_X_raw, max_z=self.parameter_distributions["redshift"][1])
+            for Filt in self.Filters:
+                self.test_mag[Filt.name] = jnp.array(redshifted_magnitude(Filt, mJys.copy(), nus, self.test_X_raw[:,-1]))
+        else:
+            for Filt in self.Filters:
+                self.test_mag[Filt.name] = Filt.get_mags(mJys, nus)
         
         # get the model prediction on the test data
         param_dict = dict(zip(self.parameter_names, self.test_X_raw.T))
         param_dict["luminosity_distance"] = np.ones(len(self.test_X_raw)) * 1e-5
-        param_dict["redshift"] = np.zeros(len(self.test_X_raw))
+        if "redshift" not in param_dict.keys():
+            param_dict["redshift"] = np.zeros(len(self.test_X_raw))
         _, self.pred_mag = self.model.vpredict(param_dict)         
     
     def calculate_error(self,):
@@ -79,6 +89,9 @@ class Benchmarker:
         for Filt in self.Filters:
             test_y = self.test_mag[Filt.name]
             pred_y = self.pred_mag[Filt.name]
+            mask = np.isinf(pred_y) | np.isinf(test_y)
+            test_y = test_y.at[mask].set(0.)
+            pred_y = pred_y.at[mask].set(0.)
             self.error[Filt.name] = self.metric(test_y - pred_y)
 
         if isinstance(self.model, FluxModel):
@@ -207,8 +220,10 @@ class Benchmarker:
         fig, ax = plt.subplots(len(self.parameter_names), 1, figsize = (4, 18))
         fig.subplots_adjust(hspace = 0.5, bottom = 0.08, top = 0.98, left = 0.09, right = 0.95)
                 
-        for p, cax in zip(self.parameter_names, ax):
-            cax.bar(self.error_distribution[p][1][:-1], self.error_distribution[p][0], width = 1, color = "blue")
+        for j, (p, cax) in enumerate(zip(self.parameter_names, ax)):
+            p_array = self.test_X_raw[:,j]
+            bins = np.linspace(self.parameter_distributions[p][0], self.parameter_distributions[p][1], 12)
+            cax.hist(p_array, weights=self.error["total"], bins=bins, color = "blue", density=True)
             cax.set_xlabel(p)
             cax.set_yticks([])
 
