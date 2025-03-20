@@ -10,6 +10,7 @@ import pickle
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
+from jax.scipy.special import logsumexp
 
 from flax.training.train_state import TrainState
 
@@ -396,6 +397,40 @@ class FluxModel(SurrogateModel):
         logflux = self.y_scaler.inverse_transform(y)
         logflux = logflux.reshape(len(self.nus), len(self.times))
         return logflux
+    
+class CombinedSurrogate:
+    def __init__(self,
+                 models: list[SurrogateModel],
+                 sample_times: Array
+                 ):
+        self.models = models
+        self.sample_times = sample_times
+        self._load_filters()
+    
+    def _load_filters(self,):
+        filters = []
+        for model in self.models:
+            filters.extend(model.filters)
+        
+        self.filters = list(set(filters))
+        self.Filters = [fiesta_filters.Filter(filt) for filt in self.filters]
+    
+    @partial(jax.jit, static_argnums=(0,))
+    def predict(self, x: dict[str, Array]):
+        def predict_per_model(model):
+            times, mags = model.predict(x)
+            mag_interp = jax.tree.map(lambda mag: jnp.interp(self.sample_times, times, mag, left=jnp.inf, right=jnp.inf) , mags)
+            return mag_interp
+        
+        mag_dicts = jax.tree.map(predict_per_model, self.models)
+        
+        def add_magnitudes(filt):
+            #_, mag_filt = jax.lax.scan(lambda carry, _dic: (0., _dic.get(filt, jnp.ones_like(self.sample_times)*jnp.inf)), 0., mag_dicts) 
+            filt_mags = jnp.array([_dic.get(filt, jnp.ones_like(self.sample_times)*jnp.inf) for _dic in mag_dicts])
+            total_mag = -2.5 /jnp.log(10) * logsumexp(-.4*jnp.log(10)*filt_mags, axis=0)
+            return total_mag
+        mags = jax.tree.map(add_magnitudes, self.filters)
+        return self.sample_times, dict(zip(self.filters, mags))
 
 
 #################
