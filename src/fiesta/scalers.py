@@ -200,7 +200,7 @@ class ImageScaler(Scaler):
         
         def inverse_transform(x: Array) -> Array:
             x = x.reshape(-1, downscale[0], downscale[1])
-            x = jax.image.resize(x, shape = (x.shape[0], upscale[0], upscale[1]), method = "cubic")
+            x = jax.image.resize(x, shape = (x.shape[0], upscale[0], upscale[1]), method="cubic")
             out = jax.vmap(self.fix_edges)(x[:, :, 4:-4]) # this is necessary because jax.image.resize produces artefacts at the edges when upsampling
             return out
 
