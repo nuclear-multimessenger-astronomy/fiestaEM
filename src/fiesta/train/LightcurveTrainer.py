@@ -11,9 +11,9 @@ import matplotlib.pyplot as plt
 import jax
 from jaxtyping import Array, Float, Int
 
-from fiesta.utils import MinMaxScalerJax
 from fiesta.filters import Filter
 from fiesta.train.DataManager import DataManager
+from fiesta.scalers import MinMaxScalerJax
 import fiesta.train.neuralnets as fiesta_nn
 
 ################
@@ -87,6 +87,11 @@ class LightcurveTrainer:
         Args:
             config (nn.NeuralnetConfig, optional): _description_. Defaults to None.
         """
+        
+        self.preprocess()
+        if self.save_preprocessed_data:
+            self._save_preprocessed_data()
+
 
         self.config = config
         self.models = {}
@@ -156,7 +161,7 @@ class SVDTrainer(LightcurveTrainer):
                  filters: list[str],
                  data_manager_args: dict,
                  svd_ncoeff: Int = 50,
-                 conversion: Callable = lambda x: x,
+                 conversion: str = None,
                  plots_dir: str = None,
                  save_preprocessed_data: bool = False) -> None:
         """
@@ -186,16 +191,12 @@ class SVDTrainer(LightcurveTrainer):
         self.data_manager.print_file_info()
         self.data_manager.pass_meta_data(self)
         self.load_filters(filters)
-
-        self.preprocess()
-        if self.save_preprocessed_data:
-            self._save_preprocessed_data()
     
     def load_filters(self, filters):
         self.filters = []
         for filt in filters:
             Filt = Filter(filt)
-            if Filt.nus[0] < self.nus[0] or Filt.nus[-1] > self.nus[-1]:
+            if Filt.nus[0] < self.data_manager.nus[0] or Filt.nus[-1] > self.data_manager.nus[-1]:
                 raise ValueError(f"Filter {filt} exceeds the frequency range of the training data.")
             self.filters.append(Filt)
         
@@ -205,6 +206,8 @@ class SVDTrainer(LightcurveTrainer):
         """
         print(f"Decomposing training data to SVD coefficients.")
         self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_svd(self.svd_ncoeff, self.filters, self.conversion)
+        self.parameter_names += ["redshift"]
+        self.parameter_distributions[:-1] += ", 'redshift': (0, 0.5, 'uniform')}" # TODO make adding redshift more flexible (i.e. whether to add redshift at all and its range)
         for key in self.train_y.keys():
             if np.any(np.isnan(self.train_y[key])) or np.any(np.isnan(self.val_y[key])):
                 raise ValueError(f"Data preprocessing for {key} introduced nans. Check raw data for nans of infs or vanishing variance in a specific entry.")

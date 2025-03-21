@@ -62,9 +62,9 @@ class SurrogateModel:
         # load parameter names
         self.parameter_names = metadata["parameter_names"]
         print(f"This surrogate {self.name} should only be used in the following parameter ranges:")
-        parameter_distributions = literal_eval(metadata["parameter_distributions"])
-        for key in parameter_distributions.keys():
-            print(f"\t {key}: {parameter_distributions[key][:2]}")
+        self.parameter_distributions = literal_eval(metadata["parameter_distributions"])
+        for key in self.parameter_distributions.keys():
+            print(f"\t {key}: {self.parameter_distributions[key][:2]}")
 
         #load times
         self.times = metadata["times"]
@@ -230,7 +230,7 @@ class LightcurveModel(SurrogateModel):
         Returns:
             dict[str, Array]: Transformed input array
         """
-        x_tilde = self.X_scaler.transform(self.X_scaler.state, x)
+        x_tilde = self.X_scaler.transform(x)
         return x_tilde
     
     def compute_output(self, x: Array) -> Array:

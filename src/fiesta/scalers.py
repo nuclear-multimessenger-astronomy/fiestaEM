@@ -49,7 +49,7 @@ class MinMaxScalerJax(Scaler):
     def fit(self, x: Array) -> None:
         self.min_val = jnp.min(x, axis=0)
         self.max_val = jnp.max(x, axis=0)
-        assert jnp.all(self.max_val > self.min_val), f"Some components of the input data have no range."
+        self.max_val = self.max_val.at[self.max_val==self.min_val].set(self.min_val+1) # avoids division by zero
         
     def transform(self, x: Array) -> Array:
         return (x - self.min_val) / (self.max_val - self.min_val)
@@ -73,7 +73,7 @@ class StandardScalerJax(Scaler):
     def fit(self, x: Array) -> None:
         self.mu = jnp.average(x, axis=0)
         self.sigma = jnp.std(x, axis=0)
-        assert jnp.all(self.sigma>0), f"Some components of the input have vanishing standard deviation."
+        self.sigma = self.sigma.at[self.sigma==0].set(1) # avoids division by zero
         
     def transform(self, x: Array) -> Array:
         return (x - self.mu) / self.sigma
