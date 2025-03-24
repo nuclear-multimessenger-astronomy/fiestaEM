@@ -61,14 +61,14 @@ class Filter:
             self.filt_type = "monochromatic"
 
         elif self.name.endswith("keV"):
-            if bool(re.match(r'^.*[^0-9.]-\d+(\.\d*)?-keV$', self.name)):
+            if bool(re.match(r'^.*[^0-9.]-\d+(\.\d*)?keV$', self.name)):
                 energy = float(re.findall(r"\d+(?:\.\d*)?", self.name)[-1])
                 self.nu = energy*1000*constants.eV / constants.h
                 self.nus = jnp.array([self.nu])
                 self.trans = jnp.ones(1)
                 self.filt_type = "monochromatic"
 
-            elif bool(re.match(r'^.*[^0-9.]-\d+(\.\d*)?-\d+(\.\d*)?-keV$', self.name)):
+            elif bool(re.match(r'^.*[^0-9.]-\d+(\.\d*)?-\d+(\.\d*)?keV$', self.name)):
                 energy1, energy2 = re.findall(r"\d+(?:\.\d*)?", self.name)
                 nu1 = float(energy1)*1000*constants.eV / constants.h
                 nu2 = float(energy2)*1000*constants.eV / constants.h
