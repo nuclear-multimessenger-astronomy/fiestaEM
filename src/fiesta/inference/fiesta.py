@@ -306,7 +306,7 @@ class Fiesta(object):
             ax = plt.subplot(len(filters), 1, i + 1)
             ax.set_xlabel("Time [days]")
             ax.set_ylabel(filter_name)
-            ax.set_xlim(left = self.likelihood.tmin, right=self.likelihood.tmax)
+            ax.set_xlim(left=self.likelihood.tmin, right=self.likelihood.tmax)
             ax.invert_yaxis() 
             ax.set_xscale("log")
         
