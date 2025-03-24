@@ -18,8 +18,8 @@ numin = 1e9 # Hz
 numax = 5e18
 
 
-n_training = 80_000
-n_val = 7500
+n_training = 80
+n_val = 7
 image_size = np.array([32, 25])
 
 name = "gaussian"
@@ -27,9 +27,9 @@ outdir = f"./model/"
 file = "../afterglowpy_gaussian/model/afterglowpy_raw_data.h5"
 
 config = NeuralnetConfig(output_size= int(np.prod(image_size)),
-                         nb_epochs=50_000,
+                         nb_epochs=10,
                          hidden_layer_sizes = [600, 400, 200],
-                         learning_rate =5e-4)
+                         learning_rate =8e-4)
 
 
 ###############
@@ -51,6 +51,7 @@ trainer = CVAETrainer(name,
                      data_manager_args = data_manager_args,
                      plots_dir=f"./benchmarks/",
                      image_size=image_size,
+                     conversion="thetaWing_inclination",
                      save_preprocessed_data=False
                      )
 
@@ -71,8 +72,7 @@ FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
 lc_model = AfterglowFlux(name,
                           outdir, 
-                          filters = FILTERS,
-                          model_type = "CVAE")
+                          filters = FILTERS)
 
 
 with h5py.File(file, "r") as f:

@@ -9,8 +9,7 @@ FILTERS = ["radio-3GHz", "radio-6GHz", "bessellv", "X-ray-1keV"]
 
 lc_model = AfterglowFlux(name,
                          model_dir, 
-                         filters = FILTERS, 
-                         model_type = "CVAE")
+                         filters = FILTERS)
 
 for metric_name in ["L2", "Linf"]:
 

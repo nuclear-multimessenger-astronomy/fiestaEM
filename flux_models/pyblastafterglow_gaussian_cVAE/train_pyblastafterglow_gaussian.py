@@ -26,9 +26,9 @@ outdir = f"./model/"
 file = "../pyblastafterglow_gaussian/model/pyblastafterglow_raw_data.h5"
 
 config = NeuralnetConfig(output_size= int(np.prod(image_size)),
-                         nb_epochs=300_000,
-                         hidden_layer_sizes = [600, 500, 400, 300, 200],
-                         learning_rate =5e-4)
+                         nb_epochs=200_000,
+                         hidden_layer_sizes = [600, 400, 200],
+                         learning_rate =8e-4)
 
 ###############
 ### TRAINER ###
@@ -49,6 +49,7 @@ trainer = CVAETrainer(name,
                      data_manager_args = data_manager_args,
                      plots_dir=f"./benchmarks/",
                      image_size= image_size,
+                     conversion="thetaWing_inclination",
                      save_preprocessed_data=False
                      )
 
@@ -68,8 +69,7 @@ FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
 lc_model = AfterglowFlux(name,
                           outdir, 
-                          filters = FILTERS,
-                          model_type = "CVAE")
+                          filters = FILTERS)
 
 
 with h5py.File(file, "r") as f:

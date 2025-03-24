@@ -1,4 +1,5 @@
 import numpy as np 
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import h5py
 
@@ -26,9 +27,9 @@ outdir = f"./model/"
 file = outdir + "afterglowpy_raw_data.h5"
 
 config = NeuralnetConfig(output_size=n_pca,
-                         nb_epochs=150_000,
+                         nb_epochs=200_000,
                          hidden_layer_sizes = [256, 512, 256],
-                         learning_rate =4e-3)
+                         learning_rate =5e-3)
 
 ###############
 ### TRAINER ###
@@ -49,6 +50,7 @@ trainer = PCATrainer(name,
                      data_manager_args = data_manager_args,
                      plots_dir=f"./benchmarks/",
                      n_pca = n_pca,
+                     conversion="thetaWing_inclination",
                      save_preprocessed_data=False
                      )
 
@@ -68,8 +70,7 @@ FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
 lc_model = AfterglowFlux(name,
                           outdir, 
-                          filters = FILTERS,
-                          model_type = "MLP")
+                          filters = FILTERS)
 
 
 with h5py.File(file, "r") as f:
