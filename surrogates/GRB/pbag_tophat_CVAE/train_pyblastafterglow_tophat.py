@@ -49,6 +49,7 @@ trainer = CVAETrainer(name,
                      data_manager_args = data_manager_args,
                      plots_dir=f"./benchmarks/",
                      image_size= image_size,
+                     conversion="thetaCore_inclination",
                      save_preprocessed_data=False
                      )
 
