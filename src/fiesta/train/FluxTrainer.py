@@ -81,6 +81,34 @@ class FluxTrainer:
         plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{self.name}.png"))
         plt.close()
     
+    def plot_example_lc(self, lc_model):
+        _, _, X, y = self.data_manager.load_raw_data_from_file(0,1) # loads validation data
+        y = y.reshape(len(self.data_manager.nus), len(self.data_manager.times))
+        mJys_val = np.exp(y)
+        params = dict(zip(self.parameter_names, X.flatten() ))
+        _, mag_predict = lc_model.predict_abs_mag(params)
+        mag_val = {Filt.name: Filt.get_mag(mJys_val, self.data_manager.nus) for Filt in lc_model.Filters}
+
+        for filt in lc_model.Filters:
+    
+            plt.plot(lc_model.times, mag_val[filt.name], color = "red", label="Base model")
+            plt.plot(lc_model.times, mag_predict[filt.name], color = "blue", label="Surrogate prediction")
+            upper_bound = mag_predict[filt.name] + 1
+            lower_bound = mag_predict[filt.name] - 1
+            plt.fill_between(lc_model.times, lower_bound, upper_bound, color='blue', alpha=0.2)
+        
+            plt.ylabel(f"mag for {filt.name}")
+            plt.xlabel("$t$ in days")
+            plt.legend()
+            plt.gca().invert_yaxis()
+            plt.xscale('log')
+            plt.xlim(lc_model.times[0], lc_model.times[-1])
+
+            if self.plots_dir is None:
+                self.plots_dir = "."
+            plt.savefig(os.path.join(self.plots_dir, f"{self.name}_{filt.name}_example.png"))
+            plt.close()
+    
     def save(self) -> None:
         """
         Save the trained model and all the metadata to the outdir.

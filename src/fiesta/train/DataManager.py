@@ -151,22 +151,25 @@ class DataManager:
                 print(f"\t {key}: {f['special_train'][key]['X'].shape[0]}   description: {f['special_train'][key].attrs['comment']}")
             print("\n \n")
     
-    def load_raw_data_from_file(self,) -> None:
-        """Loads raw data for training and validation as attributes to the instance."""
+    def load_raw_data_from_file(self, n_training: int=1, n_val: int=0) -> tuple[Array, Array, Array, Array]:
+        """Loads raw data for training and validation data and returns them as arrays"""
         with h5py.File(self.file, "r") as f:
-            if self.n_training>self.n_training_exists:
+            if n_training>self.n_training_exists:
                 raise ValueError(f"Only {self.n_training_exists} entries in file, not enough to train with {self.n_training} data points.")
-            self.train_X_raw = f["train"]["X"][:self.n_training]
-            self.train_y_raw = f["train"]["y"][:self.n_training, self.mask]
+            train_X_raw = f["train"]["X"][:n_training]
+            train_y_raw = f["train"]["y"][:n_training, self.mask]
 
-            for label in self.special_training:
-                self.train_X_raw = np.concatenate((self.train_X_raw, f["special_train"][label]["X"][:]))
-                self.train_y_raw = np.concatenate((self.train_y_raw, f["special_train"][label]["y"][:, self.mask]))
+            #for label in self.special_training:
+            #    train_X_raw = np.concatenate((self.train_X_raw, f["special_train"][label]["X"][:]))
+            #    train_y_raw = np.concatenate((self.train_y_raw, f["special_train"][label]["y"][:, self.mask]))
 
-            if self.n_val>self.n_val_exists:
+            if n_val>self.n_val_exists:
                 raise ValueError(f"Only {self.n_val_exists} entries in file, not enough to validate with {self.n_val} data points.")
-            self.val_X_raw = f["val"]["X"][:self.n_val]
-            self.val_y_raw = f["val"]["y"][:self.n_val, self.mask]
+            
+            val_X_raw = f["val"]["X"][:n_val]
+            val_y_raw = f["val"]["y"][:n_val, self.mask]
+        
+        return train_X_raw, train_y_raw, val_X_raw, val_y_raw
     
     def preprocess_pca(self, 
                        n_components: int,
