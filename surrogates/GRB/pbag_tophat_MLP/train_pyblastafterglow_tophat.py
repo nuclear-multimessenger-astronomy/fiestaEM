@@ -49,6 +49,7 @@ trainer = PCATrainer(name,
                      data_manager_args = data_manager_args,
                      plots_dir=f"./benchmarks/",
                      n_pca = n_pca,
+                     conversion="thetaCore_inclination",
                      save_preprocessed_data=False
                      )
 
