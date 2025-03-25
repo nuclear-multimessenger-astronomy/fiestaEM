@@ -3,21 +3,21 @@ from fiesta.inference.lightcurve_model import AfterglowFlux
 
 
 
-name = "tophat"
+name = "pbag_tophat"
 model_dir = f"./model/"
 FILTERS = ["radio-3GHz", "radio-6GHz", "bessellv", "X-ray-1keV"]
 
 lc_model = AfterglowFlux(name,
                          directory = model_dir, 
-                         filters = FILTERS,
-                         model_type= "CVAE")
+                         filters = FILTERS)
+                    
  
 for metric_name in ["L2", "Linf"]:   
 
     
     benchmarker = Benchmarker(
                     model = lc_model,
-                    data_file = "../pyblastafterglow_tophat/model/pyblastafterglow_raw_data.h5",
+                    data_file = "../training_data/pyblastafterglow_tophat_raw_data.h5",
                     metric_name = metric_name
                     )
     
