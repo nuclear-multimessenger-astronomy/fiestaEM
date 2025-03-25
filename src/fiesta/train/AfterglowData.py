@@ -13,7 +13,7 @@ import afterglowpy as grb
 
 class AfterglowData:
     def __init__(self,
-                 outdir: str,
+                 outfile: str,
                  n_training: int, 
                  n_val: int,
                  n_test: int,
@@ -28,10 +28,10 @@ class AfterglowData:
                  n_nu: int = 256,
                  fixed_parameters: dict = {}) -> None:
         
-        self.outdir = outdir
-        if not os.path.exists(self.outdir):
-            os.makedirs(self.outdir)
-        self.outfile = os.path.join(self.outdir, self.outfile)
+        outdir = os.path.dirname(outfile)
+        if not os.path.exists(outdir):
+            os.makedirs(outdir)
+        self.outfile = outfile
 
         self.n_training = n_training
         self.n_val = n_val
@@ -221,7 +221,6 @@ class AfterglowData:
 class AfterglowpyData(AfterglowData):
 
     def __init__(self, n_pool: int, *args, **kwargs):
-        self.outfile = "afterglowpy_raw_data.h5"
         self.n_pool = n_pool
         self.chunk_size = 1000
         super().__init__(*args, **kwargs)
@@ -246,7 +245,6 @@ class AfterglowpyData(AfterglowData):
 class PyblastafterglowData(AfterglowData):
 
     def __init__(self, path_to_exec: str, pbag_kwargs: dict = None, rank: int = 0, *args, **kwargs):
-        self.outfile = f"pyblastafterglow_raw_data_{rank}.h5"
         self.chunk_size = 10
         self.rank = rank
         self.path_to_exec = path_to_exec
