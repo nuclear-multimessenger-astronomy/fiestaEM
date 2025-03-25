@@ -192,21 +192,20 @@ class ImageScaler(Scaler):
                  upscale: Int[Array, "shape=(2,)"]):
         
         #these are defined here so that upscale and downscale become static
-        def transform(x: Array) -> Array:
-            x = x.reshape(-1, upscale[0], upscale[1])
-            x = jax.image.resize(x, shape=(x.shape[0], downscale[0], downscale[1]), method="cubic")
-            x = x.reshape(-1, downscale[0]*downscale[1])
-            return x
-        
-        def inverse_transform(x: Array) -> Array:
-            x = x.reshape(-1, downscale[0], downscale[1])
-            x = jax.image.resize(x, shape = (x.shape[0], upscale[0], upscale[1]), method="cubic")
-            out = jax.vmap(self.fix_edges)(x[:, :, 4:-4]) # this is necessary because jax.image.resize produces artefacts at the edges when upsampling
-            return out
+        self.transform = partial(self._transform, upscale=upscale, downscale=downscale)
+        self.inverse_transform = partial(self._inverse_transform, upscale=upscale, downscale=downscale)
 
-        self.transform = transform
-        self.inverse_transform = inverse_transform
+    def _transform(self, x: Array, upscale: Array, downscale: Array) -> Array:
+        x = x.reshape(-1, upscale[0], upscale[1])
+        x = jax.image.resize(x, shape=(x.shape[0], downscale[0], downscale[1]), method="cubic")
+        x = x.reshape(-1, downscale[0]*downscale[1])
+        return x
 
+    def _inverse_transform(self, x: Array, upscale: Array, downscale: Array) -> Array:
+        x = x.reshape(-1, downscale[0], downscale[1])
+        x = jax.image.resize(x, shape = (x.shape[0], upscale[0], upscale[1]), method="cubic")
+        out = jax.vmap(self.fix_edges)(x[:, :, 4:-4]) # this is necessary because jax.image.resize produces artefacts at the edges when upsampling
+        return out
     
     def fit(self, x: Array):
         pass    
@@ -218,8 +217,8 @@ class ImageScaler(Scaler):
         xp = jnp.arange(4, yp.shape[0]+4)
         xl = jnp.arange(0,4)
         xr = jnp.arange(yp.shape[0]+4, yp.shape[0]+8)
-        yl = jnp.interp(xl, xp, yp, left = "extrapolate", right = "extrapolate")
-        yr = jnp.interp(xr, xp, yp, left = "extrapolate", right = "extrapolate")
+        yl = jnp.interp(xl, xp, yp, left="extrapolate", right="extrapolate")
+        yr = jnp.interp(xr, xp, yp, left="extrapolate", right="extrapolate")
         out = jnp.concatenate([yl, yp, yr])
         return out
 
@@ -255,6 +254,9 @@ class ParameterScaler(Scaler):
     
 def thetaWing_inclination(x):
     return jnp.hstack((x, (x[:,3]*x[:,2]-x[:,0]).reshape(-1,1) ))
+
+def thetCore_inclination(x):
+    return jnp.hstack((x, (x[:,2]-x[:,0]).reshape(-1,1) ))
 
 def identity(x):
     return x
