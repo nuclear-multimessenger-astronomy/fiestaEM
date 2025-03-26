@@ -15,6 +15,7 @@ from fiesta.filters import Filter
 from fiesta.train.DataManager import DataManager
 from fiesta.scalers import MinMaxScalerJax
 import fiesta.train.neuralnets as fiesta_nn
+from fiesta.logging import logger
 
 ################
 # TRAINING API #
@@ -65,7 +66,7 @@ class LightcurveTrainer:
     
     def preprocess(self):
         
-        print("Preprocessing data by minmax scaling . . .")
+        logger.info("Preprocessing data by minmax scaling . . .")
         self.X_scaler = MinMaxScalerJax()
         self.X = self.X_scaler.fit_transform(self.X_raw)
         
@@ -75,7 +76,7 @@ class LightcurveTrainer:
             y_scaler = MinMaxScalerJax()
             self.y[filt.name] = y_scaler.fit_transform(self.y_raw[filt.name])
             self.y_scaler[filt.name] = y_scaler
-        print("Preprocessing data . . . done")
+        logger.info("Preprocessing data . . . done")
     
     def fit(self,
             config: fiesta_nn.NeuralnetConfig,
@@ -99,7 +100,7 @@ class LightcurveTrainer:
 
         for filt in self.filters:
 
-            print(f"\n\n Training {filt.name}... \n\n")
+            logger.info(f"\n\n Training {filt.name}... \n\n")
             
             # Create neural network and initialize the state
             net = fiesta_nn.MLP(config = config, input_ndim = input_ndim, key = key)
@@ -177,9 +178,9 @@ class LightcurveTrainer:
             model.save_model(outfile = os.path.join(self.outdir, f"{self.name}_{filt.name}.pkl"))
                 
     def _save_preprocessed_data(self) -> None:
-        print("Saving preprocessed data . . .")
+        logger.info("Saving preprocessed data . . .")
         np.savez(os.path.join(self.outdir, f"{self.name}_preprocessed_data.npz"), train_X=self.train_X, train_y = self.train_y, val_X = self.val_X, val_y = self.val_y)
-        print("Saving preprocessed data . . . done")
+        logger.info("Saving preprocessed data . . . done")
     
 class SVDTrainer(LightcurveTrainer):
     
@@ -232,11 +233,11 @@ class SVDTrainer(LightcurveTrainer):
         """
         Preprocessing method to get the SVD coefficients of the training and validation data. This includes scaling the inputs and outputs, as well as performing SVD decomposition.
         """
-        print(f"Decomposing training data to SVD coefficients.")
+        logger.info(f"Preprocessing data by decomposing training data into SVD coefficients.")
         self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_svd(self.svd_ncoeff, self.filters, self.conversion)
         self.parameter_names += ["redshift"]
         self.parameter_distributions = self.parameter_distributions[:-1] + ", 'redshift': (0, 0.5, 'uniform')}" # TODO make adding redshift more flexible (i.e. whether to add redshift at all and its range)
         for key in self.train_y.keys():
             if np.any(np.isnan(self.train_y[key])) or np.any(np.isnan(self.val_y[key])):
                 raise ValueError(f"Data preprocessing for {key} introduced nans. Check raw data for nans of infs or vanishing variance in a specific entry.")
-        print(f"Preprocessing data . . . done")
+        logger.info(f"Preprocessing data . . . done")

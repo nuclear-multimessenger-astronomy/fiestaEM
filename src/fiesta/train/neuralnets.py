@@ -12,6 +12,7 @@ import optax
 import pickle
 
 import fiesta.train.nn_architectures as nn
+from fiesta.logging import logger
 
 ###############
 ### CONFIGS ###
@@ -167,14 +168,14 @@ class CVAE:
             val_losses.append(val_loss)
             # Report once in a while
             if i % self.config.nb_report == 0 and verbose:
-                print(f"Train loss at step {i+1}: {train_loss}")
-                print(f"Valid loss at step {i+1}: {val_loss}")
-                print(f"Learning rate: {self.config.learning_rate}")
-                print("---")
+                logger.info(f"Train loss at step {i+1}: {train_loss}")
+                logger.info(f"Valid loss at step {i+1}: {val_loss}")
+                logger.info(f"Learning rate: {self.config.learning_rate}")
+                logger.info("---")
     
         end = time.time()
         if verbose:
-            print(f"Training for {self.config.nb_epochs} took {end-start} seconds.")
+            logger.info(f"Training for {self.config.nb_epochs} took {end-start} seconds.")
         
         self.trained_state = state
     
@@ -301,14 +302,14 @@ class MLP:
             val_losses.append(val_loss)
             # Report once in a while
             if i % self.config.nb_report == 0 and verbose:
-                print(f"Train loss at step {i+1}: {train_loss}")
-                print(f"Valid loss at step {i+1}: {val_loss}")
-                print(f"Learning rate: {self.config.learning_rate}")
-                print("---")
+                logger.info(f"Train loss at step {i+1}: {train_loss}")
+                logger.info(f"Valid loss at step {i+1}: {val_loss}")
+                logger.info(f"Learning rate: {self.config.learning_rate}")
+                logger.info("---")
     
         end = time.time()
         if verbose:
-            print(f"Training for {self.config.nb_epochs} took {end-start} seconds.")
+            logger.info(f"Training for {self.config.nb_epochs} took {end-start} seconds.")
         
         self.trained_state = state
     
