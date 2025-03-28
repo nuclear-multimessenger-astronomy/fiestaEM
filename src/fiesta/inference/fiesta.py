@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+
 import numpy as np
 import matplotlib.pyplot as plt
 import jax
@@ -11,6 +12,7 @@ from fiesta.inference.lightcurve_model import LightcurveModel
 from fiesta.inference.prior import Prior 
 from fiesta.inference.likelihood import EMLikelihood
 from fiesta.conversions import mag_app_from_mag_abs
+from fiesta.logging import logger
 
 from flowMC.sampler.Sampler import Sampler
 from flowMC.sampler.MALA import MALA
@@ -68,13 +70,14 @@ class Fiesta(object):
         rng_key_set = initialize_rng_keys(self.hyperparameters["n_chains"], seed=self.hyperparameters["seed"])
         local_sampler_arg = kwargs.get("local_sampler_arg", {})
 
+        logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX...")
         if self.hyperparameters["which_local_sampler"] == "MALA":
-            print("INFO: Using MALA as local sampler")
+            logger.info("Using MALA as local sampler.")
             local_sampler = MALA(
                 self.posterior, True, local_sampler_arg
             )  # Remember to add routine to find automated mass matrix
         elif self.hyperparameters["which_local_sampler"] == "GaussianRandomWalk":
-            print("INFO: Using gaussian random walk as local sampler")
+            logger.info("Using gaussian random walk as local sampler")
             local_sampler = GaussianRandomWalk(
                 self.posterior, True, local_sampler_arg
             )  # Remember to add routine to find automated mass matrix
@@ -108,7 +111,9 @@ class Fiesta(object):
             initial_guess_named = self.prior.sample(key, self.Sampler.n_chains)
             initial_guess = jnp.stack([initial_guess_named[key] for key in self.prior.naming]).T
         
+        logger.info(f"Starting sampling.")
         self.Sampler.sample(initial_guess, None)  # type: ignore
+        logger.info(f"Sampling finished.")
 
     def print_summary(self, transform: bool = True):
         """
@@ -136,7 +141,7 @@ class Fiesta(object):
         production_local_acceptance = production_summary["local_accs"]
         production_global_acceptance = production_summary["global_accs"]
 
-        print("Training summary")
+        logger.info("Training summary")
         print("=" * 10)
         for key, value in training_chain.items():
             print(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
@@ -166,6 +171,7 @@ class Fiesta(object):
         print(
             f"Global acceptance: {production_global_acceptance.mean():.3f} +/- {production_global_acceptance.std():.3f}"
         )
+        print("=" * 10)
 
     def get_samples(self, training: bool = False) -> dict:
         """
@@ -193,7 +199,7 @@ class Fiesta(object):
     def save_results(self, outdir):
         # - training phase
         name = os.path.join(outdir, f'results_training.npz')
-        print(f"Saving training samples to {name}")
+        logger.info(f"Saving training samples to {name}")
         state = self.Sampler.get_sampler_state(training=True)
         chains, log_prob, local_accs, global_accs, loss_vals = state["chains"], state["log_prob"], state["local_accs"], state["global_accs"], state["loss_vals"]
         local_accs = jnp.mean(local_accs, axis=0)
@@ -203,7 +209,7 @@ class Fiesta(object):
         
         #  - production phase
         name = os.path.join(outdir, f'results_production.npz')
-        print(f"Saving production samples to {name}")
+        logger.info(f"Saving production samples to {name}")
         state = self.Sampler.get_sampler_state(training=False)
         chains, log_prob, local_accs, global_accs = state["chains"], state["log_prob"], state["local_accs"], state["global_accs"]
         local_accs = jnp.mean(local_accs, axis=0)
