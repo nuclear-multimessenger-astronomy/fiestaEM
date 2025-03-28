@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 
 import fiesta.train.neuralnets as fiesta_nn
 from fiesta.train.DataManager import DataManager
+from fiesta.logging import logger
 
 ################
 # TRAINING API #
@@ -134,9 +135,9 @@ class FluxTrainer:
         self.network.save_model(outfile=os.path.join(self.outdir, f"{self.name}.pkl"))
     
     def _save_preprocessed_data(self) -> None:
-        print("Saving preprocessed data . . .")
+        logger.info("Saving preprocessed data . . .")
         np.savez(os.path.join(self.outdir, f"{self.name}_preprocessed_data.npz"), train_X=self.train_X, train_y=self.train_y, val_X=self.val_X, val_y=self.val_y)
-        print("Saving preprocessed data . . . done")
+        logger.info("Saving preprocessed data . . . done")
 
 class PCATrainer(FluxTrainer):
     
@@ -182,12 +183,12 @@ class PCATrainer(FluxTrainer):
         Preprocessing method to get the PCA coefficients of the standardized training data.
         It assigns the attributes self.train_X, self.train_y, self.val_X, self.val_y that are passed to the fitting method.
         """
-        print(f"Fitting PCA model with {self.n_pca} components to the provided data.")
+        logger.info(f"Preprocessing data by decomposing data into {self.n_pca}.")
         self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_pca(self.n_pca, self.conversion)
         if np.any(np.isnan(self.train_y)) or np.any(np.isnan(self.val_y)):
             raise ValueError(f"Data preprocessing introduced nans. Check raw data for nans of infs or vanishing variance in a specific entry.")
-        print(f"PCA model accounts for a share {np.sum(self.y_scaler.scalers[0].explained_variance_ratio_)} of the total variance in the training data. This value is hopefully close to 1.")
-        print("Preprocessing data . . . done")
+        logger.info(f"PCA decomposition accounts for a share {np.sum(self.y_scaler.scalers[0].explained_variance_ratio_)} of the total variance in the training data. This value is hopefully close to 1.")
+        logger.info("Preprocessing data . . . done")
     
     def fit(self,
             config: fiesta_nn.NeuralnetConfig,
@@ -267,11 +268,11 @@ class CVAETrainer(FluxTrainer):
         Preprocessing method to get the down_sample arrays of the standardized training data.
         It assigns the attributes self.train_X, self.train_y, self.val_X, self.val_y that are passed to the fitting method.
         """
-        print(f"Preprocessing data by resampling flux array to {self.image_size} and standardizing.")
+        logger.info(f"Preprocessing data by resampling flux array to {self.image_size} and standardizing.")
         self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_cVAE(self.image_size, self.conversion)
         if np.any(np.isnan(self.train_y)) or np.any(np.isnan(self.val_y)):
             raise ValueError(f"Data preprocessing introduced nans. Check raw data for nans of infs or vanishing variance in a specific entry.")
-        print("Preprocessing data . . . done")
+        logger.info("Preprocessing data . . . done")
     
     def fit(self,
             config: fiesta_nn.NeuralnetConfig,

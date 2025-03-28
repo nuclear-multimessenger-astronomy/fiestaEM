@@ -9,6 +9,7 @@ from jaxtyping import Array, Float, Int
 import fiesta.scalers as scalers
 from fiesta.scalers import ParameterScaler, DataScaler
 from fiesta.conversions import apply_redshift
+from fiesta.logging import logger
 
 def array_mask_from_interval(sorted_array, amin, amax):
     indmin = max(0, np.searchsorted(sorted_array, amin, side='right') -1)
@@ -119,13 +120,13 @@ class DataManager:
         """Trims the stored data down to the time and frequency range desired for training. It sets the mask attribute which is a boolean mask used when loading the data arrays."""
         
         if self.tmin<self.times_data.min() or self.tmax>self.times_data.max():
-            print(f"\nWarning: provided time range {self.tmin, self.tmax} is too wide for the data stored in file. Using range {max(self.times_data.min(), self.tmin), min(self.times_data.max(), self.tmax)} instead.\n")
+            logger.warning(f"Provided time range {self.tmin, self.tmax} is too wide for the data stored in file. Using range {max(self.times_data.min(), self.tmin), min(self.times_data.max(), self.tmax)} instead.\n")
         time_mask = array_mask_from_interval(self.times_data, self.tmin, self.tmax)
         self.times = self.times_data[time_mask]
         self.n_times = len(self.times)
 
         if self.numin<self.nus_data.min() or self.numax>self.nus_data.max():
-            print(f"\nWarning: provided frequency range {self.numin, self.numax} is too wide for the data stored in file. Using range {max(self.nus_data.min(), self.numin), min(self.nus_data.max(), self.numax)} instead.\n")
+            logger.warning(f"Provided frequency range {self.numin, self.numax} is too wide for the data stored in file. Using range {max(self.nus_data.min(), self.numin), min(self.nus_data.max(), self.numax)} instead.\n")
         nu_mask = array_mask_from_interval(self.nus_data, self.numin, self.numax)
         self.nus = self.nus_data[nu_mask]
         self.n_nus = len(self.nus)
@@ -139,17 +140,17 @@ class DataManager:
         Also prints how many training, validation, and test data points are available.
         """
         with h5py.File(self.file, "r") as f:
-            print(f"Times: {f['times'][0]} {f['times'][-1]}")
-            print(f"Nus: {f['nus'][0]} {f['nus'][-1]}")
-            print(f"Parameter distributions: {f['parameter_distributions'][()].decode('utf-8')}")
-            print("\n")
-            print(f"Training data: {self.n_training_exists}")
-            print(f"Validation data: {self.n_val_exists}")
-            print(f"Test data: {f['test']['X'].shape[0]}")
-            print("Special data:")
+            logger.info(f"Times: {f['times'][0]} {f['times'][-1]}")
+            logger.info(f"Nus: {f['nus'][0]} {f['nus'][-1]}")
+            logger.info(f"Parameter distributions: {f['parameter_distributions'][()].decode('utf-8')}")
+            logger.info("\n")
+            logger.info(f"Training data: {self.n_training_exists}")
+            logger.info(f"Validation data: {self.n_val_exists}")
+            logger.info(f"Test data: {f['test']['X'].shape[0]}")
+            logger.info("Special data:")
             for key in f['special_train'].keys():
-                print(f"\t {key}: {f['special_train'][key]['X'].shape[0]}   description: {f['special_train'][key].attrs['comment']}")
-            print("\n \n")
+                logger.info(f"\t {key}: {f['special_train'][key]['X'].shape[0]}   description: {f['special_train'][key].attrs['comment']}")
+            logger.info("\n \n")
     
     def load_raw_data_from_file(self, n_training: int=1, n_val: int=0) -> tuple[Array, Array, Array, Array]:
         """Loads raw data for training and validation data and returns them as arrays"""
@@ -158,10 +159,6 @@ class DataManager:
                 raise ValueError(f"Only {self.n_training_exists} entries in file, not enough to train with {self.n_training} data points.")
             train_X_raw = f["train"]["X"][:n_training]
             train_y_raw = f["train"]["y"][:n_training, self.mask]
-
-            #for label in self.special_training:
-            #    train_X_raw = np.concatenate((self.train_X_raw, f["special_train"][label]["X"][:]))
-            #    train_y_raw = np.concatenate((self.train_y_raw, f["special_train"][label]["y"][:, self.mask]))
 
             if n_val>self.n_val_exists:
                 raise ValueError(f"Only {self.n_val_exists} entries in file, not enough to validate with {self.n_val} data points.")

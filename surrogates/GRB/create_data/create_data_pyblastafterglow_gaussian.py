@@ -11,7 +11,7 @@ rank = comm.Get_rank()
 ### SETUP ###
 #############
 
-tmin = 0.01 # days
+tmin = 1e-4 # days
 tmax = 2000
 n_times = 250
 
