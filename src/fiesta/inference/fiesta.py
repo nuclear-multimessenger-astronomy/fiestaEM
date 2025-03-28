@@ -8,11 +8,13 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array, PRNGKeyArray
 
+from fiesta.conversions import mag_app_from_mag_abs
 from fiesta.inference.lightcurve_model import LightcurveModel
 from fiesta.inference.prior import Prior 
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.conversions import mag_app_from_mag_abs
 from fiesta.logging import logger
+from fiesta.plot import corner_plot
+from fiesta.systematic import setup_systematic_uncertainty
 
 from flowMC.sampler.Sampler import Sampler
 from flowMC.sampler.MALA import MALA
@@ -51,11 +53,13 @@ class Fiesta(object):
 
     def __init__(self, 
                  likelihood: EMLikelihood, 
-                 prior: Prior, 
+                 prior: Prior,
+                 systematics_file: str = None,
                  **kwargs):
         self.likelihood = likelihood
         self.prior = prior
-
+        
+        logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX...")
         # Set and override any given hyperparameters, and save as attribute
         self.hyperparameters = default_hyperparameters
         hyperparameter_names = list(self.hyperparameters.keys())
@@ -70,7 +74,11 @@ class Fiesta(object):
         rng_key_set = initialize_rng_keys(self.hyperparameters["n_chains"], seed=self.hyperparameters["seed"])
         local_sampler_arg = kwargs.get("local_sampler_arg", {})
 
-        logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX...")
+        
+        # setup the systematic uncertainty
+        self.likelihood, self.prior = setup_systematic_uncertainty(self.likelihood, self.prior, systematics_file)
+        
+        # set local sampling method
         if self.hyperparameters["which_local_sampler"] == "MALA":
             logger.info("Using MALA as local sampler.")
             local_sampler = MALA(
@@ -98,6 +106,7 @@ class Fiesta(object):
             global_sampler=None,
             **kwargs,
         )
+        logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX... DONE")
 
     def posterior(self, params: Float[Array, " n_dim"], data: dict):
         prior_params = self.prior.add_name(params.T)
@@ -317,5 +326,18 @@ class Fiesta(object):
             ax.set_xscale("log")
         
         # Save
-        plt.savefig(os.path.join(self.Sampler.outdir, "lightcurves.png"), bbox_inches = 'tight')
+        plt.savefig(os.path.join(self.Sampler.outdir, "lightcurves.png"), bbox_inches = 'tight', dpi=250)
         plt.close()
+    
+    def plot_corner(self,):
+        state = self.Sampler.get_sampler_state(training=False)
+        samples = state["chains"]
+        
+        # Reshape both
+        samples = samples.reshape(-1, self.prior.n_dim).T
+        fig, ax = corner_plot(samples,
+                              self.prior.naming)
+        
+        fig.savefig(os.path.join(self.Sampler.outdir, "corner.pdf", dpi=250))
+
+
