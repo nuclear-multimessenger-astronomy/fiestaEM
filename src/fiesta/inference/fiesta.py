@@ -8,11 +8,13 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array, PRNGKeyArray
 
+from fiesta.conversions import mag_app_from_mag_abs
 from fiesta.inference.lightcurve_model import LightcurveModel
 from fiesta.inference.prior import Prior 
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.conversions import mag_app_from_mag_abs
 from fiesta.logging import logger
+from fiesta.plot import corner_plot
+from fiesta.inference.systematic import setup_systematic
 
 from flowMC.sampler.Sampler import Sampler
 from flowMC.sampler.MALA import MALA
@@ -51,10 +53,21 @@ class Fiesta(object):
 
     def __init__(self, 
                  likelihood: EMLikelihood, 
-                 prior: Prior, 
+                 prior: Prior,
+                 systematics_file: str = None,
                  **kwargs):
         self.likelihood = likelihood
         self.prior = prior
+        
+        self.outdir = kwargs.get("outdir", "./outdir/")
+        if not os.path.exists(self.outdir):
+            os.mkdir(self.outdir)
+      
+      
+        logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX...")
+
+        # setup the systematic uncertainty
+        self.likelihood, self.prior = setup_systematic(self.likelihood, self.prior, systematics_file)
 
         # Set and override any given hyperparameters, and save as attribute
         self.hyperparameters = default_hyperparameters
@@ -70,7 +83,11 @@ class Fiesta(object):
         rng_key_set = initialize_rng_keys(self.hyperparameters["n_chains"], seed=self.hyperparameters["seed"])
         local_sampler_arg = kwargs.get("local_sampler_arg", {})
 
-        logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX...")
+        if local_sampler_arg["step_size"].shape[1] != self.prior.n_dim:
+            local_sampler_arg["step_size"] = 5e-3 * jnp.eye(self.prior.n_dim)
+            
+        
+        # set local sampling method
         if self.hyperparameters["which_local_sampler"] == "MALA":
             logger.info("Using MALA as local sampler.")
             local_sampler = MALA(
@@ -98,6 +115,7 @@ class Fiesta(object):
             global_sampler=None,
             **kwargs,
         )
+        logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX... DONE")
 
     def posterior(self, params: Float[Array, " n_dim"], data: dict):
         prior_params = self.prior.add_name(params.T)
@@ -141,7 +159,7 @@ class Fiesta(object):
         production_local_acceptance = production_summary["local_accs"]
         production_global_acceptance = production_summary["global_accs"]
 
-        logger.info("Training summary")
+        print("Training summary")
         print("=" * 10)
         for key, value in training_chain.items():
             print(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
@@ -196,9 +214,9 @@ class Fiesta(object):
         chains = self.prior.transform(self.prior.add_name(chains.transpose(2, 0, 1)))
         return chains
     
-    def save_results(self, outdir):
+    def save_results(self):
         # - training phase
-        name = os.path.join(outdir, f'results_training.npz')
+        name = os.path.join(self.outdir, f'results_training.npz')
         logger.info(f"Saving training samples to {name}")
         state = self.Sampler.get_sampler_state(training=True)
         chains, log_prob, local_accs, global_accs, loss_vals = state["chains"], state["log_prob"], state["local_accs"], state["global_accs"], state["loss_vals"]
@@ -208,7 +226,7 @@ class Fiesta(object):
                 global_accs=global_accs, loss_vals=loss_vals)
         
         #  - production phase
-        name = os.path.join(outdir, f'results_production.npz')
+        name = os.path.join(self.outdir, f'results_production.npz')
         logger.info(f"Saving production samples to {name}")
         state = self.Sampler.get_sampler_state(training=False)
         chains, log_prob, local_accs, global_accs = state["chains"], state["log_prob"], state["local_accs"], state["global_accs"]
@@ -217,7 +235,7 @@ class Fiesta(object):
         jnp.savez(name, chains=chains, log_prob=log_prob,
                     local_accs=local_accs, global_accs=global_accs)
     
-    def save_hyperparameters(self, outdir):
+    def save_hyperparameters(self):
         
         # Convert step_size to list for JSON formatting
         if "step_size" in self.hyperparameters["local_sampler_arg"].keys():
@@ -227,7 +245,7 @@ class Fiesta(object):
                                 "jim": self.hyperparameters}
         
         try:
-            name = outdir + "hyperparams.json"
+            name = os.path.join(self.outdir, "hyperparams.json")
             with open(name, 'w') as file:
                 json.dump(hyperparameters_dict, file)
         except Exception as e:
@@ -312,10 +330,23 @@ class Fiesta(object):
             ax = plt.subplot(len(filters), 1, i + 1)
             ax.set_xlabel("Time [days]")
             ax.set_ylabel(filter_name)
-            ax.set_xlim(left=self.likelihood.tmin, right=self.likelihood.tmax)
+            ax.set_xlim(left=np.maximum(self.likelihood.tmin, 1e-4), right=self.likelihood.tmax)
             ax.invert_yaxis() 
             ax.set_xscale("log")
         
         # Save
-        plt.savefig(os.path.join(self.Sampler.outdir, "lightcurves.png"), bbox_inches = 'tight')
+        plt.savefig(os.path.join(self.outdir, "lightcurves.png"), bbox_inches = 'tight', dpi=250)
         plt.close()
+    
+    def plot_corner(self,):
+        state = self.Sampler.get_sampler_state(training=False)
+        samples = state["chains"]
+        
+        # Reshape both
+        samples = samples.reshape(-1, self.prior.n_dim)
+        fig, ax = corner_plot(np.array(samples),
+                              self.prior.naming)
+        
+        fig.savefig(os.path.join(self.outdir, "corner.pdf"), dpi=250)
+
+

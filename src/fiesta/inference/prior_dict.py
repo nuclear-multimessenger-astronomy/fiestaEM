@@ -11,16 +11,12 @@ class ConstrainedPrior(CompositePrior):
     constraints: list[Constraint]
     conversion: Callable
     factor: Float
-    def __init__(self, priors: list, conversion_function: Callable = None, transforms: dict[str, tuple[str, Callable]] = {}):
+    def __init__(self, priors: list, conversion_function: Callable=lambda x: x, transforms: dict[str, tuple[str, Callable]] = {}):
 
         super().__init__([prior for prior in priors if not isinstance(prior, Constraint)])
 
         self.constraints = [constraint for constraint in priors if isinstance(constraint, Constraint)]
-
-        if conversion_function is None:
-            self.conversion = lambda x: x
-        else:
-            self.conversion = conversion_function
+        self.conversion = conversion_function
         
         self._estimate_normalization()
     
