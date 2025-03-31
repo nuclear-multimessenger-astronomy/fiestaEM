@@ -273,10 +273,11 @@ class PyblastafterglowData(AfterglowData):
             except:
                 try: 
                     # increase blast wave evolution time grid if there is an error
+                    old_ntb = pbag.ntb
                     pbag.ntb = 3000 
                     idx, out = pbag(j)
                     y[idx] = out
-                    pbag.ntb = self.pbag_kwargs["ntb"]
+                    pbag.ntb = old_ntb
                 except:
                     y[j] = np.full(len(self.times)*len(self.nus), np.nan)           
         return X, y
@@ -483,6 +484,7 @@ class RunPyblastafterglow:
                     p_fs= params_dict["p"], # microphysics - FS - slope of the injection electron spectrum
                     do_lc='yes',      # task - compute light curves
                     rtol_theta = self.rtol,
+                    method_limit_spread=None,
                     # save_spec='yes' # save comoving spectra 
                     # method_synchrotron_fs = 'Joh06',
                     # method_ne_fs = 'usenprime',
