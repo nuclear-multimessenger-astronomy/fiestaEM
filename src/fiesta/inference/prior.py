@@ -257,6 +257,64 @@ class UniformVolume(Prior):
             ),
         )
         return output
+
+@jaxtyped(typechecker=typechecker)
+class LogUniform(Prior):
+    xmin: float = 0.0
+    xmax: float = 1.0
+
+    def __repr__(self):
+        return f"LogUniform(xmin={self.xmin}, xmax={self.xmax})"
+
+    def __init__(
+        self,
+        xmin: Float,
+        xmax: Float,
+        naming: list[str],
+        transforms: dict[str, tuple[str, Callable]] = {},
+        **kwargs,
+    ):
+        super().__init__(naming, transforms)
+        assert self.n_dim == 1, "LogUniform needs to be 1D distributions"
+        assert xmin > 0, f"Provided xmin {xmin} is negative, needs to be larger than 0."
+        assert xmax > xmin, f"Provided xmax {xmax} is smaller than xmin, needs to be larger than {xmin}."
+
+        self.xmax = xmax
+        self.xmin = xmin
+
+    def sample(
+        self, rng_key: PRNGKeyArray, n_samples: int
+    ) -> dict[str, Float[Array, " n_samples"]]:
+        """
+        Sample from a uniform distribution.
+
+        Parameters
+        ----------
+        rng_key : PRNGKeyArray
+            A random key to use for sampling.
+        n_samples : int
+            The number of samples to draw.
+
+        Returns
+        -------
+        samples : dict
+            Samples from the distribution. The keys are the names of the parameters.
+
+        """
+        samples = jax.random.uniform(
+            rng_key, (n_samples,), minval=jnp.log(self.xmin), maxval=jnp.log(self.xmax)
+        )
+        samples = jnp.exp(samples)
+        return self.add_name(samples[None])
+
+    def log_prob(self, x: dict[str, Array]) -> Float:
+        variable = x[self.naming[0]]
+        output = jnp.where(
+            (variable >= self.xmax) | (variable <= self.xmin),
+            jnp.zeros_like(variable) - jnp.inf,
+            jnp.zeros_like(variable),
+        )
+        return output + jnp.log(1.0 / (jnp.log(self.xmax) - jnp.log(self.xmin)) ) - jnp.log(variable)
     
 # class DiracDelta(Prior):
     
