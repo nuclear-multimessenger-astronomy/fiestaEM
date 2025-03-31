@@ -38,7 +38,7 @@ class EMLikelihood:
                  trigger_time: Float = 0.0,
                  tmin: Float = 0.0,
                  tmax: Float = 999.0,
-                 error_budget: Float = 1.0,
+                 error_budget: Float = 0.3,
                  conversion_function: Callable = lambda x: x,
                  fixed_params: dict[str, Float] = {},
                  detection_limit: Float = None):
@@ -95,13 +95,13 @@ class EMLikelihood:
             detection_limit = dict(zip(filters, [detection_limit] * len(filters)))
         
         if detection_limit is None:
-            logger.info("NOTE: No detection limit is given. Putting it to infinity.")
+            logger.info("No detection limit is given. Putting it to infinity.")
             detection_limit = dict(zip(filters, [jnp.inf] * len(filters)))
         
         self.detection_limit = detection_limit
         
         # Process error budget
-        self._setup_sys_uncertainty(error_budget=error_budget)
+        self._setup_sys_uncertainty(sys_uncertainty_type="fixed", error_budget=error_budget)
                 
         self.fixed_params = fixed_params
         
@@ -110,17 +110,10 @@ class EMLikelihood:
         assert detection_present, "No detections found in the data. Please check your data."
         logger.info("Loading and preprocessing observations in likelihood . . . DONE")
 
-    def _setup_sys_uncertainty(self, error_budget: float=1., sys_uncertainty_sampling: bool=False):
+    def _setup_sys_uncertainty(self, sys_uncertainty_type: str, **kwargs):
 
-        if sys_uncertainty_sampling:
-
-            def _get_sigma(theta):
-                em_syserr = theta["em_syserr"]
-                sigma = jax.tree.map(lambda mag_err: jnp.sqrt(mag_err**2 + em_syserr**2), self.mag_err)
-                return sigma
-            self.get_sigma = _get_sigma
-        
-        else:
+        if sys_uncertainty_type=="fixed":
+            error_budget = kwargs["error_budget"]
             if isinstance(error_budget, (int, float)) and not isinstance(error_budget, dict):
                 logger.info("Converting error budget to dictionary.")
                 error_budget = dict(zip(self.filters, [error_budget] * len(self.filters)))
@@ -131,6 +124,32 @@ class EMLikelihood:
                 self.sigma[filt] = jnp.sqrt(self.mag_err[filt] ** 2 + self.error_budget[filt] ** 2)
 
             self.get_sigma = lambda x: self.sigma
+        
+        elif sys_uncertainty_type=="free":
+        
+            def _get_sigma(theta):
+                em_syserr = theta["em_syserr"]
+                sigma = jax.tree.map(lambda mag_err: jnp.sqrt(mag_err**2 + em_syserr**2), self.mag_err)
+                return sigma
+            self.get_sigma = _get_sigma
+
+        elif sys_uncertainty_type=="from_file":
+            self.sys_params_per_filter = kwargs["sys_params_per_filter"]
+            
+            def _get_sigma(theta):
+                def add_sys_err(mag_err, time_det, params):
+                    sys_param_array = jnp.array([theta[p] for p in params])
+                    t_nodes = jnp.linspace(self.tmin, self.tmax, sys_param_array.shape[0])
+                    sigma_sys = jnp.interp(time_det, t_nodes, sys_param_array)
+                    return jnp.sqrt(sigma_sys**2 + mag_err **2)
+                
+                sigma = jax.tree.map(add_sys_err, self.mag_err, self.times_det, self.sys_params_per_filter)
+                return sigma
+            
+            self.get_sigma = _get_sigma
+        
+        else:
+            raise ValueError(f"sys_uncertainty_type is {sys_uncertainty_type}, but must be either 'fixed', 'free', or 'from_file'.")
         
     def __call__(self, theta):
         return self.evaluate(theta)
@@ -148,7 +167,7 @@ class EMLikelihood:
         Returns:
             Float: The log-likelihood value at this point.
         """
-        
+
         theta = {**theta, **self.fixed_params}
         theta = self.conversion(theta)
         times, mag_app = self.model.predict(theta)
