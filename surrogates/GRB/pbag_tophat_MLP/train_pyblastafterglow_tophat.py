@@ -17,8 +17,8 @@ tmax = 2000
 numin = 1e9 # Hz 
 numax = 5e18
 
-n_training = 57_600
-n_val = 5760
+n_training = 56_930
+n_val = 8750
 n_pca = 50
 
 name = "pbag_tophat"
@@ -68,7 +68,7 @@ print("Producing example lightcurve . . .")
 FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
 lc_model = AfterglowFlux(name,
-                          outdir, 
-                          filters = FILTERS)
+                         directory="./model",
+                         filters = FILTERS)
 
 trainer.plot_example_lc(lc_model)

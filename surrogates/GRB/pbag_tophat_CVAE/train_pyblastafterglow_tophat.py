@@ -17,8 +17,8 @@ tmax = 2000
 numin = 1e9 # Hz 
 numax = 5e18
 
-n_training = 57_600
-n_val = 5760
+n_training = 56930
+n_val = 8750
 image_size = np.array([42, 57])
 
 name = "pbag_tophat"
@@ -28,7 +28,7 @@ file = "../training_data/pyblastafterglow_tophat_raw_data.h5"
 config = NeuralnetConfig(output_size= int(np.prod(image_size)),
                          nb_epochs=300_000,
                          hidden_layer_sizes = [600, 400, 200],
-                         learning_rate =5e-4)
+                         learning_rate =2e-4)
 
 ###############
 ### TRAINER ###
@@ -68,7 +68,6 @@ print("Producing example lightcurve . . .")
 FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
 lc_model = AfterglowFlux(name,
-                          outdir, 
-                          filters = FILTERS)
-
+                         directory="./model",
+                         filters = FILTERS)
 trainer.plot_example_lc(lc_model)
