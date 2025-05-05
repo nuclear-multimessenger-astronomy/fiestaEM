@@ -22,7 +22,7 @@ def setup_systematic(likelihood, prior: ConstrainedPrior, systematics_file: str=
     if systematics_file is None:
 
         # enable one variable sys. uncertainty parameter
-        if "em_syserr" in prior.naming:
+        if "sys_err" in prior.naming:
             likelihood._setup_sys_uncertainty(sys_uncertainty_type="free")
             logger.info(f"Likelihood is using a collective freely sampled systematic uncertainty as specified in the prior.")
 
@@ -45,9 +45,9 @@ def setup_systematic(likelihood, prior: ConstrainedPrior, systematics_file: str=
         if not isinstance(prior, ConstrainedPrior):
             prior = ConstrainedPrior(prior.priors)
         prior_list = prior.priors
-        if "em_syserr" in prior.naming:
-            logger.warning(f"When specifying a systematics_file, 'em_syserr' should not be provided in prior. Removing 'em_syserr' from prior list.")
-            index = [ind for ind, p in enumerate(prior_list) if 'em_syserr' in p.naming]
+        if "sys_err" in prior.naming:
+            logger.warning(f"When specifying a systematics_file, 'sys_err' should not be provided in prior. Removing 'sys_err' from prior list.")
+            index = [ind for ind, p in enumerate(prior_list) if 'sys_err' in p.naming]
             prior_list.pop(index[0])
         prior_list.extend(prior.constraints)
         prior_list.extend(additional_priors)

@@ -343,7 +343,7 @@ class DataManager:
             val_X_raw = concatenate_redshift(val_X_raw)
             val_X = Xscaler.transform(val_X_raw)
 
-            train_y_raw = f["train"]["y"][:, self.mask].reshape(-1, self.n_nus, self.n_times)
+            train_y_raw = f["train"]["y"][:self.n_training, self.mask].reshape(-1, self.n_nus, self.n_times)
             mJys_train = np.exp(train_y_raw)
             val_y_raw =  f["val"]["y"][:self.n_val, self.mask].reshape(-1, self.n_nus, self.n_times)
             mJys_val = np.exp(val_y_raw)
