@@ -128,8 +128,8 @@ class EMLikelihood:
         elif sys_uncertainty_type=="free":
         
             def _get_sigma(theta):
-                em_syserr = theta["em_syserr"]
-                sigma = jax.tree.map(lambda mag_err: jnp.sqrt(mag_err**2 + em_syserr**2), self.mag_err)
+                sys_err = theta["sys_err"]
+                sigma = jax.tree.map(lambda mag_err: jnp.sqrt(mag_err**2 + sys_err**2), self.mag_err)
                 return sigma
             self.get_sigma = _get_sigma
 

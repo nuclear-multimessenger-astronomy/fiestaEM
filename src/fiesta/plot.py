@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 pltparams = {"axes.grid": False,
-        "text.usetex" : False,
+        "text.usetex" : True,
         "font.family" : "serif",
         "ytick.color" : "black",
         "xtick.color" : "black",
@@ -34,11 +34,11 @@ default_corner_kwargs = dict(bins=40,
                         plot_density=False, 
                         plot_datapoints=False, 
                         fill_contours=False,
-                        max_n_ticks=4, 
+                        max_n_ticks=3, 
                         min_n_ticks=3,
                         save=False,
                         truth_color="red",
-                        labelpad=0.05)
+                        labelpad=0.2)
 
 latex_labels=dict(inclination_EM="$\\iota$",
                   log10_E0="$\\log_{10}(E_0)$", 
@@ -59,7 +59,7 @@ latex_labels=dict(inclination_EM="$\\iota$",
                   Ye_wind="$\\bar{Y}_{e,\\mathrm{wind}}$",
                   luminosity_distance="$d_L$",
                   redshift="$z$",
-                  em_syserr="$\\sigma_{\mathrm{sys}}$")
+                  sys_err="$\\sigma_{\mathrm{sys}}$")
 
 
 
@@ -88,7 +88,7 @@ def corner_plot(samples: Array,
         truths = [None]*samples.shape[1]
 
     
-    fig, ax = plt.subplots(samples.shape[1], samples.shape[1], figsize = (15, 15))
+    fig, ax = plt.subplots(samples.shape[1], samples.shape[1], figsize = (samples.shape[1]*1.5, samples.shape[1]*1.5))
     corner.corner(samples, 
           fig=fig,
           color=color,
@@ -98,8 +98,14 @@ def corner_plot(samples: Array,
           hist_kwargs=dict(density=True, color=color))
     
     if legend_label is not None:
+        
+        if samples.shape[1] < 4:
+            lx, ly = 0, -1
+        else:
+            lx, ly = 1, 4
+
         handle = plt.plot([],[], color=color)[0]
-        ax[1, 4].legend(handles=[handle], labels=[legend_label], fontsize=15, fancybox=False, framealpha=1)
+        ax[lx, ly].legend(handles=[handle], labels=[legend_label], fontsize=15, fancybox=False, framealpha=1)
 
     return fig, ax
 
