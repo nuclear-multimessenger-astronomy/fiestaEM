@@ -2,6 +2,7 @@ from typing import Callable
 
 import numpy as np
 import jax.numpy as jnp
+import jax
 import h5py
 import gc
 from jaxtyping import Array, Float, Int
@@ -32,11 +33,11 @@ def redshifted_magnitude(filt, mJys, nus, redshifts):
     sample_factor_redshift = int(len(redshifts)/len(mJys))
     mJys = np.tile(mJys, (sample_factor_redshift, 1, 1))
 
-    mJys = mJys * (1+redshifts[:,None, None])
-
-    mag = []
-    for (mJy, nu_) in zip(mJys, nnus):
-        mag.append(filt.get_mag(mJy, nu_))
+    mJys = mJys * (1+redshifts[:, None, None])
+    
+    def get_mag(mJy_, nu_):
+        return filt.get_mag(mJy_, nu_)
+    mag = jax.vmap(get_mag, in_axes=0)(mJys, nnus)
     return np.array(mag)
 
 

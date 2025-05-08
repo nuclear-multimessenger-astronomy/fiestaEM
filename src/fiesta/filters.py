@@ -28,7 +28,8 @@ class Filter:
             name (str): Name of the filter. Will be either passed to sncosmo to get the optical bandpass, or the unit at the end will be used to create a monochromatic filter. Supported units are keV and GHz.
         """
         self.name = name
-        if (self.name, None) in _BANDPASSES._primary_loaders:
+
+        if self.name in list(map(lambda x: x[0], _BANDPASSES._primary_loaders)):
             bandpass = get_bandpass(self.name) # sncosmo bandpass
             self.nu = constants.c / (bandpass.wave_eff*1e-10)
             self.nus = constants.c / (bandpass.wave[::-1]*1e-10)
@@ -40,7 +41,7 @@ class Filter:
 
             self.filt_type = "bandpass"
             
-        elif (self.name, None) in _BANDPASS_INTERPOLATORS._primary_loaders:
+        elif self.name in list(map(lambda x: x[0], _BANDPASS_INTERPOLATORS._primary_loaders)):
             bandpass = get_bandpass(self.name, 0) # these bandpass interpolators require a radius (here by default 0 cm)
             self.nu = constants.c/(bandpass.wave_eff*1e-10)
             self.nus = constants.c / (bandpass.wave[::-1]*1e-10)

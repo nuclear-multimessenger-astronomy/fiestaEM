@@ -18,14 +18,15 @@ tmin = 0.3 # days
 tmax = 16
 
 
-numin = 1e14 # Hz 
-numax = 2e15
+numin = 1e13 # Hz 
+numax = 1e16
 
-n_training =12_064 
+n_training = 12_064 
 n_val = 1508
 
 svd_ncoeff = 50
 FILTERS = list(map(lambda x: x[0], _BANDPASSES._primary_loaders))
+FILTERS = list(set(FILTERS) - set(("f1000w", "f1130w", "f2550w", "f2300c", "f1140c", "f1280w", "f1550c", "f2100w", "f1800w", "f1500w", "f1065c")) )
 
 name = "Bu2025"
 outdir = f"./model/"
