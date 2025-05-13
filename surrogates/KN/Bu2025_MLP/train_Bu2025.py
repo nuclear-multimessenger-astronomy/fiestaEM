@@ -3,32 +3,34 @@ import matplotlib.pyplot as plt
 import h5py
 
 from fiesta.train.FluxTrainer import PCATrainer
-from fiesta.inference.lightcurve_model import AfterglowFlux
+from fiesta.inference.lightcurve_model import FluxModel
 from fiesta.train.neuralnets import NeuralnetConfig
 
 #############
 ### SETUP ###
 #############
 
-tmin = 1e-4 # days
-tmax = 2000
+tmin = 0.3 # days
+tmax = 16
 
 
-numin = 1e9 # Hz 
-numax = 5e18
+numin = 1e14 # Hz 
+numax = 2e15
 
-n_training = 56_930
-n_val = 8750
-n_pca = 50
+n_training = 12_064 
+n_val = 1508
 
-name = "pbag_tophat"
+n_pca = 100
+
+name = "Bu2025_MLP"
 outdir = f"./model/"
-file = "../training_data/pyblastafterglow_tophat_raw_data.h5"
+file = "../training_data/Bu2025_raw_data.h5"
 
 config = NeuralnetConfig(output_size=n_pca,
-                         nb_epochs=300_000,
-                         hidden_layer_sizes = [300, 600, 300],
+                         nb_epochs=240_000,
+                         hidden_layer_sizes = [256, 512, 256],
                          learning_rate =5e-3)
+
 
 ###############
 ### TRAINER ###
@@ -36,26 +38,26 @@ config = NeuralnetConfig(output_size=n_pca,
 
 
 data_manager_args = dict(file = file,
-                           n_training= n_training,
+                           n_training= n_training, 
                            n_val= n_val, 
                            tmin= tmin,
                            tmax= tmax,
                            numin = numin,
-                           numax = numax,
-                           special_training=[])
+                           numax = numax, 
+                           )
 
 trainer = PCATrainer(name,
                      outdir,
                      data_manager_args = data_manager_args,
                      plots_dir=f"./benchmarks/",
-                     n_pca = n_pca,
-                     conversion="thetaCore_inclination",
+                     n_pca=n_pca,
                      save_preprocessed_data=False
                      )
 
 ###############
 ### FITTING ###
 ###############
+
 
 trainer.fit(config=config)
 trainer.save()
@@ -65,10 +67,11 @@ trainer.save()
 #############
 
 print("Producing example lightcurve . . .")
-FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
-lc_model = AfterglowFlux(name,
-                         directory="./model",
-                         filters = FILTERS)
+FILTERS = ["ps1::g", "ps1::r", "ps1::i", "ps1::z", "ps1::y", "2massj", "2massh", "2massks", "sdssu"]
+lc_model = FluxModel(name,
+                     directory=outdir, 
+                     filters=FILTERS)
 
 trainer.plot_example_lc(lc_model)
+

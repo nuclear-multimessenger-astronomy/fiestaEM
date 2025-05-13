@@ -237,7 +237,16 @@ class SVDTrainer(LightcurveTrainer):
         self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_svd(self.svd_ncoeff, self.filters, self.conversion)
         self.parameter_names += ["redshift"]
         self.parameter_distributions = self.parameter_distributions[:-1] + ", 'redshift': (0, 0.5, 'uniform')}" # TODO make adding redshift more flexible (i.e. whether to add redshift at all and its range)
+        
+        nan_filters = []
         for key in self.train_y.keys():
             if np.any(np.isnan(self.train_y[key])) or np.any(np.isnan(self.val_y[key])):
-                raise ValueError(f"Data preprocessing for {key} introduced nans. Check raw data for nans of infs or vanishing variance in a specific entry.")
+                logger.warning(f"Data preprocessing for {key} introduced nans. Check raw data for nans of infs or vanishing variance in a specific entry. Removing {key} from training.")
+                nan_filters.append(key)
+
+        self.filters = [filt for filt in self.filters if filt.name not in nan_filters]
+        for key in nan_filters:
+                del self.train_y[key]
+                del self.val_y[key]
+                del self.y_scaler[key]
         logger.info(f"Preprocessing data . . . done")
