@@ -290,7 +290,6 @@ class DataScaler(Scaler):
     
     @partial(jax.jit, static_argnames=("self",))
     def inverse_transform(self, x: Array) -> Array:
-
         for scaler in reversed(self.scalers):
             x = scaler.inverse_transform(x)
         return x

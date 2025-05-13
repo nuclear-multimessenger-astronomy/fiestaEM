@@ -2,6 +2,7 @@ from typing import Callable
 
 import numpy as np
 import jax.numpy as jnp
+import jax
 import h5py
 import gc
 from jaxtyping import Array, Float, Int
@@ -32,11 +33,11 @@ def redshifted_magnitude(filt, mJys, nus, redshifts):
     sample_factor_redshift = int(len(redshifts)/len(mJys))
     mJys = np.tile(mJys, (sample_factor_redshift, 1, 1))
 
-    mJys = mJys * (1+redshifts[:,None, None])
-
-    mag = []
-    for (mJy, nu_) in zip(mJys, nnus):
-        mag.append(filt.get_mag(mJy, nu_))
+    mJys = mJys * (1+redshifts[:, None, None])
+    
+    def get_mag(mJy_, nu_):
+        return filt.get_mag(mJy_, nu_)
+    mag = jax.vmap(get_mag, in_axes=0)(mJys, nnus)
     return np.array(mag)
 
 
@@ -343,7 +344,7 @@ class DataManager:
             val_X_raw = concatenate_redshift(val_X_raw)
             val_X = Xscaler.transform(val_X_raw)
 
-            train_y_raw = f["train"]["y"][:, self.mask].reshape(-1, self.n_nus, self.n_times)
+            train_y_raw = f["train"]["y"][:self.n_training, self.mask].reshape(-1, self.n_nus, self.n_times)
             mJys_train = np.exp(train_y_raw)
             val_y_raw =  f["val"]["y"][:self.n_val, self.mask].reshape(-1, self.n_nus, self.n_times)
             mJys_val = np.exp(val_y_raw)
