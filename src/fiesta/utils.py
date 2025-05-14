@@ -24,9 +24,9 @@ from fiesta.constants import c, days_to_seconds
 #######################
 
 def read_parameters_POSSIS(filename):
-    num_str = re.findall(r'\d+\.\d+', filename)
-    _, mej_dyn, v_ej_dyn, Ye_dyn, mej_wind, v_ej_wind, Ye_wind = list(map(float, num_str))
-    return [mej_dyn, v_ej_dyn, Ye_dyn, mej_wind, v_ej_wind, Ye_wind]
+    num_str = re.findall(r'\d+\.\d+', filename) 
+    parlist = list(map(float, num_str)) # the first entry here is the photon package number
+    return parlist[1:]
 
 def read_POSSIS_file(filename):
     parameters = read_parameters_POSSIS(filename)
@@ -35,7 +35,7 @@ def read_POSSIS_file(filename):
         waves = f["observables"]["wave"][:]
         
         n_inclinations, _, _ , _ = f["observables"]["stokes"].shape
-        inclinations = np.arccos(np.linspace(0,1, n_inclinations)) * 180 / np.pi
+        inclinations = np.arccos(np.linspace(0, 1, n_inclinations)) * 180 / np.pi
 
         intensity = f["observables"]["stokes"][:,:,:,0] 
         intensity = intensity / ((10*u.pc).to(u.Mpc).value)**2
@@ -53,7 +53,8 @@ def read_POSSIS_file(filename):
 def convert_POSSIS_outputs_to_h5(possis_dirs: list[str] | str,
                                  outfile: str,
                                  parameter_names: list[str] = ["log10_mej_dyn", "v_ej_dyn", "Ye_dyn", "log10_mej_wind", "v_ej_wind", "Ye_wind", "inclination_EM"],
-                                 clip: float = 15.):
+                                 clip: float = 15.,
+                                 log_arguments = [0, 3]):
     
     if isinstance(possis_dirs, str):
         possis_dirs = list(possis_dirs)
@@ -77,10 +78,12 @@ def convert_POSSIS_outputs_to_h5(possis_dirs: list[str] | str,
     
     X, y = np.array(X), np.array(y)
 
-    y = np.maximum(y, clip)
+    if X.shape[1] != len(parameter_names):
+        raise ValueError(f"parameter_names do not match parameters stored in POSSIS file ({X.shape[1]} parameters in POSSIS files).")
 
-    X[:,0] = np.log10(X[:,0]) # make mej_dyn to log
-    X[:,3] = np.log10(X[:, 3]) # make mej_wind to log
+    y = np.maximum(y, clip)
+    X[:,log_arguments] = np.log10(X[:,log_arguments]) # make mej_dyn and mej_wind to log10
+
 
     train_X, val_X, train_y, val_y = train_test_split(X, y, train_size=0.8)
     val_X, test_X, val_y, test_y = train_test_split(val_X, val_y, train_size=0.5)
