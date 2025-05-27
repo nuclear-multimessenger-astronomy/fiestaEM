@@ -34,8 +34,8 @@ def read_POSSIS_file(filename):
 
         waves = f["observables"]["wave"][:]
         
-        n_inclinations, _, _ , _ = f["observables"]["stokes"].shape
-        inclinations = np.arccos(np.linspace(0, 1, n_inclinations)) * 180 / np.pi
+        n_inclinations, _, _, _ = f["observables"]["stokes"].shape
+        inclinations = np.arccos(np.linspace(0, 1, n_inclinations))
 
         intensity = f["observables"]["stokes"][:,:,:,0] 
         intensity = intensity / ((10*u.pc).to(u.Mpc).value)**2

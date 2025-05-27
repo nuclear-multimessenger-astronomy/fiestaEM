@@ -99,8 +99,9 @@ class LightcurveTrainer:
         input_ndim = len(self.parameter_names)
 
         for filt in self.filters:
-
-            logger.info(f"\n\n Training {filt.name}... \n\n")
+            logger.info("\n \n")
+            logger.info(f"Training {filt.name}...")
+            logger.info(f"----------------------------------\n")
             
             # Create neural network and initialize the state
             net = fiesta_nn.MLP(config = config, input_ndim = input_ndim, key = key)
