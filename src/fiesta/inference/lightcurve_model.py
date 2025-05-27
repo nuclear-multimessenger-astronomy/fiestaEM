@@ -33,10 +33,12 @@ def get_default_directory(name):
 
     
     elif name.startswith("Bu"):
-        if not name.endswith("_CVAE") and not name.endswith("_lc"):
-             name = "_".join((name, "lc")) # default for now is to load the lightcurve model
+        if name.endswith("_CVAE") or name.endswith("_MLP") or name.endswith("_lc"):
+            surrogate_dir = surrogate_dir / "KN" / name / "model"
 
-        surrogate_dir = surrogate_dir / "KN" / name / "model"
+        else:
+             name = "_".join((name, "lc")) # default for now is to load the lightcurve model
+             surrogate_dir = surrogate_dir / "KN" / name / "model"
     
     else:
         raise ValueError(f"If no model directory is provided, the name for the default models must either start with 'afgpy', 'pbag', 'Bu'.")
@@ -44,7 +46,7 @@ def get_default_directory(name):
     surrogate_dir = str(surrogate_dir)
     if not os.path.exists(surrogate_dir):
         raise OSError(f"Could not find model directory for name {name} in {surrogate_dir}. Please change the name or provide a path manually.")
-
+    
     return surrogate_dir
 
 
@@ -237,7 +239,7 @@ class LightcurveModel(SurrogateModel):
         logger.info(f"Loaded for surrogate {self.name} from {self.directory}.")
         
     def load_filters(self, filters_args: list[str] = None) -> None:
-        # Save those filters that were given and that were trained and store here already
+        # get all possible filters
         pkl_files = [file for file in os.listdir(self.directory) if file.endswith(".pkl") or file.endswith(".pickle")]
         all_available_filters = [(file.split(".")[0]).split("_")[1] for file in pkl_files]
         
@@ -255,11 +257,16 @@ class LightcurveModel(SurrogateModel):
         logger.info(f"Surrogate {self.name} is loading with the following filters: {self.filters}.")
         
     def load_networks(self) -> None:
+        pkl_files = [file for file in os.listdir(self.directory) if file.endswith(".pkl") or file.endswith(".pickle")]
         self.models = {}
-        for filter in self.filters:
-            filename = os.path.join(self.directory, f"{self.name}_{filter}.pkl")
-            state, _ = fiesta_nn.MLP.load_model(filename)
-            self.models[filter] = state
+
+        for filename in pkl_files:
+
+            filter_of_filename = filename.split(".")[0].split("_")[1]
+
+            if filter_of_filename in self.filters:
+                state, _ = fiesta_nn.MLP.load_model(os.path.join(self.directory, filename))
+                self.models[filter_of_filename] = state
     
     def project_input(self, x: Array) -> Array:
         """
