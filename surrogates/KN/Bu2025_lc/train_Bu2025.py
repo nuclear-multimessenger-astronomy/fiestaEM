@@ -21,8 +21,8 @@ tmax = 16
 numin = 1e13 # Hz 
 numax = 1e16
 
-n_training = 12_064 
-n_val = 1508
+n_training = 17_899 
+n_val = 2237
 
 svd_ncoeff = 50
 FILTERS = list(map(lambda x: x[0], _BANDPASSES._primary_loaders))
