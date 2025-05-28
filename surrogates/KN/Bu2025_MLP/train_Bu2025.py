@@ -10,8 +10,8 @@ from fiesta.train.neuralnets import NeuralnetConfig
 ### SETUP ###
 #############
 
-tmin = 0.3 # days
-tmax = 16
+tmin = 0.2 # days
+tmax = 26
 
 
 numin = 1e14 # Hz 
@@ -29,7 +29,7 @@ file = "../training_data/Bu2025_raw_data.h5"
 config = NeuralnetConfig(output_size=n_pca,
                          nb_epochs=240_000,
                          hidden_layer_sizes = [256, 512, 256],
-                         learning_rate =1e-3)
+                         learning_rate =2e-3)
 
 
 ###############
@@ -68,7 +68,7 @@ trainer.save()
 
 print("Producing example lightcurve . . .")
 
-FILTERS = ["ps1::g", "ps1::r", "ps1::i", "ps1::z", "ps1::y", "2massj", "2massh", "2massks", "sdssu"]
+FILTERS = ["ps1::y", "besselli", "bessellv", "bessellux"]
 lc_model = FluxModel(name,
                      directory=outdir, 
                      filters=FILTERS)

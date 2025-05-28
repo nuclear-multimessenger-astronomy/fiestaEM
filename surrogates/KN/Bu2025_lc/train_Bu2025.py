@@ -14,8 +14,8 @@ from fiesta.filters import Filter
 ### SETUP ###
 #############
 
-tmin = 0.3 # days
-tmax = 16
+tmin = 0.2 # days
+tmax = 26
 
 
 numin = 1e13 # Hz 
@@ -33,9 +33,9 @@ outdir = f"./model/"
 file = "../training_data/Bu2025_raw_data.h5"
 
 config = NeuralnetConfig(output_size= svd_ncoeff,
-                         nb_epochs=40_000,
+                         nb_epochs=100_000,
                          hidden_layer_sizes = [64, 128, 64],
-                         learning_rate =5e-3)
+                         learning_rate =2e-3)
 
 
 ###############
