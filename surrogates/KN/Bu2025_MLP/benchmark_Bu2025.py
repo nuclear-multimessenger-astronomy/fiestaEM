@@ -5,7 +5,7 @@ from fiesta.inference.lightcurve_model import AfterglowFlux
 
 name = "Bu2025"
 model_dir = f"./model/"
-FILTERS = ["2massj", "2massks", "sdssu", "ps1::r"]
+FILTERS = ["ps1::y", "besselli", "bessellv", "bessellux"]
 
 lc_model = AfterglowFlux(name,
                          directory=model_dir, 
