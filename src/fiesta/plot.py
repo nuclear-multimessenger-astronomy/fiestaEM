@@ -37,7 +37,7 @@ default_corner_kwargs = dict(bins=40,
                         max_n_ticks=3, 
                         min_n_ticks=3,
                         save=False,
-                        truth_color="red",
+                        truth_color="darkorange",
                         labelpad=0.2)
 
 latex_labels=dict(inclination_EM="$\\iota$",
