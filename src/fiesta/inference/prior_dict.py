@@ -28,9 +28,11 @@ class ConstrainedPrior(CompositePrior):
             samples = super().sample(subkey, n_samples = sampling_chunk)
             constr = ~jnp.isneginf(self.evaluate_constraints(samples))
             factor_estimates.append(sampling_chunk/jnp.sum(constr))
+
         factor_estimates = jnp.array(factor_estimates)
-        decimals = int( -jnp.floor(jnp.log10(3*jnp.std(factor_estimates))) )
-        self.factor = jnp.round(jnp.mean(factor_estimates), decimals)
+        decimals = min(16, -jnp.floor(jnp.log10(3*jnp.std(factor_estimates))))
+        decimals = max(0, decimals)
+        self.factor = jnp.round(jnp.mean(factor_estimates), int(decimals))
        
     def evaluate_constraints(self, samples):
         converted_sample = self.conversion(samples)

@@ -1,4 +1,5 @@
 import copy
+from multiprocessing import Value
 import os
 import re
 
@@ -23,9 +24,9 @@ from fiesta.constants import c, days_to_seconds
 #######################
 
 def read_parameters_POSSIS(filename):
-    num_str = re.findall(r'\d+\.\d+', filename)
-    _, mej_dyn, v_ej_dyn, Ye_dyn, mej_wind, v_ej_wind, Ye_wind = list(map(float, num_str))
-    return [mej_dyn, v_ej_dyn, Ye_dyn, mej_wind, v_ej_wind, Ye_wind]
+    num_str = re.findall(r'\d+\.\d+', filename) 
+    parlist = list(map(float, num_str)) # the first entry here is the photon package number
+    return parlist[1:]
 
 def read_POSSIS_file(filename):
     parameters = read_parameters_POSSIS(filename)
@@ -33,8 +34,8 @@ def read_POSSIS_file(filename):
 
         waves = f["observables"]["wave"][:]
         
-        n_inclinations, _, _ , _ = f["observables"]["stokes"].shape
-        inclinations = np.arccos(np.linspace(0,1, n_inclinations)) * 180 / np.pi
+        n_inclinations, _, _, _ = f["observables"]["stokes"].shape
+        inclinations = np.arccos(np.linspace(0, 1, n_inclinations))
 
         intensity = f["observables"]["stokes"][:,:,:,0] 
         intensity = intensity / ((10*u.pc).to(u.Mpc).value)**2
@@ -49,13 +50,19 @@ def read_POSSIS_file(filename):
     
     return X_file, y_file
 
-def convert_POSSIS_outputs_to_h5(possis_dir: str,
+def convert_POSSIS_outputs_to_h5(possis_dirs: list[str] | str,
                                  outfile: str,
                                  parameter_names: list[str] = ["log10_mej_dyn", "v_ej_dyn", "Ye_dyn", "log10_mej_wind", "v_ej_wind", "Ye_wind", "inclination_EM"],
-                                 clip = 0):
+                                 clip: float = 15.,
+                                 log_arguments = [0, 3]):
     
-    files = [os.path.join(possis_dir, f) for f in os.listdir(possis_dir) if f.endswith(".hdf5")]
-
+    if isinstance(possis_dirs, str):
+        possis_dirs = list(possis_dirs)
+    
+    files = []
+    for dir in possis_dirs:
+        files.extend([os.path.join(dir, f) for f in os.listdir(dir) if f.endswith(".hdf5")])
+    
     with h5py.File(files[0]) as f:
         waves = f["observables"]["wave"][:]
         times = f["observables"]["time"][:] / days_to_seconds
@@ -71,12 +78,13 @@ def convert_POSSIS_outputs_to_h5(possis_dir: str,
     
     X, y = np.array(X), np.array(y)
 
-    y = np.maximum(y, 15)
+    if X.shape[1] != len(parameter_names):
+        raise ValueError(f"parameter_names do not match parameters stored in POSSIS file ({X.shape[1]} parameters in POSSIS files).")
 
-    X[:,0] = np.log10(X[:,0]) # make mej_dyn to log
-    X[:,3] = np.log10(X[:, 3]) # make mej_wind to log
+    y = np.maximum(y, clip)
+    X[:,log_arguments] = np.log10(X[:,log_arguments]) # make mej_dyn and mej_wind to log10
 
-    from sklearn.model_selection import train_test_split # TODO: get rid of sklearn dependency here
+
     train_X, val_X, train_y, val_y = train_test_split(X, y, train_size=0.8)
     val_X, test_X, val_y, test_y = train_test_split(val_X, val_y, train_size=0.5)
     
@@ -92,8 +100,23 @@ def convert_POSSIS_outputs_to_h5(possis_dir: str,
                         times,
                         nus,
                         parameter_names,
-                        parameter_distributions)
+                        parameter_distributions) 
+    
 
+#########################
+### GENERAL UTILITIES ###
+#########################
+
+def train_test_split(X, y, train_size):
+
+    if isinstance(train_size, float):
+        assert train_size > 0 and train_size < 1, f"train_size needs to be between 0 and 1, it was {train_size:.2f}."
+        train_size = int(X.shape[0] * train_size)
+
+    mask = np.zeros(X.shape[0]).astype(bool)
+    mask[np.random.choice(a=X.shape[0], size=train_size, replace=False)] = True
+
+    return X[mask], X[~mask], y[mask], y[~mask]
 
 
 def write_training_data(outfile: str,
@@ -120,14 +143,78 @@ def write_training_data(outfile: str,
         f["val"].create_dataset("y", data = val_y)
         f["test"].create_dataset("X", data= test_X)
         f["test"].create_dataset("y", data = test_y)
+
+def load_event_data(filename):
+    """
+    Takes a file and outputs a magnitude dict with filters as keys.
     
+    Args:
+        filename (str): path to file to be read in
     
+    Returns:
+        data (dict[str, Array]): Data dictionary with filters as keys. The array has the structure [[mjd, mag, err]].
+
+    """
+    mjd, filters, mags, mag_errors = [], [], [], []
+    with open(filename, "r") as input:
+
+        for line in input:
+            line = line.rstrip("\n")
+            t, filter, mag, mag_err = line.split(" ")
+
+            mjd.append(Time(t, format="isot").mjd) # convert to mjd
+            filters.append(filter)
+            mags.append(float(mag))
+            mag_errors.append(float(mag_err))
+    
+    mjd = np.array(mjd)
+    filters = np.array(filters)
+    mags = np.array(mags)
+    mag_errors = np.array(mag_errors)
+    data = {}
+
+    unique_filters = np.unique(filters)
+    for filt in unique_filters:
+        filt_inds = np.where(filters==filt)[0]
+        data[filt] = np.array([ mjd[filt_inds], mags[filt_inds], mag_errors[filt_inds] ]).T
+
+    return data
+
+def write_event_data(filename: str, data: dict):
+    """
+    Takes a magnitude dict and writes it to filename. 
+    The magnitude dict should have filters as keys, the arrays should have the structure [[mjd, mag, err]].
+    """
+    with open(filename, "w") as out:
+        for filt in data.keys():
+            for data_point in data[filt]:
+                time = Time(data_point[0], format = "mjd")
+                filt_name = filt.replace("_", ":")
+                line = f"{time.isot} {filt_name} {data_point[1]:f} {data_point[2]:f}"
+                out.write(line +"\n")
 
 
+def truncated_gaussian(mag_det: Array, 
+                       mag_err: Array, 
+                       mag_est: Array, 
+                       lim: Float = jnp.inf):
+    
+    """
+    Evaluate log PDF of a truncated Gaussian with loc at mag_est and scale mag_err, truncated at lim above.
 
-#########################
-### GENERAL UTILITIES ###
-#########################
+    Returns:
+        _type_: _description_
+    """
+    
+    loc, scale = mag_est, mag_err
+    a_trunc = -999 # TODO: OK if we just fix this to a large number, to avoid infs?
+    a, b = (a_trunc - loc) / scale, (lim - loc) / scale
+    logpdf = truncnorm.logpdf(mag_det, a, b, loc=loc, scale=scale)
+    return logpdf
+
+##############
+### LEGACY ###
+##############
 
 def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
                      times: Array, 
@@ -183,70 +270,3 @@ def interpolate_nans(data: dict[str, Float[Array, " n_files n_times"]],
                 output[filt] = np.array(mag_interp)
 
     return output
-
-def truncated_gaussian(mag_det: Array, 
-                       mag_err: Array, 
-                       mag_est: Array, 
-                       lim: Float = jnp.inf):
-    
-    """
-    Evaluate log PDF of a truncated Gaussian with loc at mag_est and scale mag_err, truncated at lim above.
-
-    Returns:
-        _type_: _description_
-    """
-    
-    loc, scale = mag_est, mag_err
-    a_trunc = -999 # TODO: OK if we just fix this to a large number, to avoid infs?
-    a, b = (a_trunc - loc) / scale, (lim - loc) / scale
-    logpdf = truncnorm.logpdf(mag_det, a, b, loc=loc, scale=scale)
-    return logpdf
-
-def load_event_data(filename):
-    """
-    Takes a file and outputs a magnitude dict with filters as keys.
-    
-    Args:
-        filename (str): path to file to be read in
-    
-    Returns:
-        data (dict[str, Array]): Data dictionary with filters as keys. The array has the structure [[mjd, mag, err]].
-
-    """
-    mjd, filters, mags, mag_errors = [], [], [], []
-    with open(filename, "r") as input:
-
-        for line in input:
-            line = line.rstrip("\n")
-            t, filter, mag, mag_err = line.split(" ")
-
-            mjd.append(Time(t, format="isot").mjd) # convert to mjd
-            filters.append(filter)
-            mags.append(float(mag))
-            mag_errors.append(float(mag_err))
-    
-    mjd = np.array(mjd)
-    filters = np.array(filters)
-    mags = np.array(mags)
-    mag_errors = np.array(mag_errors)
-    data = {}
-
-    unique_filters = np.unique(filters)
-    for filt in unique_filters:
-        filt_inds = np.where(filters==filt)[0]
-        data[filt] = np.array([ mjd[filt_inds], mags[filt_inds], mag_errors[filt_inds] ]).T
-
-    return data
-
-def write_event_data(filename: str, data: dict):
-    """
-    Takes a magnitude dict and writes it to filename. 
-    The magnitude dict should have filters as keys, the arrays should have the structure [[mjd, mag, err]].
-    """
-    with open(filename, "w") as out:
-        for filt in data.keys():
-            for data_point in data[filt]:
-                time = Time(data_point[0], format = "mjd")
-                filt_name = filt.replace("_", ":")
-                line = f"{time.isot} {filt_name} {data_point[1]:f} {data_point[2]:f}"
-                out.write(line +"\n")

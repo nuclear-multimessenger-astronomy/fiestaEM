@@ -14,15 +14,15 @@ from fiesta.filters import Filter
 ### SETUP ###
 #############
 
-tmin = 0.3 # days
-tmax = 16
+tmin = 0.2 # days
+tmax = 26
 
 
 numin = 1e13 # Hz 
 numax = 1e16
 
-n_training = 12_064 
-n_val = 1508
+n_training = 17_899 
+n_val = 2237
 
 svd_ncoeff = 50
 FILTERS = list(map(lambda x: x[0], _BANDPASSES._primary_loaders))
@@ -33,9 +33,9 @@ outdir = f"./model/"
 file = "../training_data/Bu2025_raw_data.h5"
 
 config = NeuralnetConfig(output_size= svd_ncoeff,
-                         nb_epochs=40_000,
+                         nb_epochs=100_000,
                          hidden_layer_sizes = [64, 128, 64],
-                         learning_rate =5e-3)
+                         learning_rate =2e-3)
 
 
 ###############
