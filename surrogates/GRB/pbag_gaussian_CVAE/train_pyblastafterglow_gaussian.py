@@ -22,7 +22,7 @@ n_val = 7676
 image_size = np.array([42, 57])
 
 name = "pbag_gaussian"
-outdir = f"./model/"
+outdir = f"../../../src/fiesta/surrogates/GRB/pbag_gaussian_CVAE/model/"
 file = "../data/pyblastafterglow_gaussian_raw_data.h5"
 
 config = NeuralnetConfig(output_size= int(np.prod(image_size)),

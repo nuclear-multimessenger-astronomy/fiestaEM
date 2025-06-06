@@ -28,7 +28,7 @@ default_hyperparameters = {
         "num_layers": 10,
         "hidden_size": [128,128],
         "num_bins": 8,
-        "local_sampler_arg": {},
+        "local_sampler_arg": {'eps': 5e-3},
         "which_local_sampler": "MALA"
 }
 
@@ -77,26 +77,23 @@ class Fiesta(object):
             if key in hyperparameter_names:
                 self.hyperparameters[key] = value
         
+        self.hyperparameters["local_sampler_arg"]["step_size"] = self.hyperparameters["local_sampler_arg"]["eps"]*jnp.eye(self.prior.n_dim)
+
         for key, value in self.hyperparameters.items():
             setattr(self, key, value)
 
         rng_key_set = initialize_rng_keys(self.hyperparameters["n_chains"], seed=self.hyperparameters["seed"])
-        local_sampler_arg = kwargs.get("local_sampler_arg", {})
-
-        if local_sampler_arg["step_size"].shape[1] != self.prior.n_dim:
-            local_sampler_arg["step_size"] = 5e-3 * jnp.eye(self.prior.n_dim)
-            
         
         # set local sampling method
         if self.hyperparameters["which_local_sampler"] == "MALA":
             logger.info("Using MALA as local sampler.")
             local_sampler = MALA(
-                self.posterior, True, local_sampler_arg
+                self.posterior, True, self.local_sampler_arg
             )  # Remember to add routine to find automated mass matrix
         elif self.hyperparameters["which_local_sampler"] == "GaussianRandomWalk":
             logger.info("Using gaussian random walk as local sampler")
             local_sampler = GaussianRandomWalk(
-                self.posterior, True, local_sampler_arg
+                self.posterior, True, self.local_sampler_arg
             )  # Remember to add routine to find automated mass matrix
         else:   
             sampler = self.hyperparameters["which_local_sampler"]
@@ -234,6 +231,12 @@ class Fiesta(object):
         global_accs = jnp.mean(global_accs, axis=0)
         jnp.savez(name, chains=chains, log_prob=log_prob,
                     local_accs=local_accs, global_accs=global_accs)
+        
+        chains = chains.reshape(-1, self.prior.n_dim).T
+        posterior = dict(zip(self.prior.naming, np.array(chains)))
+        posterior["log_prob"] = log_prob.reshape(-1,)
+        jnp.savez(os.path.join(self.outdir, f"posterior.npz"), **posterior)
+
     
     def save_hyperparameters(self):
         
@@ -249,7 +252,7 @@ class Fiesta(object):
             with open(name, 'w') as file:
                 json.dump(hyperparameters_dict, file)
         except Exception as e:
-            print(f"Error occurred saving jim hyperparameters, are all hyperparams JSON compatible?: {e}")
+            logger.error(f"Error occurred saving jim hyperparameters, are all hyperparams JSON compatible?: {e}")
             
 
     def plot_lightcurves(self,

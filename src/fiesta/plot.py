@@ -56,7 +56,7 @@ latex_labels=dict(inclination_EM="$\\iota$",
                   v_ej_dyn="$\\bar{v}_{\\mathrm{ej,dyn}})$",
                   v_ej_wind="$\\bar{v}_{\\mathrm{ej,wind}})$",
                   Ye_dyn="$\\bar{Y}_{e,\\mathrm{dyn}}$",
-                  Ye_wind="$\\bar{Y}_{e,\\mathrm{wind}}$",
+                  Ye_wind="$Y_{e,\\mathrm{wind}}$",
                   luminosity_distance="$d_L$",
                   redshift="$z$",
                   sys_err="$\\sigma_{\mathrm{sys}}$")
@@ -106,7 +106,8 @@ def corner_plot(samples: Array,
 
         handle = plt.plot([],[], color=color)[0]
         ax[lx, ly].legend(handles=[handle], labels=[legend_label], fontsize=15, fancybox=False, framealpha=1)
-
+    
+    fig.tight_layout()
     return fig, ax
 
 # TODO: superpose multiple posteriors in one corner plot

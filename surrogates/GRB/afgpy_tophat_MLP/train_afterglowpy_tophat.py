@@ -23,7 +23,7 @@ n_val = 7500
 n_pca = 50
 
 name = "afgpy_tophat"
-outdir = f"./model/"
+outdir = f"../../../src/fiesta/surrogates/GRB/afgpy_tophat_MLP/model/"
 file = "../training_data/afterglowpy_tophat_raw_data.h5"
 
 config = NeuralnetConfig(output_size=n_pca,

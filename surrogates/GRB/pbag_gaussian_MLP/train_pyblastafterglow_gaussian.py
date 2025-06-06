@@ -22,7 +22,7 @@ n_val = 7676
 n_pca = 50
 
 name = "pbag_gaussian"
-outdir = f"./model/"
+outdir = f"../../../src/fiesta/surrogates/GRB/pbag_gaussian_MLP/model/"
 file = "../data/pyblastafterglow_gaussian_raw_data.h5"
 
 config = NeuralnetConfig(output_size=n_pca,
