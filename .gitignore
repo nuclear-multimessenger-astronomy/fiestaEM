@@ -2,7 +2,7 @@ __pycache__
 .coverage
 *egg-info
 **/benchmarks/*
-/surrogates/*/training_data/*
+src/fiesta/surrogates/*/training_data/*
 !surrogates/*/training_data/README.md
 *nohup.out
 **/log
