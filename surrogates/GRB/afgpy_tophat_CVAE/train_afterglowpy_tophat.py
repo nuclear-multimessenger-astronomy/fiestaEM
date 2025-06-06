@@ -23,7 +23,7 @@ n_val = 7500
 image_size = np.array([42, 57])
 
 name = "afgpy_tophat"
-outdir = f"./model/"
+outdir = f"../../../src/fiesta/surrogates/GRB/afgpy_tophat_CVAE/model/"
 file = "../training_data/afterglowpy_tophat_raw_data.h5"
 
 config = NeuralnetConfig(output_size= int(np.prod(image_size)),

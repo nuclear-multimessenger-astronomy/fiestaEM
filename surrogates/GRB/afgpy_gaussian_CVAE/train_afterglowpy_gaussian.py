@@ -23,7 +23,7 @@ n_val = 7500
 image_size = np.array([42, 57])
 
 name = "afgpy_gaussian"
-outdir = f"./model/"
+outdir = f"../../../src/fiesta/surrogates/GRB/afgpy_gaussian_CVAE/model/"
 file = "../data/afterglowpy_gaussian_raw_data.h5"
 
 config = NeuralnetConfig(output_size= int(np.prod(image_size)),

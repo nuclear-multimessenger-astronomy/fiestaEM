@@ -23,7 +23,7 @@ from fiesta.logging import logger
 
 def get_default_directory(name):
     current_dir = Path(__file__).resolve().parent
-    surrogate_dir = current_dir.parent.parent.parent / "surrogates"
+    surrogate_dir = current_dir.parent / "surrogates"
     
     if name.startswith("afgpy") or name.startswith("pbag"):
         if not name.endswith("_CVAE") and not name.endswith("_MLP"):
@@ -495,6 +495,13 @@ class CombinedSurrogate:
 #################
 
 class BullaLightcurveModel(LightcurveModel):
+    
+    def __init__(self, 
+                 *args, **kwargs):
+        
+        super().__init__(*args, **kwargs)
+
+class BullaFlux(FluxModel):
     
     def __init__(self, 
                  *args, **kwargs):

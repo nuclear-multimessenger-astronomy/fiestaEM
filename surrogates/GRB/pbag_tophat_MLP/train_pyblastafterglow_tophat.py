@@ -22,7 +22,7 @@ n_val = 8750
 n_pca = 50
 
 name = "pbag_tophat"
-outdir = f"./model/"
+outdir = f"../../../src/fiesta/surrogates/GRB/pbag_tophat_MLP/model/"
 file = "../training_data/pyblastafterglow_tophat_raw_data.h5"
 
 config = NeuralnetConfig(output_size=n_pca,

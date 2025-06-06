@@ -14,8 +14,7 @@ FILTERS = ["radio-6GHz", "bessellv", "X-ray-1keV"]
 def test_MLP():
 
     model = AfterglowFlux(name="pbag_gaussian_MLP", 
-                          filters=FILTERS,
-                          directory=join(surrogates_dir, "GRB/pbag_gaussian_MLP/model"))
+                          filters=FILTERS)
     
     X = [3.141/30, 54., 0.05, 2., -1., 2.5, -2., -4., 500]
     params = dict(zip(model.parameter_names, X))
@@ -26,8 +25,7 @@ def test_MLP():
 def test_CVAE():
 
     model = AfterglowFlux(name="pbag_gaussian_CVAE", 
-                          filters=FILTERS,
-                          directory=join(surrogates_dir, "GRB/pbag_gaussian_CVAE/model"))
+                          filters=FILTERS)
     
     X = [3.141/30, 54., 0.05, 2., -1., 2.5, -2., -4., 500]
     params = dict(zip(model.parameter_names, X))
@@ -38,8 +36,7 @@ def test_CVAE():
 def test_LC():
 
     model = BullaLightcurveModel(name="Bu2025",
-                                 filters=["besselli", "bessellg", "bessellr"],
-                                 directory=join(surrogates_dir, "KN/Bu2025_lc/model"))
+                                 filters=["besselli", "bessellg", "bessellr"])
     
     X = [120, -2, 0.2, 0.3, -1.5, 0.4, 0.3, 0.1]
     params = dict(zip(model.parameter_names, X))
