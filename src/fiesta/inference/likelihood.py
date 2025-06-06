@@ -48,7 +48,7 @@ class EMLikelihood:
         self.conversion = conversion_function
         if filters is None:
             filters = model.filters
-        self.filters = filters
+        self.filters = list(filters)
         self.trigger_time = trigger_time
         self.tmin = tmin
         self.tmax = tmax            
@@ -64,8 +64,9 @@ class EMLikelihood:
         self.mag_nondet = {}
         
         processed_data = copy.deepcopy(data)
-        
-        for filt in self.filters:
+        filter_copy = self.filters.copy()
+
+        for filt in filter_copy:
             if filt not in processed_data:
                 logger.warning(f"Filter {filt} not found in the data. Removing for inference.")
                 self.filters.remove(filt)

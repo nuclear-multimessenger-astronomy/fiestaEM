@@ -56,7 +56,7 @@ latex_labels=dict(inclination_EM="$\\iota$",
                   v_ej_dyn="$\\bar{v}_{\\mathrm{ej,dyn}})$",
                   v_ej_wind="$\\bar{v}_{\\mathrm{ej,wind}})$",
                   Ye_dyn="$\\bar{Y}_{e,\\mathrm{dyn}}$",
-                  Ye_wind="$\\bar{Y}_{e,\\mathrm{wind}}$",
+                  Ye_wind="$Y_{e,\\mathrm{wind}}$",
                   luminosity_distance="$d_L$",
                   redshift="$z$",
                   sys_err="$\\sigma_{\mathrm{sys}}$")
