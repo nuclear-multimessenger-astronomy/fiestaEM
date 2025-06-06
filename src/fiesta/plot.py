@@ -106,7 +106,8 @@ def corner_plot(samples: Array,
 
         handle = plt.plot([],[], color=color)[0]
         ax[lx, ly].legend(handles=[handle], labels=[legend_label], fontsize=15, fancybox=False, framealpha=1)
-
+    
+    fig.tight_layout()
     return fig, ax
 
 # TODO: superpose multiple posteriors in one corner plot
