@@ -34,6 +34,8 @@ jobs:
         python -m pip install --upgrade pip setuptools wheel
         python -m pip install pytest pytest-cov pytest-aiohttp sqlparse freezegun PyJWT coveralls dill
         python -m pip install .
+        ls -lah /home/runner/.local/lib/python3.12/site-packages/fiesta/
+        ls -lah /home/runner/.local/lib/python3.12/site-packages/fiesta/surrogates
 
     - name: Perform tests with pytest
       run: |
