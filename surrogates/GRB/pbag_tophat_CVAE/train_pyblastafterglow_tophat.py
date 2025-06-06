@@ -22,7 +22,7 @@ n_val = 8750
 image_size = np.array([42, 57])
 
 name = "pbag_tophat"
-outdir = f"./model/"
+outdir = f"../../../src/fiesta/surrogates/GRB/pbag_tophat_CVAE/model/"
 file = "../training_data/pyblastafterglow_tophat_raw_data.h5"
 
 config = NeuralnetConfig(output_size= int(np.prod(image_size)),

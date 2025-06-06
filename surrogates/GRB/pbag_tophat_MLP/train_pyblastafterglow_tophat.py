@@ -1,5 +1,4 @@
 import numpy as np 
-import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import h5py
 
@@ -18,18 +17,18 @@ tmax = 2000
 numin = 1e9 # Hz 
 numax = 5e18
 
-n_training = 40_000
-n_val = 7500
+n_training = 56_930
+n_val = 8750
 n_pca = 50
 
-name = "afgpy_tophat"
-outdir = f"./model/"
-file = "../training_data/afterglowpy_tophat_raw_data.h5"
+name = "pbag_tophat"
+outdir = f"../../../src/fiesta/surrogates/GRB/pbag_tophat_MLP/model/"
+file = "../training_data/pyblastafterglow_tophat_raw_data.h5"
 
 config = NeuralnetConfig(output_size=n_pca,
                          nb_epochs=300_000,
-                         hidden_layer_sizes = [128, 256, 128],
-                         learning_rate =4e-3)
+                         hidden_layer_sizes = [300, 600, 300],
+                         learning_rate =5e-3)
 
 ###############
 ### TRAINER ###
@@ -62,14 +61,14 @@ trainer.fit(config=config)
 trainer.save()
 
 #############
-### TEST  ###
+### TEST ###
 #############
 
 print("Producing example lightcurve . . .")
 FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
 lc_model = AfterglowFlux(name,
-                          outdir, 
-                          filters = FILTERS)
+                         directory="./model",
+                         filters = FILTERS)
 
 trainer.plot_example_lc(lc_model)

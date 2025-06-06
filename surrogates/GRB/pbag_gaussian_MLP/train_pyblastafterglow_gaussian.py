@@ -17,17 +17,17 @@ tmax = 2000
 numin = 1e9 # Hz 
 numax = 5e18
 
-n_training = 56_930
-n_val = 8750
+n_training = 91670
+n_val = 7676
 n_pca = 50
 
-name = "pbag_tophat"
-outdir = f"./model/"
-file = "../training_data/pyblastafterglow_tophat_raw_data.h5"
+name = "pbag_gaussian"
+outdir = f"../../../src/fiesta/surrogates/GRB/pbag_gaussian_MLP/model/"
+file = "../data/pyblastafterglow_gaussian_raw_data.h5"
 
 config = NeuralnetConfig(output_size=n_pca,
-                         nb_epochs=300_000,
-                         hidden_layer_sizes = [300, 600, 300],
+                         nb_epochs=200_000,
+                         hidden_layer_sizes = [256, 512, 256],
                          learning_rate =5e-3)
 
 ###############
@@ -42,15 +42,15 @@ data_manager_args = dict(file = file,
                            tmax= tmax,
                            numin = numin,
                            numax = numax,
-                           special_training=[])
+                           special_training=["01"])
 
 trainer = PCATrainer(name,
                      outdir,
                      data_manager_args = data_manager_args,
                      plots_dir=f"./benchmarks/",
                      n_pca = n_pca,
-                     conversion="thetaCore_inclination",
-                     save_preprocessed_data=False
+                     conversion="thetaWing_inclination",
+                     save_preprocessed_data=True
                      )
 
 ###############
@@ -68,7 +68,7 @@ print("Producing example lightcurve . . .")
 FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
 lc_model = AfterglowFlux(name,
-                         directory="./model",
-                         filters = FILTERS)
+                          outdir, 
+                          filters = FILTERS)
 
 trainer.plot_example_lc(lc_model)

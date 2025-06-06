@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import h5py
 
-from fiesta.train.FluxTrainer import PCATrainer
+from fiesta.train.FluxTrainer import CVAETrainer
 from fiesta.inference.lightcurve_model import AfterglowFlux
 from fiesta.train.neuralnets import NeuralnetConfig
 
@@ -19,16 +19,16 @@ numax = 5e18
 
 n_training = 91670
 n_val = 7676
-n_pca = 50
+image_size = np.array([42, 57])
 
 name = "pbag_gaussian"
-outdir = f"./model/"
+outdir = f"../../../src/fiesta/surrogates/GRB/pbag_gaussian_CVAE/model/"
 file = "../data/pyblastafterglow_gaussian_raw_data.h5"
 
-config = NeuralnetConfig(output_size=n_pca,
-                         nb_epochs=200_000,
-                         hidden_layer_sizes = [256, 512, 256],
-                         learning_rate =5e-3)
+config = NeuralnetConfig(output_size= int(np.prod(image_size)),
+                         nb_epochs=250_000,
+                         hidden_layer_sizes = [600, 400, 200],
+                         learning_rate =2e-4)
 
 ###############
 ### TRAINER ###
@@ -44,13 +44,13 @@ data_manager_args = dict(file = file,
                            numax = numax,
                            special_training=["01"])
 
-trainer = PCATrainer(name,
+trainer = CVAETrainer(name,
                      outdir,
                      data_manager_args = data_manager_args,
                      plots_dir=f"./benchmarks/",
-                     n_pca = n_pca,
+                     image_size= image_size,
                      conversion="thetaWing_inclination",
-                     save_preprocessed_data=True
+                     save_preprocessed_data=False
                      )
 
 ###############
