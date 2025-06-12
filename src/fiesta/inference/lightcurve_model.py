@@ -206,7 +206,7 @@ class SurrogateModel:
         
         times, mag_apps = jax.vmap(predict_single)(X_array)
 
-        return times[0], mag_apps
+        return times, mag_apps
     
     def __repr__(self) -> str:
         return self.name
@@ -455,7 +455,7 @@ class FluxModel(SurrogateModel):
         logflux = logflux.reshape(len(self.nus), len(self.times))
         return logflux
     
-class CombinedSurrogate:
+class CombinedSurrogate(SurrogateModel):
     def __init__(self,
                  models: list[SurrogateModel],
                  sample_times: Array

@@ -101,8 +101,9 @@ class EMLikelihood:
         
         self.detection_limit = detection_limit
         
-        # Process error budget
-        self._setup_sys_uncertainty(sys_uncertainty_type="fixed", error_budget=error_budget)
+        # Process error budget, only for default behavior
+        # fiesta class will overwrite the systematic uncertainty setup later
+        self._setup_sys_uncertainty_fixed(error_budget=error_budget)
                 
         self.fixed_params = fixed_params
         
@@ -111,46 +112,74 @@ class EMLikelihood:
         assert detection_present, "No detections found in the data. Please check your data."
         logger.info("Loading and preprocessing observations in likelihood . . . DONE")
 
-    def _setup_sys_uncertainty(self, sys_uncertainty_type: str, **kwargs):
-
-        if sys_uncertainty_type=="fixed":
-            error_budget = kwargs["error_budget"]
-            if isinstance(error_budget, (int, float)) and not isinstance(error_budget, dict):
-                logger.info("Converting error budget to dictionary.")
-                error_budget = dict(zip(self.filters, [error_budget] * len(self.filters)))
-            self.error_budget = error_budget
-            # Create auxiliary data structures used in calculations
-            self.sigma = {}
-            for filt in self.filters:
-                self.sigma[filt] = jnp.sqrt(self.mag_err[filt] ** 2 + self.error_budget[filt] ** 2)
-
-            self.get_sigma = lambda x: self.sigma
+    def _setup_sys_uncertainty_fixed(self, error_budget: dict | float | int):
         
-        elif sys_uncertainty_type=="free":
-        
-            def _get_sigma(theta):
-                sys_err = theta["sys_err"]
-                sigma = jax.tree.map(lambda mag_err: jnp.sqrt(mag_err**2 + sys_err**2), self.mag_err)
-                return sigma
-            self.get_sigma = _get_sigma
+        # fixed systematic uncertainty
+        if isinstance(error_budget, (int, float)) and not isinstance(error_budget, dict):
+            error_budget = dict(zip(self.filters, [error_budget] * len(self.filters)))
+        self.error_budget = error_budget
+        # Create auxiliary data structures used in calculations
+        self.sigma = {}
+        for filt in self.filters:
+            self.sigma[filt] = jnp.sqrt(self.mag_err[filt] ** 2 + self.error_budget[filt] ** 2)
 
-        elif sys_uncertainty_type=="from_file":
-            self.sys_params_per_filter = kwargs["sys_params_per_filter"]
+        self.get_sigma = lambda x: self.sigma
+        self.get_nondet_sigma = lambda x: self.error_budget
+
+    def _setup_sys_uncertainty_free(self,):
+
+        # freely sampled sys. uncertainty, but same for all filters and times
+        def _sigma(theta):
+            sys_err = theta["sys_err"]
+            sigma = jax.tree.map(lambda mag_err: jnp.sqrt(mag_err**2 + sys_err**2), self.mag_err)
+            return sigma
+        
+        def _nondet_sigma(theta):
+            return theta["sys_err"]
+        
+        self.get_sigma = _sigma
+        self.get_nondet_sigma = _nondet_sigma
+
+    def _setup_sys_uncertainty_from_file(self, 
+                                         sys_params_per_filter: dict[str, list], 
+                                         t_nodes_per_filter: dict[str, Array]):
+        
+        # systematic uncertainty setup from file
+        self.sys_params_per_filter = sys_params_per_filter
+
+        for key in t_nodes_per_filter:
+            if t_nodes_per_filter[key] is None:
+                t_nodes_per_filter[key] = jnp.linspace(self.tmin, self.tmax, len(self.sys_params_per_filter[key]))
+        self.t_nodes_per_filter = t_nodes_per_filter
+
+        def _get_sigma(theta):
+            def add_sys_err(mag_err, time_det, params, t_nodes):
+                sys_param_array = jnp.array([theta[p] for p in params])
+                sigma_sys = jnp.interp(time_det, t_nodes, sys_param_array)
+                return jnp.sqrt(sigma_sys**2 + mag_err **2)
             
-            def _get_sigma(theta):
-                def add_sys_err(mag_err, time_det, params):
-                    sys_param_array = jnp.array([theta[p] for p in params])
-                    t_nodes = jnp.linspace(self.tmin, self.tmax, sys_param_array.shape[0])
-                    sigma_sys = jnp.interp(time_det, t_nodes, sys_param_array)
-                    return jnp.sqrt(sigma_sys**2 + mag_err **2)
-                
-                sigma = jax.tree.map(add_sys_err, self.mag_err, self.times_det, self.sys_params_per_filter)
-                return sigma
-            
-            self.get_sigma = _get_sigma
+            sigma = jax.tree.map(add_sys_err, 
+                                 self.mag_err, 
+                                 self.times_det, 
+                                 self.sys_params_per_filter, 
+                                 self.t_nodes_per_filter)
+            return sigma
         
-        else:
-            raise ValueError(f"sys_uncertainty_type is {sys_uncertainty_type}, but must be either 'fixed', 'free', or 'from_file'.")
+        def _nondet_sigma(theta):
+            def fetch_sigma(time_nondet, params, t_nodes):
+                sys_param_array = jnp.array([theta[p] for p in params])
+                return jnp.interp(time_nondet, t_nodes, sys_param_array)
+
+            sigma = jax.tree.map(fetch_sigma, 
+                                 self.times_nondet, 
+                                 self.sys_params_per_filter, 
+                                 self.t_nodes_per_filter)
+            return sigma
+        
+        self.get_sigma = _get_sigma
+        self.get_nondet_sigma = _nondet_sigma
+
+
         
     def __call__(self, theta):
         return self.evaluate(theta)
@@ -180,7 +209,9 @@ class EMLikelihood:
         mag_est_nondet = jax.tree_util.tree_map(lambda t, m: jnp.interp(t, times, m, left = "extrapolate", right = "extrapolate"),
                                           self.times_nondet, mag_app)
         
+        # Get the systematic uncertainty + data uncertainty
         sigma = self.get_sigma(theta)
+        nondet_sigma = self.get_nondet_sigma(theta)
         
         # Get chisq
         chisq = jax.tree_util.tree_map(self.get_chisq_filt, 
@@ -190,7 +221,7 @@ class EMLikelihood:
         
         # Get gaussprob:
         gaussprob = jax.tree_util.tree_map(self.get_gaussprob_filt, 
-                                 mag_est_nondet, self.mag_nondet, self.error_budget)
+                                 mag_est_nondet, self.mag_nondet, nondet_sigma)
         gaussprob_flatten, _ = jax.flatten_util.ravel_pytree(gaussprob)
         gaussprob_total = jnp.sum(gaussprob_flatten)#.astype(jnp.float64)
         
@@ -262,3 +293,9 @@ class EMLikelihood:
                     mag_nondet, mag_est, error_budget
                     )
         return jnp.sum(gausslogsf)
+    
+    def v_evaluate(self, theta: dict[str, Array]):
+
+        def _evaluate_single(_theta):
+            return self(_theta)
+        return jax.vmap(_evaluate_single)(theta)
