@@ -286,8 +286,8 @@ class Fiesta(object):
         
         for cax, filt in zip(ax, filters):
 
-            lc_plotter.plot_data(cax, filt)
-            lc_plotter.plot_best_fit_lc(cax, filt)
+            lc_plotter.plot_data(cax, filt, color="red")
+            lc_plotter.plot_best_fit_lc(cax, filt, color="blue")
             lc_plotter.plot_sample_lc(cax, filt)
             
             # Make pretty

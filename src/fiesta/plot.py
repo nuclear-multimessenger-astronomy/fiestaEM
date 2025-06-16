@@ -20,6 +20,7 @@ pltparams = {"axes.grid": False,
 plt.rcParams.update(pltparams)
 
 import numpy as np
+import pandas as pd
 
 from jaxtyping import Array
 from fiesta.logging import logger
@@ -124,13 +125,13 @@ def corner_plot(samples: Array,
 class LightcurvePlotter:
     
     def __init__(self, 
-                 posterior: dict,
+                 posterior: dict | pd.DataFrame,
                  likelihood: EMLikelihood,
                  systematics_file: str = None,
                  free_syserr=False):
         
         if systematics_file is not None:
-            sys_params_per_filter, t_nodes_per_filter, _= process_file(systematics_file)
+            sys_params_per_filter, t_nodes_per_filter, _= process_file(systematics_file, filters=likelihood.filters)
             likelihood._setup_sys_uncertainty_from_file(sys_params_per_filter, t_nodes_per_filter)
         
         if free_syserr:
@@ -147,33 +148,32 @@ class LightcurvePlotter:
         self.mag_nondet = likelihood.mag_nondet
 
         self.model = likelihood.model
-        self.posterior = posterior
+        self.posterior = pd.DataFrame(posterior)
         self.fixed_params = likelihood.fixed_params
 
     def plot_data(self, 
                   ax: matplotlib.axes.Axes, 
-                  filt: str, 
-                  color: str="red",
-                  label: str = None,
-                  zorder=3):
+                  filt: str,
+                  zorder=3,
+                  **kwargs):
             
         # Detections
         t, mag, err = self.times_det[filt], self.mag_det[filt], self.mag_err[filt]
-        ax.errorbar(t, mag, yerr=err, fmt="o", color=color, label=label)
+        ax.errorbar(t, mag, yerr=err, fmt="o", zorder=zorder, **kwargs)
             
         # Non-detections
         t, mag = self.times_nondet[filt], self.mag_nondet[filt]
-        ax.scatter(t, mag, marker = "v", color=color, zorder=zorder)
+        ax.scatter(t, mag, zorder=zorder, marker="v", **kwargs)
 
 
     def plot_best_fit_lc(self,
                          ax: matplotlib.axes.Axes,
                          filt: str,
-                         color: str="blue",
-                         zorder=2):
+                         zorder=2,
+                         **kwargs):
 
         self._get_best_fit_lc()
-        ax.plot(self.t_best_fit, self.best_fit_lc[filt], color=color, zorder=zorder, linestyle="solid")
+        ax.plot(self.t_best_fit, self.best_fit_lc[filt], zorder=zorder, **kwargs)
         
     
     def _get_best_fit_lc(self,):
@@ -212,7 +212,7 @@ class LightcurvePlotter:
         if hasattr(self, "_sample_lcs_determined"):
             return
 
-        total_nb_samples = next(iter(self.posterior.values())).shape[0]
+        total_nb_samples = self.posterior.values.shape[0]
         ind = np.random.choice(total_nb_samples, 200, replace=False)
 
         params = {}
@@ -228,8 +228,8 @@ class LightcurvePlotter:
                                   ax: matplotlib.axes.Axes,
                                   filt: str,
                                   systematics_file: str,
-                                  color: str="blue",
-                                  zorder=2):
+                                  zorder=2,
+                                  **kwargs):
         self._get_best_fit_lc()
 
         sys_params_per_filter, t_nodes_per_filter, _ = process_file(systematics_file, [filt])
@@ -243,7 +243,7 @@ class LightcurvePlotter:
         sys_param_array = np.array([self.best_fit_params[p] for p in sys_params_per_filter])
         sigma_sys = np.interp(self.t_best_fit, t_nodes_per_filter, sys_param_array)
 
-        ax.fill_between(self.t_best_fit, self.best_fit_lc[filt] + sigma_sys, self.best_fit_lc[filt] - sigma_sys, color=color, alpha=0.1, zorder=zorder)
+        ax.fill_between(self.t_best_fit, self.best_fit_lc[filt] + sigma_sys, self.best_fit_lc[filt] - sigma_sys, alpha=0.1, zorder=zorder, **kwargs)
 
         
                                   
