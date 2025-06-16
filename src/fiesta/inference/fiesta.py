@@ -310,6 +310,9 @@ class Fiesta(object):
         fig, ax = corner_plot(np.array(samples),
                               self.prior.naming)
         
+        if fig==1:
+            return
+        
         fig.savefig(os.path.join(self.outdir, "corner.pdf"), dpi=250)
 
 

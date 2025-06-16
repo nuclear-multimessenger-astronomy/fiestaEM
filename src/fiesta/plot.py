@@ -1,5 +1,4 @@
 from multiprocessing import Value
-import sys
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -16,7 +15,9 @@ pltparams = {"axes.grid": False,
         "axes.labelsize": 16,
         "legend.fontsize": 16,
         "legend.title_fontsize": 16,
-        "figure.titlesize": 16}
+        "figure.titlesize": 16,
+        "figure.constrained_layout.use": True}
+
 plt.rcParams.update(pltparams)
 
 import numpy as np
@@ -68,7 +69,8 @@ latex_labels=dict(inclination_EM="$\\iota$",
                   Ye_wind="$Y_{e,\\mathrm{wind}}$",
                   luminosity_distance="$d_L$",
                   redshift="$z$",
-                  sys_err="$\\sigma_{\mathrm{sys}}$")
+                  sys_err="$\\sigma_{\mathrm{sys}}$",
+                  Gamma0="$\\Gamma_0$")
 
 
 
@@ -77,38 +79,46 @@ latex_labels=dict(inclination_EM="$\\iota$",
 #######################
 
 
-def corner_plot(samples: Array,
-            parameter_names: list[str],
-            truths: list=None,
-            color:str ="blue",
-            legend_label:str =None):
+def corner_plot(posterior: dict | pd.DataFrame,
+                parameter_names: list[str],
+                truths: dict = None,
+                color:str = "blue",
+                legend_label:str = None,
+                fig: matplotlib.figure.Figure = None,
+                ax: matplotlib.axes.Axes = None):
     
     try:
         import corner
     except ImportError:
         logger.warning(f"Install corner to create corner plots.")
-        return 
+        return 1, 1
+    
+    posterior = pd.DataFrame(posterior)
     
     labels= []
+    truths_list = []
     for p in parameter_names:
         labels.append(latex_labels.get(p, p))
+        truths_list.append(truths.get(p, None))
 
-    if truths is None:
-        truths = [None]*samples.shape[1]
-
+    if fig is None and ax is None:
+        n = len(parameter_names)
+        fig, ax = plt.subplots(n, n, figsize = (n*1.5, n*1.5))
     
-    fig, ax = plt.subplots(samples.shape[1], samples.shape[1], figsize = (samples.shape[1]*1.5, samples.shape[1]*1.5))
-    corner.corner(samples, 
-          fig=fig,
-          color=color,
-          labels=labels,
-          truths=truths,
-          **default_corner_kwargs,
-          hist_kwargs=dict(density=True, color=color))
+    if (fig is None and ax is not None) or (fig is not None and ax is None):
+        raise ValueError("fig and ax must be either both be specified or both be None.")
+
+    corner.corner(posterior[parameter_names], 
+                  fig=fig,
+                  color=color,
+                  labels=labels,
+                  truths=truths_list,
+                  **default_corner_kwargs,
+                  hist_kwargs=dict(density=True, color=color))
     
     if legend_label is not None:
         
-        if samples.shape[1] < 4:
+        if len(parameter_names) < 4:
             lx, ly = 0, -1
         else:
             lx, ly = 1, 4
@@ -116,7 +126,7 @@ def corner_plot(samples: Array,
         handle = plt.plot([],[], color=color)[0]
         ax[lx, ly].legend(handles=[handle], labels=[legend_label], fontsize=15, fancybox=False, framealpha=1)
     
-    fig.tight_layout()
+    #fig.tight_layout()
     return fig, ax
 
 # TODO: superpose multiple posteriors in one corner plot
