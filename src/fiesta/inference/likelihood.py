@@ -135,7 +135,8 @@ class EMLikelihood:
             return sigma
         
         def _nondet_sigma(theta):
-            return theta["sys_err"]
+            sigma = jax.tree.map(lambda mag_nondet: theta["sys_err"], self.mag_nondet)
+            return sigma
         
         self.get_sigma = _sigma
         self.get_nondet_sigma = _nondet_sigma
