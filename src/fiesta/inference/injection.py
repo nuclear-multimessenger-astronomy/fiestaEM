@@ -10,6 +10,7 @@ from fiesta.inference.lightcurve_model import LightcurveModel
 from fiesta.conversions import mag_app_from_mag_abs, apply_redshift
 from fiesta.filters import Filter
 from fiesta.utils import write_event_data
+from fiesta.logging import logger
 
 from fiesta.train.AfterglowData import RunAfterglowpy, RunPyblastafterglow
 
@@ -54,7 +55,7 @@ class InjectionBase:
                  detection_limit: Float = np.inf):
         
         self.Filters = [Filter(filt) for filt in filters]
-        print(f"Creating injection with filters: {filters}")
+        logger.info(f"Creating injection with filters: {filters}")
         self.trigger_time = trigger_time
         self.tmin = tmin
         self.tmax = tmax
