@@ -140,8 +140,8 @@ class Fiesta(object):
         samples, log_prob = production_state["chains"], production_state["log_prob"]
         
         samples = samples.reshape(-1, self.prior.n_dim).T
-        self.posterior = self.prior.add_name(samples)
-        self.posterior["log_prob"] = log_prob.reshape(-1,)
+        self.posterior_samples = self.prior.add_name(samples)
+        self.posterior_samples["log_prob"] = log_prob.reshape(-1,)
         
         # TODO: memory issues cause crash here
         #self.posterior["log_likelihood"] = self.likelihood.v_evaluate(self.posterior)
@@ -249,7 +249,7 @@ class Fiesta(object):
         jnp.savez(name, chains=chains, log_prob=log_prob,
                     local_accs=local_accs, global_accs=global_accs)
         
-        jnp.savez(os.path.join(self.outdir, f"posterior.npz"), **self.posterior)
+        jnp.savez(os.path.join(self.outdir, f"posterior.npz"), **self.posterior_samples)
 
     
     def save_hyperparameters(self):
@@ -275,7 +275,7 @@ class Fiesta(object):
         Plot the data and the posterior lightcurves and the best fit lightcurve more visible on top
         """      
 
-        lc_plotter = LightcurvePlotter(self.posterior,
+        lc_plotter = LightcurvePlotter(self.posterior_samples,
                                        self.likelihood)
 
         filters = self.likelihood.filters
