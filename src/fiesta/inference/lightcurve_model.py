@@ -348,11 +348,13 @@ class FluxModel(SurrogateModel):
         for filter in filters:
             try:
                 Filter = fiesta_filters.Filter(filter)
-                if Filter.nu<self.nus[0] or Filter.nu>self.nus[-1]:
-                    continue
-                self.Filters.append(Filter)
             except:
-                raise Exception(f"Filter {filter} not available.")
+                raise Exception(f"Filter {filter} not available.")                
+                        
+            if Filter.nu<self.nus[0] or Filter.nu>self.nus[-1]:
+                    logger.warning(f"Filter {filter} outside of surrogate frequency range. Removing from model filters.")
+            else: 
+                self.Filters.append(Filter)
         
         self.filters = [filt.name for filt in self.Filters]
         if len(self.filters) == 0:
