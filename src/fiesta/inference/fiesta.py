@@ -302,12 +302,8 @@ class Fiesta(object):
         fig.savefig(os.path.join(self.outdir, "lightcurves.pdf"), bbox_inches = 'tight', dpi=250)
     
     def plot_corner(self,):
-        state = self.Sampler.get_sampler_state(training=False)
-        samples = state["chains"]
-        
-        # Reshape both
-        samples = samples.reshape(-1, self.prior.n_dim)
-        fig, ax = corner_plot(np.array(samples),
+
+        fig, ax = corner_plot(self.posterior_samples,
                               self.prior.naming)
         
         if fig==1:

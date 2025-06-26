@@ -81,7 +81,7 @@ latex_labels=dict(inclination_EM="$\\iota$",
 
 def corner_plot(posterior: dict | pd.DataFrame,
                 parameter_names: list[str],
-                truths: dict = None,
+                truths: dict = {},
                 color:str = "blue",
                 legend_label:str = None,
                 fig: matplotlib.figure.Figure = None,
