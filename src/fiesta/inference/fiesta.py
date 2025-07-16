@@ -293,8 +293,10 @@ class Fiesta(object):
             # Make pretty
             cax.set_ylabel(filt)
             cax.set_xlim(left=np.maximum(self.likelihood.tmin, 1e-4), right=self.likelihood.tmax)
-            cax.invert_yaxis() 
             cax.set_xscale("log")
+            ymin = np.min(np.concatenate([lc_plotter.mag_det[filt], lc_plotter.mag_nondet[filt]])) - 2
+            ymax = np.max(np.concatenate([lc_plotter.mag_det[filt], lc_plotter.mag_nondet[filt]])) + 2
+            cax.set_ylim(ymax, ymin)
         
         ax[-1].set_xlabel("$t$ in days")
         
