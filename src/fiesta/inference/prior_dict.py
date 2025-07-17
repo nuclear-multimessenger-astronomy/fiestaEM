@@ -11,16 +11,12 @@ class ConstrainedPrior(CompositePrior):
     constraints: list[Constraint]
     conversion: Callable
     factor: Float
-    def __init__(self, priors: list, conversion_function: Callable = None, transforms: dict[str, tuple[str, Callable]] = {}):
+    def __init__(self, priors: list, conversion_function: Callable=lambda x: x, transforms: dict[str, tuple[str, Callable]] = {}):
 
         super().__init__([prior for prior in priors if not isinstance(prior, Constraint)])
 
         self.constraints = [constraint for constraint in priors if isinstance(constraint, Constraint)]
-
-        if conversion_function is None:
-            self.conversion = lambda x: x
-        else:
-            self.conversion = conversion_function
+        self.conversion = conversion_function
         
         self._estimate_normalization()
     
@@ -32,9 +28,11 @@ class ConstrainedPrior(CompositePrior):
             samples = super().sample(subkey, n_samples = sampling_chunk)
             constr = ~jnp.isneginf(self.evaluate_constraints(samples))
             factor_estimates.append(sampling_chunk/jnp.sum(constr))
+
         factor_estimates = jnp.array(factor_estimates)
-        decimals = int( -jnp.floor(jnp.log10(3*jnp.std(factor_estimates))) )
-        self.factor = jnp.round(jnp.mean(factor_estimates), decimals)
+        decimals = min(16, -jnp.floor(jnp.log10(3*jnp.std(factor_estimates))))
+        decimals = max(0, decimals)
+        self.factor = jnp.round(jnp.mean(factor_estimates), int(decimals))
        
     def evaluate_constraints(self, samples):
         converted_sample = self.conversion(samples)

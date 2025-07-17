@@ -10,6 +10,7 @@ import jax.numpy as jnp
 
 from fiesta.inference.lightcurve_model import LightcurveModel
 from fiesta.utils import truncated_gaussian
+from fiesta.logging import logger
 
 class EMLikelihood:
     
@@ -33,11 +34,11 @@ class EMLikelihood:
     def __init__(self, 
                  model: LightcurveModel, 
                  data: dict[str, Float[Array, "ntimes 3"]],
-                 filters: list[str] = None,
-                 trigger_time: Float = 0.0,
+                 trigger_time: Float,
                  tmin: Float = 0.0,
                  tmax: Float = 999.0,
-                 error_budget: Float = 1.0,
+                 filters: list[str] =  None,
+                 error_budget: Float = 0.3,
                  conversion_function: Callable = lambda x: x,
                  fixed_params: dict[str, Float] = {},
                  detection_limit: Float = None):
@@ -46,32 +47,23 @@ class EMLikelihood:
         self.model = model
         self.conversion = conversion_function
         if filters is None:
-            filters = model.filters
-        self.filters = filters
+            self.filters = list(model.filters)
+        else:
+            self.filters = []
+            for filt in filters:
+                if filt in self.model.filters:
+                    self.filters.append(filt)
+                else:
+                    logger.warning(f"Filter {filt} from likelihood not in model.filters. Removing for inference.")
+                    continue
+                
         self.trigger_time = trigger_time
         self.tmin = tmin
-        self.tmax = tmax
-        
-        # Process error budget
-        if isinstance(error_budget, (int, float)) and not isinstance(error_budget, dict):
-            print("Converting error budget to dictionary.")
-            error_budget = dict(zip(filters, [error_budget] * len(filters)))
-        self.error_budget = error_budget
-        
-        # Process detection limit
-        if isinstance(detection_limit, (int, float)) and not isinstance(detection_limit, dict):
-            print("Converting detection limit to dictionary.")
-            detection_limit = dict(zip(filters, [detection_limit] * len(filters)))
-        
-        if detection_limit is None:
-            print("NOTE: No detection limit is given. Putting it to infinity.")
-            detection_limit = dict(zip(filters, [jnp.inf] * len(filters)))
-            
-        self.detection_limit = detection_limit
-            
+        self.tmax = tmax            
         # TODO: for times, need to do some cross-checking against the times of the model and raise warnings
             
         # Process the given data
+        logger.info("Loading and preprocessing observations in likelihood . . .")
         self.times_det = {}
         self.mag_det = {}
         self.mag_err = {}
@@ -79,13 +71,17 @@ class EMLikelihood:
         self.times_nondet = {}
         self.mag_nondet = {}
         
-        print("Loading and preprocessing observations in likelihood . . .")
-        
         processed_data = copy.deepcopy(data)
-        
-        for filt in self.filters:
+        for filt in data.keys():
+            if filt not in self.filters:
+                logger.warning(f"Filter {filt} from data not found in likelihood.filters. Removing for inference.")
+                del processed_data[filt]
+
+        filter_copy = self.filters.copy()
+
+        for filt in filter_copy:
             if filt not in processed_data:
-                print(f"NOTE: Filter {filt} not found in the data. Removing for inference.")
+                logger.warning(f"Filter {filt} from likelihood.filters not found in the data. Removing for inference.")
                 self.filters.remove(filt)
                 continue
             
@@ -107,17 +103,97 @@ class EMLikelihood:
             self.times_nondet[filt] = times[idx_is_inf]
             self.mag_nondet[filt] = mag[idx_is_inf]
         
-        # Create auxiliary data structures used in calculations
-        self.sigma = {}
-        for filt in self.filters:
-            self.sigma[filt] = jnp.sqrt(self.mag_err[filt] ** 2 + self.error_budget[filt] ** 2)
-            
+        # Process detection limit
+        if isinstance(detection_limit, (int, float)) and not isinstance(detection_limit, dict):
+            logger.info("Converting detection limit to dictionary.")
+            detection_limit = dict(zip(filters, [detection_limit] * len(self.filters)))
+        
+        if detection_limit is None:
+            logger.info("No detection limit is given. Putting it to infinity.")
+            detection_limit = dict(zip(self.filters, [jnp.inf] * len(self.filters)))
+        
+        self.detection_limit = detection_limit
+        
+        # Process error budget, only for default behavior
+        # fiesta class will overwrite the systematic uncertainty setup later
+        self._setup_sys_uncertainty_fixed(error_budget=error_budget)
+                
         self.fixed_params = fixed_params
         
         # Sanity check:
         detection_present = any([len(self.times_det[filt]) > 0 for filt in self.filters])
         assert detection_present, "No detections found in the data. Please check your data."
-        print("Loading and preprocessing observations in likelihood . . . DONE")
+        logger.info("Loading and preprocessing observations in likelihood . . . DONE")
+
+    def _setup_sys_uncertainty_fixed(self, error_budget: dict | float | int):
+        
+        # fixed systematic uncertainty
+        if isinstance(error_budget, (int, float)) and not isinstance(error_budget, dict):
+            error_budget = dict(zip(self.filters, [error_budget] * len(self.filters)))
+        self.error_budget = error_budget
+        # Create auxiliary data structures used in calculations
+        self.sigma = {}
+        for filt in self.filters:
+            self.sigma[filt] = jnp.sqrt(self.mag_err[filt] ** 2 + self.error_budget[filt] ** 2)
+
+        self.get_sigma = lambda x: self.sigma
+        self.get_nondet_sigma = lambda x: self.error_budget
+
+    def _setup_sys_uncertainty_free(self,):
+
+        # freely sampled sys. uncertainty, but same for all filters and times
+        def _sigma(theta):
+            sys_err = theta["sys_err"]
+            sigma = jax.tree.map(lambda mag_err: jnp.sqrt(mag_err**2 + sys_err**2), self.mag_err)
+            return sigma
+        
+        def _nondet_sigma(theta):
+            sigma = jax.tree.map(lambda mag_nondet: theta["sys_err"], self.mag_nondet)
+            return sigma
+        
+        self.get_sigma = _sigma
+        self.get_nondet_sigma = _nondet_sigma
+
+    def _setup_sys_uncertainty_from_file(self, 
+                                         sys_params_per_filter: dict[str, list], 
+                                         t_nodes_per_filter: dict[str, Array]):
+        
+        # systematic uncertainty setup from file
+        self.sys_params_per_filter = sys_params_per_filter
+
+        for key in t_nodes_per_filter:
+            if t_nodes_per_filter[key] is None:
+                t_nodes_per_filter[key] = jnp.linspace(self.tmin, self.tmax, len(self.sys_params_per_filter[key]))
+        self.t_nodes_per_filter = t_nodes_per_filter
+
+        def _get_sigma(theta):
+            def add_sys_err(mag_err, time_det, params, t_nodes):
+                sys_param_array = jnp.array([theta[p] for p in params])
+                sigma_sys = jnp.interp(time_det, t_nodes, sys_param_array)
+                return jnp.sqrt(sigma_sys**2 + mag_err **2)
+            
+            sigma = jax.tree.map(add_sys_err, 
+                                 self.mag_err, 
+                                 self.times_det, 
+                                 self.sys_params_per_filter, 
+                                 self.t_nodes_per_filter)
+            return sigma
+        
+        def _nondet_sigma(theta):
+            def fetch_sigma(time_nondet, params, t_nodes):
+                sys_param_array = jnp.array([theta[p] for p in params])
+                return jnp.interp(time_nondet, t_nodes, sys_param_array)
+
+            sigma = jax.tree.map(fetch_sigma, 
+                                 self.times_nondet, 
+                                 self.sys_params_per_filter, 
+                                 self.t_nodes_per_filter)
+            return sigma
+        
+        self.get_sigma = _get_sigma
+        self.get_nondet_sigma = _nondet_sigma
+
+
         
     def __call__(self, theta):
         return self.evaluate(theta)
@@ -135,7 +211,7 @@ class EMLikelihood:
         Returns:
             Float: The log-likelihood value at this point.
         """
-        
+
         theta = {**theta, **self.fixed_params}
         theta = self.conversion(theta)
         times, mag_app = self.model.predict(theta)
@@ -147,15 +223,19 @@ class EMLikelihood:
         mag_est_nondet = jax.tree_util.tree_map(lambda t, m: jnp.interp(t, times, m, left = "extrapolate", right = "extrapolate"),
                                           self.times_nondet, mag_app)
         
+        # Get the systematic uncertainty + data uncertainty
+        sigma = self.get_sigma(theta)
+        nondet_sigma = self.get_nondet_sigma(theta)
+        
         # Get chisq
         chisq = jax.tree_util.tree_map(self.get_chisq_filt, 
-                             mag_est_det, self.mag_det, self.sigma, self.detection_limit)
+                             mag_est_det, self.mag_det, sigma, self.detection_limit)
         chisq_flatten, _ = jax.flatten_util.ravel_pytree(chisq)
         chisq_total = jnp.sum(chisq_flatten)#.astype(jnp.float64)
         
         # Get gaussprob:
         gaussprob = jax.tree_util.tree_map(self.get_gaussprob_filt, 
-                                 mag_est_nondet, self.mag_nondet, self.error_budget)
+                                 mag_est_nondet, self.mag_nondet, nondet_sigma)
         gaussprob_flatten, _ = jax.flatten_util.ravel_pytree(gaussprob)
         gaussprob_total = jnp.sum(gaussprob_flatten)#.astype(jnp.float64)
         
@@ -182,7 +262,6 @@ class EMLikelihood:
         Returns:
             Float: The chi-square value for this filter
         """
-        
         return jax.lax.cond(lim == jnp.inf,
                            lambda x: self.compute_chisq(*x),
                            lambda x: self.compute_chisq_trunc(*x),
@@ -196,9 +275,8 @@ class EMLikelihood:
         """
         Return the log likelihood of the chisquare part of the likelihood function, without truncation (no detection limit is given), i.e. a Gaussian pdf. See get_chisq_filt for more details.
         """
-        val = - 0.5 * jnp.sum(
-            (mag_det - mag_est) ** 2 / sigma ** 2
-        )
+        val = - 0.5 * jnp.sum( (mag_det - mag_est) ** 2 / sigma ** 2) 
+        val -= 1/2*jnp.sum(jnp.log(2*jnp.pi*sigma**2))
         return val
     
     @staticmethod
@@ -229,3 +307,9 @@ class EMLikelihood:
                     mag_nondet, mag_est, error_budget
                     )
         return jnp.sum(gausslogsf)
+    
+    def v_evaluate(self, theta: dict[str, Array]):
+
+        def _evaluate_single(_theta):
+            return self(_theta)
+        return jax.vmap(_evaluate_single)(theta)

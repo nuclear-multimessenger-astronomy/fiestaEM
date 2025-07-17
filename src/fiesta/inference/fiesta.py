@@ -1,16 +1,20 @@
 import copy
 import json
 import os
+
 import numpy as np
 import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array, PRNGKeyArray
 
+from fiesta.conversions import mag_app_from_mag_abs
 from fiesta.inference.lightcurve_model import LightcurveModel
 from fiesta.inference.prior import Prior 
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.conversions import mag_app_from_mag_abs
+from fiesta.logging import logger
+from fiesta.plot import corner_plot, LightcurvePlotter
+from fiesta.inference.systematic import setup_systematics_basic, setup_systematic_from_file
 
 from flowMC.sampler.Sampler import Sampler
 from flowMC.sampler.MALA import MALA
@@ -18,13 +22,14 @@ from flowMC.sampler.Gaussian_random_walk import GaussianRandomWalk
 from flowMC.nfmodel.rqSpline import MaskedCouplingRQSpline
 from flowMC.utils.PRNG_keys import initialize_rng_keys
 
+
 default_hyperparameters = {
         "seed": 1,
         "n_chains": 20,
         "num_layers": 10,
         "hidden_size": [128,128],
         "num_bins": 8,
-        "local_sampler_arg": {},
+        "local_sampler_arg": {'eps': 5e-3},
         "which_local_sampler": "MALA"
 }
 
@@ -49,10 +54,25 @@ class Fiesta(object):
 
     def __init__(self, 
                  likelihood: EMLikelihood, 
-                 prior: Prior, 
+                 prior: Prior,
+                 error_budget: float = 0.3,
+                 systematics_file: str = None,
                  **kwargs):
         self.likelihood = likelihood
         self.prior = prior
+        
+        self.outdir = kwargs.get("outdir", "./outdir/")
+        if not os.path.exists(self.outdir):
+            os.mkdir(self.outdir)
+      
+      
+        logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX...")
+
+        # setup the systematic uncertainty
+        if systematics_file is not None:
+            self.likelihood, self.prior = setup_systematic_from_file(self.likelihood, self.prior, systematics_file)
+        else:
+            self.likelihood, self.prior = setup_systematics_basic(self.likelihood, self.prior, error_budget)
 
         # Set and override any given hyperparameters, and save as attribute
         self.hyperparameters = default_hyperparameters
@@ -62,21 +82,23 @@ class Fiesta(object):
             if key in hyperparameter_names:
                 self.hyperparameters[key] = value
         
+        self.hyperparameters["local_sampler_arg"]["step_size"] = self.hyperparameters["local_sampler_arg"]["eps"]*jnp.eye(self.prior.n_dim)
+
         for key, value in self.hyperparameters.items():
             setattr(self, key, value)
 
         rng_key_set = initialize_rng_keys(self.hyperparameters["n_chains"], seed=self.hyperparameters["seed"])
-        local_sampler_arg = kwargs.get("local_sampler_arg", {})
-
+        
+        # set local sampling method
         if self.hyperparameters["which_local_sampler"] == "MALA":
-            print("INFO: Using MALA as local sampler")
+            logger.info("Using MALA as local sampler.")
             local_sampler = MALA(
-                self.posterior, True, local_sampler_arg
+                self.posterior, True, self.local_sampler_arg
             )  # Remember to add routine to find automated mass matrix
         elif self.hyperparameters["which_local_sampler"] == "GaussianRandomWalk":
-            print("INFO: Using gaussian random walk as local sampler")
+            logger.info("Using gaussian random walk as local sampler")
             local_sampler = GaussianRandomWalk(
-                self.posterior, True, local_sampler_arg
+                self.posterior, True, self.local_sampler_arg
             )  # Remember to add routine to find automated mass matrix
         else:   
             sampler = self.hyperparameters["which_local_sampler"]
@@ -95,6 +117,7 @@ class Fiesta(object):
             global_sampler=None,
             **kwargs,
         )
+        logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX... DONE")
 
     def posterior(self, params: Float[Array, " n_dim"], data: dict):
         prior_params = self.prior.add_name(params.T)
@@ -108,7 +131,21 @@ class Fiesta(object):
             initial_guess_named = self.prior.sample(key, self.Sampler.n_chains)
             initial_guess = jnp.stack([initial_guess_named[key] for key in self.prior.naming]).T
         
+        logger.info(f"Starting sampling.")
         self.Sampler.sample(initial_guess, None)  # type: ignore
+        logger.info(f"Sampling finished.")
+
+        # setup the production samples
+        production_state = self.Sampler.get_sampler_state(training=False)
+        samples, log_prob = production_state["chains"], production_state["log_prob"]
+        
+        samples = samples.reshape(-1, self.prior.n_dim).T
+        self.posterior_samples = self.prior.add_name(samples)
+        self.posterior_samples["log_prob"] = log_prob.reshape(-1,)
+        
+        # TODO: memory issues cause crash here
+        #self.posterior["log_likelihood"] = self.likelihood.v_evaluate(self.posterior)
+
 
     def print_summary(self, transform: bool = True):
         """
@@ -166,6 +203,7 @@ class Fiesta(object):
         print(
             f"Global acceptance: {production_global_acceptance.mean():.3f} +/- {production_global_acceptance.std():.3f}"
         )
+        print("=" * 10)
 
     def get_samples(self, training: bool = False) -> dict:
         """
@@ -190,10 +228,10 @@ class Fiesta(object):
         chains = self.prior.transform(self.prior.add_name(chains.transpose(2, 0, 1)))
         return chains
     
-    def save_results(self, outdir):
+    def save_results(self):
         # - training phase
-        name = os.path.join(outdir, f'results_training.npz')
-        print(f"Saving training samples to {name}")
+        name = os.path.join(self.outdir, f'results_training.npz')
+        logger.info(f"Saving training samples to {name}")
         state = self.Sampler.get_sampler_state(training=True)
         chains, log_prob, local_accs, global_accs, loss_vals = state["chains"], state["log_prob"], state["local_accs"], state["global_accs"], state["loss_vals"]
         local_accs = jnp.mean(local_accs, axis=0)
@@ -202,16 +240,19 @@ class Fiesta(object):
                 global_accs=global_accs, loss_vals=loss_vals)
         
         #  - production phase
-        name = os.path.join(outdir, f'results_production.npz')
-        print(f"Saving production samples to {name}")
+        name = os.path.join(self.outdir, f'results_production.npz')
+        logger.info(f"Saving production samples to {name}")
         state = self.Sampler.get_sampler_state(training=False)
         chains, log_prob, local_accs, global_accs = state["chains"], state["log_prob"], state["local_accs"], state["global_accs"]
         local_accs = jnp.mean(local_accs, axis=0)
         global_accs = jnp.mean(global_accs, axis=0)
         jnp.savez(name, chains=chains, log_prob=log_prob,
                     local_accs=local_accs, global_accs=global_accs)
+        
+        jnp.savez(os.path.join(self.outdir, f"posterior.npz"), **self.posterior_samples)
+
     
-    def save_hyperparameters(self, outdir):
+    def save_hyperparameters(self):
         
         # Convert step_size to list for JSON formatting
         if "step_size" in self.hyperparameters["local_sampler_arg"].keys():
@@ -221,94 +262,55 @@ class Fiesta(object):
                                 "jim": self.hyperparameters}
         
         try:
-            name = outdir + "hyperparams.json"
+            name = os.path.join(self.outdir, "hyperparams.json")
             with open(name, 'w') as file:
                 json.dump(hyperparameters_dict, file)
         except Exception as e:
-            print(f"Error occurred saving jim hyperparameters, are all hyperparams JSON compatible?: {e}")
+            logger.error(f"Error occurred saving jim hyperparameters, are all hyperparams JSON compatible?: {e}")
             
 
-    def plot_lightcurves(self,
-                         N_curves: int = 200):
+    def plot_lightcurves(self,):
         
         """
         Plot the data and the posterior lightcurves and the best fit lightcurve more visible on top
-        """
+        """      
 
-        production_state = self.Sampler.get_sampler_state(training=False)
-        samples, log_prob = production_state["chains"], production_state["log_prob"]
-        
-        # Reshape both
-        samples = samples.reshape(-1, self.prior.n_dim).T
-        log_prob = log_prob.reshape(-1)
-        
-        # Get the best fit lightcurve
-        best_fit_idx = np.argmax(log_prob)
-        best_fit_params = samples[:, best_fit_idx]
-        best_fit_params_named = self.prior.add_name(best_fit_params)
-        
-        # Limit N_curves if necessary
-        total_nb_samples = samples.shape[1]
-        N_curves = min(N_curves, total_nb_samples)
-        
-        # Randomly sample N_curves samples
-        idx = np.random.choice(total_nb_samples, N_curves, replace=False)
-        samples = samples[:, idx]
-        log_prob = log_prob[idx]
-        
+        lc_plotter = LightcurvePlotter(self.posterior_samples,
+                                       self.likelihood)
+
         filters = self.likelihood.filters
-        tmin, tmax = self.likelihood.tmin, self.likelihood.tmax
-        
+
         ### Plot the data
         height = len(filters) * 2.5
-        plt.subplots(nrows = len(filters), ncols = 1, figsize = (8, height))
-        zorder = 3
-        for i, filt in enumerate(filters):
-            ax = plt.subplot(len(filters), 1, i + 1)
-            
-            # Detections
-            t, mag, err = self.likelihood.times_det[filt], self.likelihood.mag_det[filt], self.likelihood.mag_err[filt]
-            ax.errorbar(t, mag, yerr=err, fmt = "o", color = "red", label = "Data")
-            
-            # Non-detections
-            t, mag = self.likelihood.times_nondet[filt], self.likelihood.mag_nondet[filt]
-            ax.scatter(t, mag, marker = "v", color = "red", zorder = zorder)
-            
-        ### Plot bestfit LC
-        best_fit_params_named.update(self.likelihood.fixed_params)
+        fig, ax = plt.subplots(nrows = len(filters), ncols = 1, figsize = (8, height))
         
-        zorder = 2
-        # Predict and convert to apparent magnitudes
-        best_fit_params_named = self.likelihood.conversion(best_fit_params_named)
-        time_obs, mag_bestfit = self.likelihood.model.predict(best_fit_params_named)
+        for cax, filt in zip(ax, filters):
 
-        for i, filter_name in enumerate(filters):
-            ax = plt.subplot(len(filters), 1, i + 1)
-            mag = mag_bestfit[filter_name]
-            mask = (time_obs >= tmin) & (time_obs <= tmax)
-            ax.plot(time_obs[mask], mag[mask], color = "blue", label = "Best fit", zorder = zorder)
+            lc_plotter.plot_data(cax, filt, color="red")
+            lc_plotter.plot_best_fit_lc(cax, filt, color="blue")
+            lc_plotter.plot_sample_lc(cax, filt)
             
-        # Other samples
-        zorder = 1
-        for sample in samples.T:
-            sample_named = self.prior.add_name(sample)
-            sample_named.update(self.likelihood.fixed_params)
-            sample_named = self.likelihood.conversion(sample_named)
-            time_obs, mag = self.likelihood.model.predict(sample_named)
-            mask = (time_obs >= tmin) & (time_obs <= tmax)
-
-            for i, filter_name in enumerate(filters):
-                ax = plt.subplot(len(filters), 1, i + 1)
-                ax.plot(time_obs[mask], mag[filter_name][mask], color = "gray", alpha = 0.05, zorder = zorder)
+            # Make pretty
+            cax.set_ylabel(filt)
+            cax.set_xlim(left=np.maximum(self.likelihood.tmin, 1e-4), right=self.likelihood.tmax)
+            cax.set_xscale("log")
+            ymin = np.min(np.concatenate([lc_plotter.mag_det[filt], lc_plotter.mag_nondet[filt]])) - 2
+            ymax = np.max(np.concatenate([lc_plotter.mag_det[filt], lc_plotter.mag_nondet[filt]])) + 2
+            cax.set_ylim(ymax, ymin)
         
-        ### Make pretty
-        for i, filter_name in enumerate(filters):
-            ax = plt.subplot(len(filters), 1, i + 1)
-            ax.set_xlabel("Time [days]")
-            ax.set_ylabel(filter_name)
-            ax.set_xlim(right = self.likelihood.tmax + 1)
-            ax.invert_yaxis()  
+        ax[-1].set_xlabel("$t$ in days")
         
         # Save
-        plt.savefig(os.path.join(self.Sampler.outdir, "lightcurves.png"), bbox_inches = 'tight')
-        plt.close()
+        fig.savefig(os.path.join(self.outdir, "lightcurves.pdf"), bbox_inches = 'tight', dpi=250)
+    
+    def plot_corner(self,):
+
+        fig, ax = corner_plot(self.posterior_samples,
+                              self.prior.naming)
+        
+        if fig==1:
+            return
+        
+        fig.savefig(os.path.join(self.outdir, "corner.pdf"), dpi=250)
+
+

@@ -28,7 +28,8 @@ class Filter:
             name (str): Name of the filter. Will be either passed to sncosmo to get the optical bandpass, or the unit at the end will be used to create a monochromatic filter. Supported units are keV and GHz.
         """
         self.name = name
-        if (self.name, None) in _BANDPASSES._primary_loaders:
+
+        if self.name in list(map(lambda x: x[0], _BANDPASSES._primary_loaders)):
             bandpass = get_bandpass(self.name) # sncosmo bandpass
             self.nu = constants.c / (bandpass.wave_eff*1e-10)
             self.nus = constants.c / (bandpass.wave[::-1]*1e-10)
@@ -40,7 +41,7 @@ class Filter:
 
             self.filt_type = "bandpass"
             
-        elif (self.name, None) in _BANDPASS_INTERPOLATORS._primary_loaders:
+        elif self.name in list(map(lambda x: x[0], _BANDPASS_INTERPOLATORS._primary_loaders)):
             bandpass = get_bandpass(self.name, 0) # these bandpass interpolators require a radius (here by default 0 cm)
             self.nu = constants.c/(bandpass.wave_eff*1e-10)
             self.nus = constants.c / (bandpass.wave[::-1]*1e-10)
@@ -61,21 +62,24 @@ class Filter:
             self.filt_type = "monochromatic"
 
         elif self.name.endswith("keV"):
-            energy = re.findall(r"[-+]?(?:\d*\.*\d+)", self.name.replace("-",""))
-            energy = float(energy[-1])
-            self.nu = energy*1000*constants.eV / constants.h
-            self.nus = jnp.array([self.nu])
-            self.trans = jnp.ones(1)
-            self.filt_type = "monochromatic"
+            if bool(re.match(r'^.*[^0-9.]-\d+(\.\d*)?keV$', self.name)):
+                energy = float(re.findall(r"\d+(?:\.\d*)?", self.name)[-1])
+                self.nu = energy*1000*constants.eV / constants.h
+                self.nus = jnp.array([self.nu])
+                self.trans = jnp.ones(1)
+                self.filt_type = "monochromatic"
 
-        elif self.name.startswith("XRT"):
-            energy1, energy2 = re.findall(r"\d+\.\d+|\d+", self.name)
-            nu1 = float(energy1)*1000*constants.eV / constants.h
-            nu2 = float(energy2)*1000*constants.eV / constants.h
-            self.nus = jnp.linspace(nu1, nu2, 10)
-            self.trans = jnp.ones_like(self.nus)
-            self.nu = jnp.mean(self.nus)
-            self.filt_type = "integrated"
+            elif bool(re.match(r'^.*[^0-9.]-\d+(\.\d*)?-\d+(\.\d*)?keV$', self.name)):
+                energy1, energy2 = re.findall(r"\d+(?:\.\d*)?", self.name)
+                nu1 = float(energy1)*1000*constants.eV / constants.h
+                nu2 = float(energy2)*1000*constants.eV / constants.h
+                self.nus = jnp.linspace(nu1, nu2, 20)
+                self.trans = jnp.ones_like(self.nus)
+                self.nu = jnp.mean(self.nus)
+                self.filt_type = "integrated"
+            
+            else: 
+                raise ValueError(f"X-ray filter {self.name} must either be in format 'X-ray-*-keV' or 'X-ray-*-*-keV' ")
 
         else:
             raise ValueError(f"Filter {self.name} not recognized")
