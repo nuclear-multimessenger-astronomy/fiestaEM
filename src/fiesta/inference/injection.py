@@ -10,6 +10,7 @@ from fiesta.inference.lightcurve_model import LightcurveModel
 from fiesta.conversions import mag_app_from_mag_abs, apply_redshift
 from fiesta.filters import Filter
 from fiesta.utils import write_event_data
+from fiesta.logging import logger
 
 from fiesta.train.AfterglowData import RunAfterglowpy, RunPyblastafterglow
 
@@ -33,8 +34,9 @@ class InjectionBase:
         N_datapoints (int): Total number of datapoints (across all filters) for the synthetic lightcurve. Defaults to 10.
         t_detect (dict[str, Array]): Detection time points in each filter. If none is specified, then the detection times will be sampled randomly.
         error_budget (float): Typical measurement error scale of the synthetic data. Defaults to 1.
-        nondetections (bool): Whether to make some of the synthetic datapoints nondetections. Defaults to False.
-        nondetections_fraction: If nondetections is True, then this will determine the fractions of N_datapoints turned into nondetections.
+        detection_limit (float): Synthetic datapoints with mangnitude higher than this value (i.e. less brighter) will be turned into nondetections. Defaults to np.inf.
+        nondetections (bool): Additional to detection_limit, this turns some of the synthetic datapoints to nondetections. Defaults to False.
+        nondetections_fraction: If nondetections is True, then this will determine the fractions of N_datapoints turned into nondetections. Defaults to 0.1.
 
     Then one can call the .create_injection() method to get synthetic lightcurve data. 
     The method .write_to_file() writes the synthetic lightcurve data to file.    
@@ -49,10 +51,11 @@ class InjectionBase:
                  t_detect: dict[str, Array] = None,
                  error_budget: Float = 1.0,
                  nondetections: bool = False,
-                 nondetections_fraction: Float = 0.2):
+                 nondetections_fraction: Float = 0.1,
+                 detection_limit: Float = np.inf):
         
         self.Filters = [Filter(filt) for filt in filters]
-        print(f"Creating injection with filters: {filters}")
+        logger.info(f"Creating injection with filters: {filters}")
         self.trigger_time = trigger_time
         self.tmin = tmin
         self.tmax = tmax
@@ -65,6 +68,7 @@ class InjectionBase:
         self.error_budget = error_budget
         self.nondetections = nondetections
         self.nondetections_fraction = nondetections_fraction
+        self.detection_limit = detection_limit
     
     def create_t_detect(self, tmin, tmax, N):
         """Create a time grid for the injection data."""
@@ -103,9 +107,15 @@ class InjectionBase:
             sigma = np.minimum(sigma, 1)
 
             mag_measured = np.random.normal(loc=mu, scale=sigma)
+            
+            # apply detection limit
+            not_detected = np.where(mag_measured > self.detection_limit)
+            mag_measured[not_detected] = self.detection_limit
+            sigma[not_detected] = np.inf
 
             self.data[Filter.name] = np.array([t_detect + self.trigger_time, mag_measured, sigma]).T
         
+        # add additional non detections
         self.randomize_nondetections()
     
     def _get_injection_lc_from_file(self, injection_dict, file):
@@ -237,3 +247,13 @@ class InjectionPyblastafterglow(InjectionBase):
             mags[Filter.name] = Filter.get_mag(mJys, nus)
         
         return times, mags
+
+class InjectionKN(InjectionBase):
+
+    def __init__(self,
+                 *args,
+                 **kwargs):
+        super().__init__(*args, **kwargs)
+    
+    def _get_injection_lc(self, injection_dict):
+        raise NotImplementedError(f"No direct calculation for KN injection available, use a training data file instead.")

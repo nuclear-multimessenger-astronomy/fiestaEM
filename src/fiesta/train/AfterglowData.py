@@ -13,7 +13,7 @@ import afterglowpy as grb
 
 class AfterglowData:
     def __init__(self,
-                 outdir: str,
+                 outfile: str,
                  n_training: int, 
                  n_val: int,
                  n_test: int,
@@ -28,10 +28,10 @@ class AfterglowData:
                  n_nu: int = 256,
                  fixed_parameters: dict = {}) -> None:
         
-        self.outdir = outdir
-        if not os.path.exists(self.outdir):
-            os.makedirs(self.outdir)
-        self.outfile = os.path.join(self.outdir, self.outfile)
+        outdir = os.path.dirname(outfile)
+        if not os.path.exists(outdir):
+            os.makedirs(outdir)
+        self.outfile = outfile
 
         self.n_training = n_training
         self.n_val = n_val
@@ -221,7 +221,6 @@ class AfterglowData:
 class AfterglowpyData(AfterglowData):
 
     def __init__(self, n_pool: int, *args, **kwargs):
-        self.outfile = "afterglowpy_raw_data.h5"
         self.n_pool = n_pool
         self.chunk_size = 1000
         super().__init__(*args, **kwargs)
@@ -246,7 +245,6 @@ class AfterglowpyData(AfterglowData):
 class PyblastafterglowData(AfterglowData):
 
     def __init__(self, path_to_exec: str, pbag_kwargs: dict = None, rank: int = 0, *args, **kwargs):
-        self.outfile = f"pyblastafterglow_raw_data_{rank}.h5"
         self.chunk_size = 10
         self.rank = rank
         self.path_to_exec = path_to_exec
@@ -275,10 +273,11 @@ class PyblastafterglowData(AfterglowData):
             except:
                 try: 
                     # increase blast wave evolution time grid if there is an error
+                    old_ntb = pbag.ntb
                     pbag.ntb = 3000 
                     idx, out = pbag(j)
                     y[idx] = out
-                    pbag.ntb = self.pbag_kwargs["ntb"]
+                    pbag.ntb = old_ntb
                 except:
                     y[j] = np.full(len(self.times)*len(self.nus), np.nan)           
         return X, y
@@ -485,6 +484,7 @@ class RunPyblastafterglow:
                     p_fs= params_dict["p"], # microphysics - FS - slope of the injection electron spectrum
                     do_lc='yes',      # task - compute light curves
                     rtol_theta = self.rtol,
+                    method_limit_spread=None,
                     # save_spec='yes' # save comoving spectra 
                     # method_synchrotron_fs = 'Joh06',
                     # method_ne_fs = 'usenprime',
