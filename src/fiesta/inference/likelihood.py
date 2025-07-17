@@ -34,10 +34,10 @@ class EMLikelihood:
     def __init__(self, 
                  model: LightcurveModel, 
                  data: dict[str, Float[Array, "ntimes 3"]],
-                 filters: list[str] = None,
-                 trigger_time: Float = 0.0,
+                 trigger_time: Float,
                  tmin: Float = 0.0,
                  tmax: Float = 999.0,
+                 filters: list[str] =  None,
                  error_budget: Float = 0.3,
                  conversion_function: Callable = lambda x: x,
                  fixed_params: dict[str, Float] = {},
@@ -47,8 +47,16 @@ class EMLikelihood:
         self.model = model
         self.conversion = conversion_function
         if filters is None:
-            filters = model.filters
-        self.filters = list(filters)
+            self.filters = list(model.filters)
+        else:
+            self.filters = []
+            for filt in filters:
+                if filt in self.model.filters:
+                    self.filters.append(filt)
+                else:
+                    logger.warning(f"Filter {filt} from likelihood not in model.filters. Removing for inference.")
+                    continue
+                
         self.trigger_time = trigger_time
         self.tmin = tmin
         self.tmax = tmax            
@@ -64,11 +72,16 @@ class EMLikelihood:
         self.mag_nondet = {}
         
         processed_data = copy.deepcopy(data)
+        for filt in data.keys():
+            if filt not in self.filters:
+                logger.warning(f"Filter {filt} from data not found in likelihood.filters. Removing for inference.")
+                del processed_data[filt]
+
         filter_copy = self.filters.copy()
 
         for filt in filter_copy:
             if filt not in processed_data:
-                logger.warning(f"Filter {filt} not found in the data. Removing for inference.")
+                logger.warning(f"Filter {filt} from likelihood.filters not found in the data. Removing for inference.")
                 self.filters.remove(filt)
                 continue
             
@@ -93,11 +106,11 @@ class EMLikelihood:
         # Process detection limit
         if isinstance(detection_limit, (int, float)) and not isinstance(detection_limit, dict):
             logger.info("Converting detection limit to dictionary.")
-            detection_limit = dict(zip(filters, [detection_limit] * len(filters)))
+            detection_limit = dict(zip(filters, [detection_limit] * len(self.filters)))
         
         if detection_limit is None:
             logger.info("No detection limit is given. Putting it to infinity.")
-            detection_limit = dict(zip(filters, [jnp.inf] * len(filters)))
+            detection_limit = dict(zip(self.filters, [jnp.inf] * len(self.filters)))
         
         self.detection_limit = detection_limit
         
