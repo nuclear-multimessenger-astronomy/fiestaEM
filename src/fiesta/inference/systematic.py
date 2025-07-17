@@ -80,7 +80,7 @@ def process_file(systematic_file, filters):
 
         for filt in filters:
             sys_params_per_filter[filt] = sys_parameters
-            time_nodes_per_filter = t_range
+            time_nodes_per_filter[filt] = t_range
     
     elif "individual" in yaml_dict.keys():
         if len(yaml_dict.keys())>1:
@@ -100,7 +100,7 @@ def process_file(systematic_file, filters):
                 additional_priors.append(sys_prior)
         
             sys_params_per_filter[filt] = sys_parameters
-            time_nodes_per_filter = t_range
+            time_nodes_per_filter[filt] = t_range
     
     else:
         yaml_dict = check_filter_compatability(yaml_dict, filters)

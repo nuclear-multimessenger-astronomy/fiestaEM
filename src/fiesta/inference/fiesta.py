@@ -140,8 +140,8 @@ class Fiesta(object):
         samples, log_prob = production_state["chains"], production_state["log_prob"]
         
         samples = samples.reshape(-1, self.prior.n_dim).T
-        self.posterior = self.prior.add_name(samples)
-        self.posterior["log_prob"] = log_prob.reshape(-1,)
+        self.posterior_samples = self.prior.add_name(samples)
+        self.posterior_samples["log_prob"] = log_prob.reshape(-1,)
         
         # TODO: memory issues cause crash here
         #self.posterior["log_likelihood"] = self.likelihood.v_evaluate(self.posterior)
@@ -249,7 +249,7 @@ class Fiesta(object):
         jnp.savez(name, chains=chains, log_prob=log_prob,
                     local_accs=local_accs, global_accs=global_accs)
         
-        jnp.savez(os.path.join(self.outdir, f"posterior.npz"), **self.posterior)
+        jnp.savez(os.path.join(self.outdir, f"posterior.npz"), **self.posterior_samples)
 
     
     def save_hyperparameters(self):
@@ -275,7 +275,7 @@ class Fiesta(object):
         Plot the data and the posterior lightcurves and the best fit lightcurve more visible on top
         """      
 
-        lc_plotter = LightcurvePlotter(self.posterior,
+        lc_plotter = LightcurvePlotter(self.posterior_samples,
                                        self.likelihood)
 
         filters = self.likelihood.filters
@@ -293,8 +293,10 @@ class Fiesta(object):
             # Make pretty
             cax.set_ylabel(filt)
             cax.set_xlim(left=np.maximum(self.likelihood.tmin, 1e-4), right=self.likelihood.tmax)
-            cax.invert_yaxis() 
             cax.set_xscale("log")
+            ymin = np.min(np.concatenate([lc_plotter.mag_det[filt], lc_plotter.mag_nondet[filt]])) - 2
+            ymax = np.max(np.concatenate([lc_plotter.mag_det[filt], lc_plotter.mag_nondet[filt]])) + 2
+            cax.set_ylim(ymax, ymin)
         
         ax[-1].set_xlabel("$t$ in days")
         
@@ -302,12 +304,8 @@ class Fiesta(object):
         fig.savefig(os.path.join(self.outdir, "lightcurves.pdf"), bbox_inches = 'tight', dpi=250)
     
     def plot_corner(self,):
-        state = self.Sampler.get_sampler_state(training=False)
-        samples = state["chains"]
-        
-        # Reshape both
-        samples = samples.reshape(-1, self.prior.n_dim)
-        fig, ax = corner_plot(np.array(samples),
+
+        fig, ax = corner_plot(self.posterior_samples,
                               self.prior.naming)
         
         if fig==1:

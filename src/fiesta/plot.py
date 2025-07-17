@@ -1,4 +1,3 @@
-from multiprocessing import Value
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -16,7 +15,7 @@ pltparams = {"axes.grid": False,
         "legend.fontsize": 16,
         "legend.title_fontsize": 16,
         "figure.titlesize": 16,
-        "figure.constrained_layout.use": True}
+        "figure.constrained_layout.use": False}
 
 plt.rcParams.update(pltparams)
 
@@ -81,7 +80,7 @@ latex_labels=dict(inclination_EM="$\\iota$",
 
 def corner_plot(posterior: dict | pd.DataFrame,
                 parameter_names: list[str],
-                truths: dict = None,
+                truths: dict = {},
                 color:str = "blue",
                 legend_label:str = None,
                 fig: matplotlib.figure.Figure = None,
@@ -140,11 +139,15 @@ class LightcurvePlotter:
                  systematics_file: str = None,
                  free_syserr=False):
         
+        self.systematics = "fixed"
         if systematics_file is not None:
+            self.systematics = "from_file"
             sys_params_per_filter, t_nodes_per_filter, _= process_file(systematics_file, filters=likelihood.filters)
             likelihood._setup_sys_uncertainty_from_file(sys_params_per_filter, t_nodes_per_filter)
+            self.systematics_file = systematics_file
         
         if free_syserr:
+            self.systematics = "free"
             likelihood._setup_sys_uncertainty_free()
         
         self.likelihood = likelihood
@@ -197,6 +200,7 @@ class LightcurvePlotter:
             self.best_fit_params[key] = self.posterior[key][best_ind]
         
         self.best_fit_params.update(self.fixed_params)
+        self.best_fit_params = self.likelihood.conversion(self.best_fit_params)
 
         t, model_mag = self.model.predict(self.best_fit_params)
         mask = (t>=self.tmin) & (t<=self.tmax)
@@ -227,31 +231,40 @@ class LightcurvePlotter:
 
         params = {}
         for key in self.posterior.keys():
-            params[key] = self.posterior[key][ind]
+            params[key] = self.posterior[key][ind].to_numpy()
         for key in self.fixed_params:
             params[key] = np.ones(200) * self.fixed_params[key]
         
+        params = self.likelihood.conversion(params)
         self.t_sample_lc, self.sample_lc = self.model.vpredict(params)
         self._sample_lcs_determined = True
 
     def plot_sys_uncertainty_band(self,
                                   ax: matplotlib.axes.Axes,
                                   filt: str,
-                                  systematics_file: str,
                                   zorder=2,
                                   **kwargs):
         self._get_best_fit_lc()
 
-        sys_params_per_filter, t_nodes_per_filter, _ = process_file(systematics_file, [filt])
-        sys_params_per_filter = sys_params_per_filter[filt]
-        t_nodes_per_filter = t_nodes_per_filter[filt]
+        if self.systematics=="from_file":
 
-        if t_nodes_per_filter is None:
-            t_nodes_per_filter = np.linspace(self.tmin, self.tmax, len(sys_params_per_filter))
+            sys_params_per_filter, t_nodes_per_filter, _ = process_file(self.systematics_file, [filt])
+            sys_params_per_filter = sys_params_per_filter[filt]
+            t_nodes_per_filter = t_nodes_per_filter[filt]
+    
+            if t_nodes_per_filter is None:
+                t_nodes_per_filter = np.linspace(self.tmin, self.tmax, len(sys_params_per_filter))
+            
+            
+            sys_param_array = np.array([self.best_fit_params[p] for p in sys_params_per_filter])
+            sigma_sys = np.interp(self.t_best_fit, t_nodes_per_filter, sys_param_array)
+
+        elif self.systematics=="free":
+
+            sigma_sys = self.best_fit_params["sys_err"]
         
-        
-        sys_param_array = np.array([self.best_fit_params[p] for p in sys_params_per_filter])
-        sigma_sys = np.interp(self.t_best_fit, t_nodes_per_filter, sys_param_array)
+        else:
+            sigma_sys  = self.likelihood.error_budget
 
         ax.fill_between(self.t_best_fit, self.best_fit_lc[filt] + sigma_sys, self.best_fit_lc[filt] - sigma_sys, alpha=0.1, zorder=zorder, **kwargs)
 
