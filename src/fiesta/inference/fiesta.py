@@ -311,6 +311,6 @@ class Fiesta(object):
         if fig==1:
             return
         
-        fig.savefig(os.path.join(self.outdir, "corner.pdf"), dpi=250)
+        fig.savefig(os.path.join(self.outdir, "corner.pdf"), dpi=250, bbox_inches='tight')
 
 
