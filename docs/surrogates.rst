@@ -43,11 +43,18 @@ To perform light curve analyses where the emission might arise from multiple pro
 
 .. code:: python
 
-    from fiesta.inference.lightcurve_model import BullaLightcurveModel, AfterglowFlux
+    from fiesta.inference.lightcurve_model import BullaLightcurveModel, AfterglowFlux, CombinedSurrogate
     
-    model_flux = AfterglowFlux(name="my_surrogate",
-                               filters = ["radio-3GHz", "bessellv", "X-ray-1keV"],
-                               directory= "/path/to/my/dir")
+    model1 = AfterglowFlux(name="afgpy_gaussian_CVAE",
+                           filters = FILTERS)
+    
+    model2 = BullaFlux(name="Bu2025_MLP",
+                                  filters = FILTERS)
+    
+    model = CombinedSurrogate(models=[model1, model2],
+                              sample_times=jnp.geomspace(0.3, 1000, 200))
+
+The fluxes of ``model1`` and ``model2`` are simply added in the respective photometric bands. If ``model1`` or ``model2`` fall outside the time range of the ``sample_times`` argument, they are simply set to ``jnp.inf`` mag there.
 
 
 
