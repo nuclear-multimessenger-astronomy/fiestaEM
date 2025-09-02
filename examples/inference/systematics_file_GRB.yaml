@@ -1,0 +1,7 @@
+collective:
+    time_nodes: 1
+    time_range: log 10 1000
+    prior: Uniform
+    params:
+        xmin: 0.3
+        xmax: 1.
