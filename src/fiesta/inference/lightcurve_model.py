@@ -21,6 +21,27 @@ from fiesta import filters as fiesta_filters
 from fiesta.logging import logger
 
 
+###########################
+### BUILT-IN SURROGATES ###
+###########################
+
+
+def list_built_in_surrogates():
+    current_dir = Path(__file__).resolve().parent
+    surrogate_dir = current_dir.parent / "surrogates"
+    
+    logger.info(f"Available built-in surrogates in fiesta are:")
+
+    for transient_dir in surrogate_dir.iterdir():
+        transient_type = transient_dir.name
+
+        for model_dir in transient_dir.iterdir():
+            model_name = model_dir.name
+
+            if not model_name.startswith("_"):
+                logger.info(f"\t {model_name} ({transient_type})")
+
+
 def get_default_directory(name):
     current_dir = Path(__file__).resolve().parent
     surrogate_dir = current_dir.parent / "surrogates"
@@ -110,6 +131,7 @@ class SurrogateModel:
 
         #load times
         self.times = metadata["times"]
+        logger.info(f"Surrogate {self.name} is loading with source-frame time range {self.times[[0, -1]]} days.")
 
         #load nus
         if "nus" in metadata.keys():
@@ -236,7 +258,7 @@ class LightcurveModel(SurrogateModel):
         # Load the filters and networks
         self.load_filters(filters)
         self.load_networks()
-        logger.info(f"Loaded for surrogate {self.name} from {self.directory}.")
+        logger.info(f"Loaded surrogate {self.name} from {self.directory}. \n \n")
         
     def load_filters(self, filters_args: list[str] = None) -> None:
         # get all possible filters
@@ -351,8 +373,8 @@ class FluxModel(SurrogateModel):
             except:
                 raise Exception(f"Filter {filter} not available.")                
                         
-            if Filter.nu<self.nus[0] or Filter.nu>self.nus[-1]:
-                    logger.warning(f"Filter {filter} outside of surrogate frequency range. Removing from model filters.")
+            if Filter.nus[0]<self.nus[0] or Filter.nus[-1]>self.nus[-1]:
+                    logger.warning(f"Filter {filter} outside of frequency range of {self.name} surrogate. Removing from model filters.")
             else: 
                 self.Filters.append(Filter)
         
