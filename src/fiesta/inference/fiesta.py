@@ -16,15 +16,11 @@ from fiesta.logging import logger
 from fiesta.plot import corner_plot, LightcurvePlotter
 from fiesta.inference.systematic import setup_systematics_basic, setup_systematic_from_file
 
-from flowMC.sampler.Sampler import Sampler
-from flowMC.sampler.MALA import MALA
-from flowMC.sampler.Gaussian_random_walk import GaussianRandomWalk
-from flowMC.nfmodel.rqSpline import MaskedCouplingRQSpline
-from flowMC.utils.PRNG_keys import initialize_rng_keys
+from flowMC.Sampler import Sampler
+from flowMC.resource_strategy_bundle.RQSpline_MALA import RQSpline_MALA_Bundle
 
 
 default_hyperparameters = {
-        "seed": 1,
         "n_chains": 20,
         "num_layers": 10,
         "hidden_size": [128,128],
@@ -35,11 +31,15 @@ default_hyperparameters = {
 
 class Fiesta(object):
     """
-    Master class for interfacing with flowMC
+    Master inference class for interfacing with flowMC.
 
     Args:
-        "seed": "(int) Value of the random seed used",
-        "n_chains": "(int) Number of chains to be used",
+        "likelihood": "(EMLikelihood) likelihood object used for the inference",
+        "prior": "(Prior) prior object used for the inference. It has to contain the parameters needed to evaluate likelihood.evaluate().",
+        "error_budget": "(float) fixed systematic error to use in the inference in mag. Defaults to 0.3 but is ignored when systematics file is provided.",
+        "systematics_file": "(str) path to the .yaml file that provides the setup for the systematic uncertainty parameters. Will overwrite error_budget.",
+        "seed": "(int) Value of the random seed used.",
+        "n_chains": "(int) Number of chains to be run in parallel by the flowMC sampler.",
         "num_layers": "(int) Number of hidden layers of the NF",
         "hidden_size": "List[int, int] Sizes of the hidden layers of the NF",
         "num_bins": "(int) Number of bins used in MaskedCouplingRQSpline",
@@ -57,6 +57,8 @@ class Fiesta(object):
                  prior: Prior,
                  error_budget: float = 0.3,
                  systematics_file: str = None,
+                 seed: int = 42,
+                 n_chains: int = 20,
                  **kwargs):
         self.likelihood = likelihood
         self.prior = prior
@@ -65,7 +67,8 @@ class Fiesta(object):
         if not os.path.exists(self.outdir):
             os.mkdir(self.outdir)
       
-      
+        rng_key = jax.random.PRNGKey(seed)
+
         logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX...")
 
         # setup the systematic uncertainty
@@ -87,34 +90,22 @@ class Fiesta(object):
         for key, value in self.hyperparameters.items():
             setattr(self, key, value)
 
-        rng_key_set = initialize_rng_keys(self.hyperparameters["n_chains"], seed=self.hyperparameters["seed"])
+        # TODO: what if we don't want to use MALA as local sampler?
+        rng_key, subkey = jax.random.split(rng_key)
+        bundle = RQSpline_MALA_Bundle(
+            rng_key=subkey,
+            n_chains=n_chains,
+            n_dims=self.prior.n_dim,
+            logpdf=self.posterior,
+            # 5 more arguments
+            )
         
-        # set local sampling method
-        if self.hyperparameters["which_local_sampler"] == "MALA":
-            logger.info("Using MALA as local sampler.")
-            local_sampler = MALA(
-                self.posterior, True, self.local_sampler_arg
-            )  # Remember to add routine to find automated mass matrix
-        elif self.hyperparameters["which_local_sampler"] == "GaussianRandomWalk":
-            logger.info("Using gaussian random walk as local sampler")
-            local_sampler = GaussianRandomWalk(
-                self.posterior, True, self.local_sampler_arg
-            )  # Remember to add routine to find automated mass matrix
-        else:   
-            sampler = self.hyperparameters["which_local_sampler"]
-            raise ValueError(f"Local sampler {sampler} not recognized")
-
-        model = MaskedCouplingRQSpline(
-            self.prior.n_dim, self.num_layers, self.hidden_size, self.num_bins, rng_key_set[-1]
-        )
-
+        rng_key, subkey = jax.random.split(rng_key)
         self.Sampler = Sampler(
             self.prior.n_dim,
-            rng_key_set,
-            None,  # type: ignore
-            local_sampler,
-            model,
-            global_sampler=None,
+            n_chains,
+            subkey,
+            resource_strategy_bundle=bundle,
             **kwargs,
         )
         logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX... DONE")
