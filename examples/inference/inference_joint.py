@@ -32,7 +32,7 @@ model2 = BullaFlux(name="Bu2025_MLP",
                               filters = FILTERS)
 
 model = CombinedSurrogate(models=[model1, model2],
-                          sample_times=jnp.logspace(jnp.log10(0.3), jnp.log10(1000), 200))
+                          sample_times=jnp.geomspace(0.3, 1000, 200))
 
 
 #########
@@ -96,14 +96,7 @@ outdir = f"./outdir_joint/"
 fiesta = Fiesta(likelihood,
                 prior,
                 systematics_file="./systematics_file_joint.yaml",
-                n_chains = 1_000,
-                n_loop_training = 7,
-                n_loop_production = 3,
-                num_layers = 4,
-                hidden_size = [64, 64],
-                n_epochs = 20,
-                n_local_steps = 50,
-                n_global_steps = 200,
+                n_chains=30,
                 outdir = outdir)
 
 if __name__ == "__main__":
