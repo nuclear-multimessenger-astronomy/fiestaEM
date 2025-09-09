@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import time
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -16,30 +17,41 @@ from fiesta.logging import logger
 from fiesta.plot import corner_plot, LightcurvePlotter
 from fiesta.inference.systematic import setup_systematics_basic, setup_systematic_from_file
 
-from flowMC.sampler.Sampler import Sampler
-from flowMC.sampler.MALA import MALA
-from flowMC.sampler.Gaussian_random_walk import GaussianRandomWalk
-from flowMC.nfmodel.rqSpline import MaskedCouplingRQSpline
-from flowMC.utils.PRNG_keys import initialize_rng_keys
+from flowMC.Sampler import Sampler
+from flowMC.resource_strategy_bundle.RQSpline_MALA import RQSpline_MALA_Bundle
 
+# see https://github.com/kazewong/flowMC/blob/main/src/flowMC/resource_strategy_bundle/RQSpline_MALA.py#L22
+# for all the other arguments that can be set to the strategy-resource bundle
+default_bundle_hyperparameters = {
+        "n_local_steps": 50,
+        "n_global_steps": 200,
+        "n_training_loops": 20,
+        "n_production_loops": 15,
+        "n_epochs": 100,
+        "rq_spline_n_layers": 4,
+        "rq_spline_hidden_units": [64, 64],
+        "rq_spline_n_bins": 8,
+        "mala_step_size": 2e-3,
+        "learning_rate": 4e-4,
+        "n_max_examples": 10_000,
+        "n_NFproposal_batch_size": 10_000,
+        "chain_batch_size": 100,
+        "batch_size": 10_000,
+        "verbose": True,
+        }
 
-default_hyperparameters = {
-        "seed": 1,
-        "n_chains": 20,
-        "num_layers": 10,
-        "hidden_size": [128,128],
-        "num_bins": 8,
-        "local_sampler_arg": {'eps': 5e-3},
-        "which_local_sampler": "MALA"
-}
 
 class Fiesta(object):
     """
-    Master class for interfacing with flowMC
+    Master inference class for interfacing with flowMC.
 
     Args:
-        "seed": "(int) Value of the random seed used",
-        "n_chains": "(int) Number of chains to be used",
+        "likelihood": "(EMLikelihood) likelihood object used for the inference",
+        "prior": "(Prior) prior object used for the inference. It has to contain the parameters needed to evaluate likelihood.evaluate().",
+        "error_budget": "(float) fixed systematic error to use in the inference in mag. Defaults to 0.3 but is ignored when systematics file is provided.",
+        "systematics_file": "(str) path to the .yaml file that provides the setup for the systematic uncertainty parameters. Will overwrite error_budget.",
+        "seed": "(int) Value of the random seed used.",
+        "n_chains": "(int) Number of chains to be run in parallel by the flowMC sampler.",
         "num_layers": "(int) Number of hidden layers of the NF",
         "hidden_size": "List[int, int] Sizes of the hidden layers of the NF",
         "num_bins": "(int) Number of bins used in MaskedCouplingRQSpline",
@@ -55,17 +67,22 @@ class Fiesta(object):
     def __init__(self, 
                  likelihood: EMLikelihood, 
                  prior: Prior,
+                 outdir: str = "./outdir/",
                  error_budget: float = 0.3,
                  systematics_file: str = None,
+                 seed: int = 42,
+                 n_chains: int = 200,
                  **kwargs):
+        
         self.likelihood = likelihood
         self.prior = prior
         
-        self.outdir = kwargs.get("outdir", "./outdir/")
+        self.outdir = outdir
         if not os.path.exists(self.outdir):
             os.mkdir(self.outdir)
       
-      
+        rng_key = jax.random.PRNGKey(seed)
+
         logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX...")
 
         # setup the systematic uncertainty
@@ -75,56 +92,36 @@ class Fiesta(object):
             self.likelihood, self.prior = setup_systematics_basic(self.likelihood, self.prior, error_budget)
 
         # Set and override any given hyperparameters, and save as attribute
-        self.hyperparameters = default_hyperparameters
-        hyperparameter_names = list(self.hyperparameters.keys())
-        
+        self.bundle_hyperparameters = default_bundle_hyperparameters
+
         for key, value in kwargs.items():
-            if key in hyperparameter_names:
-                self.hyperparameters[key] = value
+            if key in self.bundle_hyperparameters:
+                self.bundle_hyperparameters[key] = value
+
+
+        # TODO: what if we don't want to use MALA as local sampler?
+        rng_key, subkey = jax.random.split(rng_key)
+        bundle = RQSpline_MALA_Bundle(
+            rng_key=subkey,
+            n_chains=n_chains,
+            n_dims=self.prior.n_dim,
+            logpdf=self.log_posterior,
+            **self.bundle_hyperparameters)
         
-        self.hyperparameters["local_sampler_arg"]["step_size"] = self.hyperparameters["local_sampler_arg"]["eps"]*jnp.eye(self.prior.n_dim)
-
-        for key, value in self.hyperparameters.items():
-            setattr(self, key, value)
-
-        rng_key_set = initialize_rng_keys(self.hyperparameters["n_chains"], seed=self.hyperparameters["seed"])
-        
-        # set local sampling method
-        if self.hyperparameters["which_local_sampler"] == "MALA":
-            logger.info("Using MALA as local sampler.")
-            local_sampler = MALA(
-                self.posterior, True, self.local_sampler_arg
-            )  # Remember to add routine to find automated mass matrix
-        elif self.hyperparameters["which_local_sampler"] == "GaussianRandomWalk":
-            logger.info("Using gaussian random walk as local sampler")
-            local_sampler = GaussianRandomWalk(
-                self.posterior, True, self.local_sampler_arg
-            )  # Remember to add routine to find automated mass matrix
-        else:   
-            sampler = self.hyperparameters["which_local_sampler"]
-            raise ValueError(f"Local sampler {sampler} not recognized")
-
-        model = MaskedCouplingRQSpline(
-            self.prior.n_dim, self.num_layers, self.hidden_size, self.num_bins, rng_key_set[-1]
-        )
-
+        rng_key, subkey = jax.random.split(rng_key)
         self.Sampler = Sampler(
             self.prior.n_dim,
-            rng_key_set,
-            None,  # type: ignore
-            local_sampler,
-            model,
-            global_sampler=None,
-            **kwargs,
+            n_chains,
+            subkey,
+            resource_strategy_bundles=bundle,
         )
         logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX... DONE")
 
-    def posterior(self, params: Float[Array, " n_dim"], data: dict):
+    def log_posterior(self, params: Float[Array, "n_dims"], data: dict[str, any]) -> Float:
         prior_params = self.prior.add_name(params.T)
-        prior = self.prior.log_prob(prior_params)
-        return (
-            self.likelihood.evaluate(self.prior.transform(prior_params), data) + prior
-        )
+        log_prior = self.prior.log_prob(prior_params)
+        log_posterior = self.likelihood.evaluate(self.prior.transform(prior_params), data) + log_prior
+        return log_posterior
 
     def sample(self, key: PRNGKeyArray, initial_guess: Array = jnp.array([])):
         if initial_guess.size == 0:
@@ -132,12 +129,14 @@ class Fiesta(object):
             initial_guess = jnp.stack([initial_guess_named[key] for key in self.prior.naming]).T
         
         logger.info(f"Starting sampling.")
-        self.Sampler.sample(initial_guess, None)  # type: ignore
-        logger.info(f"Sampling finished.")
+        start_time = time.perf_counter()
+        self.Sampler.sample(initial_guess, data={"data": jnp.zeros(self.prior.n_dim)}) # the data argument is ignored because data is setup in the likelihood
+        end_time = time.perf_counter()
+        logger.info(f"Sampling finished. Sampling took {end_time-start_time:.2f} seconds.")
 
         # setup the production samples
-        production_state = self.Sampler.get_sampler_state(training=False)
-        samples, log_prob = production_state["chains"], production_state["log_prob"]
+        samples = self.Sampler.resources["positions_production"].data
+        log_prob = self.Sampler.resources["log_prob_production"].data
         
         samples = samples.reshape(-1, self.prior.n_dim).T
         self.posterior_samples = self.prior.add_name(samples)
@@ -146,120 +145,113 @@ class Fiesta(object):
         # TODO: memory issues cause crash here
         #self.posterior["log_likelihood"] = self.likelihood.v_evaluate(self.posterior)
 
+    
+    def _get_summary_statistics(self,):
+
+        resources = self.Sampler.resources
+
+        self.training_chain = resources["positions_training"].data.reshape(-1, self.prior.n_dim).T
+
+        self.training_log_prob = resources["log_prob_training"].data
+        training_local_acceptance = resources["local_accs_training"].data
+        self.training_local_acceptance = training_local_acceptance[~jnp.isneginf(training_local_acceptance)]
+        training_global_acceptance = resources["global_accs_training"].data
+        self.training_global_acceptance = training_global_acceptance[~jnp.isneginf(training_global_acceptance)]
+        self.training_loss = resources["loss_buffer"].data
+
+        self.production_chain = resources["positions_production"].data.reshape(-1, self.prior.n_dim).T
+        self.production_log_prob = resources["log_prob_production"].data
+        production_local_acceptance = resources["local_accs_production"].data
+        self.production_local_acceptance = production_local_acceptance[~jnp.isneginf(production_local_acceptance)]
+        production_global_acceptance = resources["global_accs_production"].data
+        self.production_global_acceptance = production_global_acceptance[~jnp.isneginf(production_global_acceptance)]
+
+
 
     def print_summary(self, transform: bool = True):
         """
         Generate summary of the run
 
         """
-
-        train_summary = self.Sampler.get_sampler_state(training=True)
-        production_summary = self.Sampler.get_sampler_state(training=False)
-
-        training_chain = train_summary["chains"].reshape(-1, self.prior.n_dim).T
-        training_chain = self.prior.add_name(training_chain)
-        if transform:
-            training_chain = self.prior.transform(training_chain)
-        training_log_prob = train_summary["log_prob"]
-        training_local_acceptance = train_summary["local_accs"]
-        training_global_acceptance = train_summary["global_accs"]
-        training_loss = train_summary["loss_vals"]
-
-        production_chain = production_summary["chains"].reshape(-1, self.prior.n_dim).T
-        production_chain = self.prior.add_name(production_chain)
-        if transform:
-            production_chain = self.prior.transform(production_chain)
-        production_log_prob = production_summary["log_prob"]
-        production_local_acceptance = production_summary["local_accs"]
-        production_global_acceptance = production_summary["global_accs"]
+        self._get_summary_statistics()
 
         print("Training summary")
         print("=" * 10)
+        training_chain = self.prior.add_name(self.training_chain)
         for key, value in training_chain.items():
             print(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
+
         print(
-            f"Log probability: {training_log_prob.mean():.3f} +/- {training_log_prob.std():.3f}"
+            f"Log probability: {self.training_log_prob.mean():.3f} +/- {self.training_log_prob.std():.3f}"
         )
+
+        training_local_acceptance = jnp.mean(self.training_local_acceptance, axis=0)
         print(
             f"Local acceptance: {training_local_acceptance.mean():.3f} +/- {training_local_acceptance.std():.3f}"
         )
+        
+        training_global_acceptance = jnp.mean(self.training_global_acceptance, axis=0)
         print(
             f"Global acceptance: {training_global_acceptance.mean():.3f} +/- {training_global_acceptance.std():.3f}"
         )
+
         print(
-            f"Max loss: {training_loss.max():.3f}, Min loss: {training_loss.min():.3f}"
+            f"Max loss: {self.training_loss.max():.3f}, Min loss: {self.training_loss.min():.3f}"
         )
+        
+        print("\n \n")
 
         print("Production summary")
         print("=" * 10)
+        production_chain = self.prior.add_name(self.production_chain)
         for key, value in production_chain.items():
             print(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
+
         print(
-            f"Log probability: {production_log_prob.mean():.3f} +/- {production_log_prob.std():.3f}"
+            f"Log probability: {self.production_log_prob.mean():.3f} +/- {self.production_log_prob.std():.3f}"
         )
+
+        production_local_acceptance = jnp.mean(self.production_local_acceptance, axis=0)
         print(
             f"Local acceptance: {production_local_acceptance.mean():.3f} +/- {production_local_acceptance.std():.3f}"
         )
+
+        production_global_acceptance = jnp.mean(self.production_global_acceptance, axis=0)
         print(
             f"Global acceptance: {production_global_acceptance.mean():.3f} +/- {production_global_acceptance.std():.3f}"
         )
         print("=" * 10)
-
-    def get_samples(self, training: bool = False) -> dict:
-        """
-        Get the samples from the sampler
-
-        Parameters
-        ----------
-        training : bool, optional
-            Whether to get the training samples or the production samples, by default False
-
-        Returns
-        -------
-        dict
-            Dictionary of samples
-
-        """
-        if training:
-            chains = self.Sampler.get_sampler_state(training=True)["chains"]
-        else:
-            chains = self.Sampler.get_sampler_state(training=False)["chains"]
-
-        chains = self.prior.transform(self.prior.add_name(chains.transpose(2, 0, 1)))
-        return chains
     
     def save_results(self):
+
+        self._get_summary_statistics()
+        
         # - training phase
         name = os.path.join(self.outdir, f'results_training.npz')
-        logger.info(f"Saving training samples to {name}")
-        state = self.Sampler.get_sampler_state(training=True)
-        chains, log_prob, local_accs, global_accs, loss_vals = state["chains"], state["log_prob"], state["local_accs"], state["global_accs"], state["loss_vals"]
-        local_accs = jnp.mean(local_accs, axis=0)
-        global_accs = jnp.mean(global_accs, axis=0)
-        jnp.savez(name, log_prob=log_prob, local_accs=local_accs,
-                global_accs=global_accs, loss_vals=loss_vals)
+        logger.info(f"Saving training samples to {name}.")
+
+        jnp.savez(name, log_prob=self.training_log_prob,
+                        chains = self.training_chain,
+                        local_accs=jnp.mean(self.training_local_acceptance, axis=0),
+                        global_accs=jnp.mean(self.training_global_acceptance, axis=0), 
+                        loss_vals=self.training_loss)
         
         #  - production phase
         name = os.path.join(self.outdir, f'results_production.npz')
         logger.info(f"Saving production samples to {name}")
-        state = self.Sampler.get_sampler_state(training=False)
-        chains, log_prob, local_accs, global_accs = state["chains"], state["log_prob"], state["local_accs"], state["global_accs"]
-        local_accs = jnp.mean(local_accs, axis=0)
-        global_accs = jnp.mean(global_accs, axis=0)
-        jnp.savez(name, chains=chains, log_prob=log_prob,
-                    local_accs=local_accs, global_accs=global_accs)
+        
+        jnp.savez(name, chains=self.production_chain, 
+                        log_prob=self.production_log_prob,
+                        local_accs=jnp.mean(self.production_local_acceptance, axis=0),
+                        global_accs=jnp.mean(self.production_global_acceptance, axis=0)
+        )
         
         jnp.savez(os.path.join(self.outdir, f"posterior.npz"), **self.posterior_samples)
 
     
     def save_hyperparameters(self):
         
-        # Convert step_size to list for JSON formatting
-        if "step_size" in self.hyperparameters["local_sampler_arg"].keys():
-            self.hyperparameters["local_sampler_arg"]["step_size"] = np.asarray(self.hyperparameters["local_sampler_arg"]["step_size"]).tolist()
-        
-        hyperparameters_dict = {"flowmc": self.Sampler.hyperparameters,
-                                "jim": self.hyperparameters}
+        hyperparameters_dict = {"flowmc": self.Sampler.hyperparameters}
         
         try:
             name = os.path.join(self.outdir, "hyperparams.json")
