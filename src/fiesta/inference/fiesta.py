@@ -24,16 +24,21 @@ from flowMC.resource_strategy_bundle.RQSpline_MALA import RQSpline_MALA_Bundle
 default_bundle_hyperparameters = {
         "n_local_steps": 50,
         "n_global_steps": 200,
-        "n_training_loops": 7,
-        "n_production_loops": 3,
+        "n_training_loops": 70,
+        "n_production_loops": 30,
         "n_epochs": 20,
         "rq_spline_n_layers": 4,
         "rq_spline_hidden_units": [64, 64],
         "rq_spline_n_bins": 8,
-        "mala_step_size": 5e-4,
+        "mala_step_size": 2e-3,
+        "learning_rate": 4e-4,
+        "n_max_examples": 10_000,
+        "n_NFproposal_batch_size": 10_000,
+        "chain_batch_size": 0,
+        "batch_size": 10_000,
         "verbose": True,
-        "learning_rate": 1e-2,
         }
+
 
 class Fiesta(object):
     """
@@ -137,98 +142,105 @@ class Fiesta(object):
         # TODO: memory issues cause crash here
         #self.posterior["log_likelihood"] = self.likelihood.v_evaluate(self.posterior)
 
+    
+    def _get_summary_statistics(self,):
+
+        resources = self.Sampler.resources
+
+        self.training_chain = resources["positions_training"].data.reshape(-1, self.prior.n_dim).T
+
+        self.training_log_prob = resources["log_prob_training"].data
+        training_local_acceptance = resources["local_accs_training"].data
+        self.training_local_acceptance = training_local_acceptance[~jnp.isneginf(training_local_acceptance)]
+        training_global_acceptance = resources["global_accs_training"].data
+        self.training_global_acceptance = training_global_acceptance[~jnp.isneginf(training_global_acceptance)]
+        self.training_loss = resources["loss_buffer"].data
+
+        self.production_chain = resources["positions_production"].data.reshape(-1, self.prior.n_dim).T
+        self.production_log_prob = resources["log_prob_production"].data
+        production_local_acceptance = resources["local_accs_production"].data
+        self.production_local_acceptance = production_local_acceptance[~jnp.isneginf(production_local_acceptance)]
+        production_global_acceptance = resources["global_accs_production"].data
+        self.production_global_acceptance = production_global_acceptance[~jnp.isneginf(production_global_acceptance)]
+
+
 
     def print_summary(self, transform: bool = True):
         """
         Generate summary of the run
 
         """
-        resources = self.Sampler.resources
-
-        training_chain = resources["positions_training"].data.reshape(-1, self.prior.n_dim).T
-        training_chain = self.prior.add_name(training_chain)
-        if transform:
-            training_chain = self.prior.transform(training_chain)
-        training_log_prob = resources["log_prob_training"].data
-        training_local_acceptance = resources["local_accs_training"].data
-        training_global_acceptance = resources["global_accs_training"].data
-        training_loss = resources["loss_buffer"].data
-
-        production_chain = resources["positions_production"].data.reshape(-1, self.prior.n_dim).T
-        production_chain = self.prior.add_name(production_chain)
-        if transform:
-            production_chain = self.prior.transform(production_chain)
-        production_log_prob = resources["log_prob_production"].data
-        production_local_acceptance = jnp.clip(resources["local_accs_production"].data,0)
-        production_global_acceptance = jnp.clip(resources["global_accs_production"].data,0)
+        self._get_summary_statistics()
 
         print("Training summary")
         print("=" * 10)
+        training_chain = self.prior.add_name(self.training_chain)
         for key, value in training_chain.items():
             print(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
+
         print(
-            f"Log probability: {training_log_prob.mean():.3f} +/- {training_log_prob.std():.3f}"
+            f"Log probability: {self.training_log_prob.mean():.3f} +/- {self.training_log_prob.std():.3f}"
         )
+
+        training_local_acceptance = jnp.mean(self.training_local_acceptance, axis=0)
         print(
             f"Local acceptance: {training_local_acceptance.mean():.3f} +/- {training_local_acceptance.std():.3f}"
         )
+        
+        training_global_acceptance = jnp.mean(self.training_global_acceptance, axis=0)
         print(
             f"Global acceptance: {training_global_acceptance.mean():.3f} +/- {training_global_acceptance.std():.3f}"
         )
+
         print(
-            f"Max loss: {training_loss.max():.3f}, Min loss: {training_loss.min():.3f}"
+            f"Max loss: {self.training_loss.max():.3f}, Min loss: {self.training_loss.min():.3f}"
         )
         
         print("\n \n")
 
         print("Production summary")
         print("=" * 10)
+        production_chain = self.prior.add_name(self.production_chain)
         for key, value in production_chain.items():
             print(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
+
         print(
-            f"Log probability: {production_log_prob.mean():.3f} +/- {production_log_prob.std():.3f}"
+            f"Log probability: {self.production_log_prob.mean():.3f} +/- {self.production_log_prob.std():.3f}"
         )
+
+        production_local_acceptance = jnp.mean(self.production_local_acceptance, axis=0)
         print(
             f"Local acceptance: {production_local_acceptance.mean():.3f} +/- {production_local_acceptance.std():.3f}"
         )
+
+        production_global_acceptance = jnp.mean(self.production_global_acceptance, axis=0)
         print(
             f"Global acceptance: {production_global_acceptance.mean():.3f} +/- {production_global_acceptance.std():.3f}"
         )
         print("=" * 10)
     
     def save_results(self):
-        
-        resources = self.Sampler.resources
 
+        self._get_summary_statistics()
+        
         # - training phase
         name = os.path.join(self.outdir, f'results_training.npz')
         logger.info(f"Saving training samples to {name}.")
-        training_chain = resources["positions_training"].data.reshape(-1, self.prior.n_dim).T
-        training_chain = self.prior.add_name(training_chain)
-        training_log_prob = resources["log_prob_training"].data
-        training_local_acceptance = resources["local_accs_training"].data
-        training_global_acceptance = resources["global_accs_training"].data
-        training_loss = resources["loss_buffer"].data
 
-        jnp.savez(name, log_prob=training_log_prob,
-                        chains = training_chain,
-                        local_accs=jnp.mean(training_local_acceptance, axis=0),
-                        global_accs=jnp.mean(training_global_acceptance, axis=0), 
-                        loss_vals=training_loss)
+        jnp.savez(name, log_prob=self.training_log_prob,
+                        chains = self.training_chain,
+                        local_accs=jnp.mean(self.training_local_acceptance, axis=0),
+                        global_accs=jnp.mean(self.training_global_acceptance, axis=0), 
+                        loss_vals=self.training_loss)
         
         #  - production phase
         name = os.path.join(self.outdir, f'results_production.npz')
         logger.info(f"Saving production samples to {name}")
-        production_chain = resources["positions_production"].data.reshape(-1, self.prior.n_dim).T
-        production_chain = self.prior.add_name(production_chain)
-        production_log_prob = resources["log_prob_production"].data
-        production_local_acceptance = resources["local_accs_production"].data
-        production_global_acceptance = resources["global_accs_production"].data
         
-        jnp.savez(name, chains=production_chain, 
-                        log_prob=production_log_prob,
-                        local_accs=jnp.mean(production_local_acceptance, axis=0),
-                        global_accs=jnp.mean(production_global_acceptance, axis=0)
+        jnp.savez(name, chains=self.production_chain, 
+                        log_prob=self.production_log_prob,
+                        local_accs=jnp.mean(self.production_local_acceptance, axis=0),
+                        global_accs=jnp.mean(self.production_global_acceptance, axis=0)
         )
         
         jnp.savez(os.path.join(self.outdir, f"posterior.npz"), **self.posterior_samples)
