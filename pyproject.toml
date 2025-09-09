@@ -8,6 +8,7 @@ reportIncompatibleMethodOverride = "warning"
 [project]
 name = "fiesta"
 description = "Fast inference of electromagnetic signals with JAX"
+dynamic = ["version"]
 readme = "README.md"
 authors = [{ name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"}, { name = "Hauke Koehn", email = "hauke.koehn@uni-potsdam.de"}]
 license = { file = "LICENSE" }
