@@ -73,7 +73,7 @@ outdir = f"./outdir_GRB/"
 fiesta = Fiesta(likelihood,
                 prior,
                 systematics_file="./systematics_file_GRB.yaml",
-                n_chains=100,
+                n_chains=200,
                 outdir = outdir)
 
 if __name__ == "__main__":

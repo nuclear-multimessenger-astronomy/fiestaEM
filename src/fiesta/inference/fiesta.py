@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import time
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -24,9 +25,9 @@ from flowMC.resource_strategy_bundle.RQSpline_MALA import RQSpline_MALA_Bundle
 default_bundle_hyperparameters = {
         "n_local_steps": 50,
         "n_global_steps": 200,
-        "n_training_loops": 70,
-        "n_production_loops": 30,
-        "n_epochs": 20,
+        "n_training_loops": 20,
+        "n_production_loops": 15,
+        "n_epochs": 100,
         "rq_spline_n_layers": 4,
         "rq_spline_hidden_units": [64, 64],
         "rq_spline_n_bins": 8,
@@ -34,7 +35,7 @@ default_bundle_hyperparameters = {
         "learning_rate": 4e-4,
         "n_max_examples": 10_000,
         "n_NFproposal_batch_size": 10_000,
-        "chain_batch_size": 0,
+        "chain_batch_size": 100,
         "batch_size": 10_000,
         "verbose": True,
         }
@@ -70,7 +71,7 @@ class Fiesta(object):
                  error_budget: float = 0.3,
                  systematics_file: str = None,
                  seed: int = 42,
-                 n_chains: int = 50,
+                 n_chains: int = 200,
                  **kwargs):
         
         self.likelihood = likelihood
@@ -128,8 +129,10 @@ class Fiesta(object):
             initial_guess = jnp.stack([initial_guess_named[key] for key in self.prior.naming]).T
         
         logger.info(f"Starting sampling.")
+        start_time = time.perf_counter()
         self.Sampler.sample(initial_guess, data={"data": jnp.zeros(self.prior.n_dim)}) # the data argument is ignored because data is setup in the likelihood
-        logger.info(f"Sampling finished.")
+        end_time = time.perf_counter()
+        logger.info(f"Sampling finished. Sampling took {end_time-start_time:.2f} seconds.")
 
         # setup the production samples
         samples = self.Sampler.resources["positions_production"].data

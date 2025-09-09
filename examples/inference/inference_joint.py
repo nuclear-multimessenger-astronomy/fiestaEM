@@ -96,10 +96,8 @@ outdir = f"./outdir_joint/"
 fiesta = Fiesta(likelihood,
                 prior,
                 systematics_file="./systematics_file_joint.yaml",
-                n_chains=200,
-                n_training_loops=70,
-                n_production_loops=30,
-                chain_batch_size=50,
+                n_chains=225,
+                chain_batch_size=75, # if chain_batch_size is too large, this can cause memory issues
                 outdir = outdir)
 
 if __name__ == "__main__":

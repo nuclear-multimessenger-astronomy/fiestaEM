@@ -4,28 +4,34 @@
 
 ![fiesta logo](docs/fiesta_logo.jpeg)
 
-**NOTE:** `fiesta` is currently under development -- stay tuned!
+**NOTE:** `fiesta` is currently under development. We have some basic documentation available under `./docs`. Feel free to contact us for any questions.
 
 ## Installation
 
-pip installation is currently work in progress. Install from source by cloning this Github repository and running
+`fiesta` can be installed from pip via 
+```
+pip install fiesta
+```
+
+Alternatively you can install it directly from source by cloning 
+```
+git clone git@github.com:nuclear-multimessenger-astronomy/fiestaEM.git
+```
+and then run 
 ```
 pip install -e .
 ```
+in the cloning directory. Note, that by default only the cpu version of `jax` is installed. If you want to use GPU acceleration, install `jax[cuda12]` as indicated on the [`jax` webpage](https://docs.jax.dev/en/latest/installation.html#installation).
 
-NOTE: This is using an older and custom version of `flowMC`. Install by cloning the `flowMC` version at [this fork](https://github.com/ThibeauWouters/flowMC/tree/fiesta) (branch `fiesta`).
+
 
 ## Training surrogate models
 
-To train your own surrogate models, have a look at some of the example scripts in the repository for inspiration, under `trained_models`
-
-- `train_Bu2019lm.py`: Example script showing how to train a surrogate model for the POSSIS `Bu2019lm` kilonova model. 
-- `train_afterglowpy_tophat.py`: Example script showing how to train a surrogate model for `afterglowpy`, using a tophat jet structure.  
+To train your own surrogate models, have a look at some of the example scripts in the repository for inspiration. You can find them under `./surrogates/GRB/` and `./surrogates/KN/` in the respective model folders. The example section on training is currently work in progress. 
 
 ## Examples
 
-- `run_AT2017gfo_Bu2019lm.py`: Example where we infer the parameters of the AT2017gfo kilonova with the `Bu2019lm` model.
-- `run_GRB170817_tophat.py`: Example where we infer the parameters of the GRB170817 GRB with a surrogate model for `afterglowpy`'s tophat jet. **NOTE** This currently only uses one specific filter. The complete inference will be updated soon.
+We have example scripts for running an inference on AT2017gfo + GRB170817A. They can be found in `./examples/inference/`. We also plan to add an example section on training surrogates in the future.
 
 ## Acknowledgements
 

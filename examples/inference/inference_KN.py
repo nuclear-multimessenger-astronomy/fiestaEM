@@ -68,7 +68,7 @@ outdir = f"./outdir_KN/"
 fiesta = Fiesta(likelihood,
                 prior,
                 systematics_file="./systematics_file_KN.yaml",
-                n_chains = 100,
+                n_chains = 200,
                 outdir = outdir)
 
 
