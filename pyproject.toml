@@ -1,6 +1,57 @@
 [build-system]
-requires = ["setuptools","wheel"]
+requires = ["setuptools", "wheel", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [tool.pyright]
 reportIncompatibleMethodOverride = "warning"
+
+[project]
+name = "fiesta"
+description = "Fast inference of electromagnetic signals with JAX"
+dynamic = ["version"]
+readme = "README.md"
+authors = [{ name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"}, { name = "Hauke Koehn", email = "hauke.koehn@uni-potsdam.de"}]
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+]
+keywords = ["sampling", "inference", "astrophysics", "kilonovae", "gamma-ray bursts", "afterglow", "surrogates"]
+requires-python = ">=3.10"
+dependencies = [
+    "dill",
+    "jax",
+    "jaxlib",
+    "flax",
+    "numpy",
+    "pandas",
+    "jaxtyping",
+    "beartype",
+    "tqdm",
+    "scipy",
+    "ml_collections",
+    "matplotlib",
+    "astropy",
+    "sncosmo",
+    "flowMC",
+    "h5py",
+    "corner"
+]
+
+[project.optional-dependencies]
+grb = ["afterglowpy"]
+gpu = ["jax[cuda12]"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools_scm]
+version_scheme = "no-guess-dev"
+local_scheme = "node-and-date"
+
+[project.urls]
+Homepage = "https://github.com/nuclear-multimessenger-astronomy/fiestaEM"

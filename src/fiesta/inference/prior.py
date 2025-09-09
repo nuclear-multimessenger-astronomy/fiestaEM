@@ -4,13 +4,12 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
-from flowMC.nfmodel.base import Distribution
 from jaxtyping import Array, Float, PRNGKeyArray, jaxtyped
 from beartype import beartype as typechecker
 
-class Prior(Distribution):
+class Prior(object):
     """
-    A thin wrapper build on top of flowMC distributions to do book keeping.
+    A thin base clase to do book keeping.
 
     Should not be used directly since it does not implement any of the real method.
 
