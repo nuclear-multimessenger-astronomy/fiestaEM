@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel", "setuptools-scm"]
+requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.pyright]
@@ -8,7 +8,7 @@ reportIncompatibleMethodOverride = "warning"
 [project]
 name = "fiesta"
 description = "Fast inference of electromagnetic signals with JAX"
-dynamic = ["version"]
+version = "0.1.0"
 readme = "README.md"
 authors = [{ name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"}, { name = "Hauke Koehn", email = "hauke.koehn@uni-potsdam.de"}]
 license = { file = "LICENSE" }
@@ -46,12 +46,13 @@ gpu = ["jax[cuda12]"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools]
-include-package-data = true
+[tool.setuptools.package-data]
+"fiesta.surrogates.GRB.afgpy_gaussian_CVAE" = ["*.pkl"]
+"fiesta.surrogates.GRB.afgpy_tophat_CVAE" = ["*.pkl"]
+"fiesta.surrogates.GRB.pbag_gaussian_CVAE" = ["*.pkl"]
+"fiesta.surrogates.GRB.pbag_tophat_CVAE" = ["*.pkl"]
+"fiesta.surrogates.KN.Bu2025_MLP" = ["*.pkl"]
 
-[tool.setuptools_scm]
-version_scheme = "no-guess-dev"
-local_scheme = "node-and-date"
 
 [project.urls]
 Homepage = "https://github.com/nuclear-multimessenger-astronomy/fiestaEM"
