@@ -10,7 +10,7 @@
 
 `fiesta` can be installed from pip via 
 ```
-pip install fiesta
+pip install fiestaEM
 ```
 
 Alternatively you can install it directly from source by cloning 
@@ -25,11 +25,11 @@ in the cloning directory.
 
 Note, that by default only the cpu version of `jax` is installed. If you want to use GPU acceleration, run 
 ```
-pip install fiesta[gpu]
+pip install fiestaEM[gpu]
 ```
 or install `jax[cuda12]` as indicated on the [`jax` webpage](https://docs.jax.dev/en/latest/installation.html#installation) manually.
 
-Also, due to the file size limit on pypi, the pypi distribution only contains a reduced amount of built-in surrogates. If you want all built-in surrogates, we recommend *editable* installation from source or to download the `.pkl` files manually and store them in the `surrogates` folder of the site-package.
+Also, due to the file size limit on pypi, the pypi distribution only contains the most important built-in surrogates. If you want all built-in surrogates, we recommend *editable* installation from source or to download the `.pkl` files manually and store them in the `surrogates` folder of the site-package.
 You can check which built-in surrogates are available by running 
 ```
 python -c "from fiesta.inference.lightcurve_model import list_built_in_surrogates; list_built_in_surrogates()"
