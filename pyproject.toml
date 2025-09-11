@@ -6,14 +6,13 @@ build-backend = "setuptools.build_meta"
 reportIncompatibleMethodOverride = "warning"
 
 [project]
-name = "fiesta"
+name = "fiestaEM"
 description = "Fast inference of electromagnetic signals with JAX"
 version = "0.1.0"
 readme = "README.md"
 authors = [{ name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"}, { name = "Hauke Koehn", email = "hauke.koehn@uni-potsdam.de"}]
-license = { file = "LICENSE" }
+license = "MIT"
 classifiers = [
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
 ]
@@ -43,15 +42,15 @@ dependencies = [
 grb = ["afterglowpy"]
 gpu = ["jax[cuda12]"]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.setuptools]
+packages = { find = { where = ["src"] } }
 
 [tool.setuptools.package-data]
-"fiesta.surrogates.GRB.afgpy_gaussian_CVAE" = ["*.pkl"]
-"fiesta.surrogates.GRB.afgpy_tophat_CVAE" = ["*.pkl"]
-"fiesta.surrogates.GRB.pbag_gaussian_CVAE" = ["*.pkl"]
-"fiesta.surrogates.GRB.pbag_tophat_CVAE" = ["*.pkl"]
-"fiesta.surrogates.KN.Bu2025_MLP" = ["*.pkl"]
+"fiesta.surrogates.GRB.afgpy_gaussian_CVAE" = ["**.pkl"]
+"fiesta.surrogates.GRB.afgpy_tophat_CVAE" = ["**.pkl"]
+"fiesta.surrogates.GRB.pbag_gaussian_CVAE" = ["**.pkl"]
+"fiesta.surrogates.GRB.pbag_tophat_CVAE" = ["**.pkl"]
+"fiesta.surrogates.KN.Bu2025_MLP" = ["**.pkl"]
 
 
 [project.urls]
