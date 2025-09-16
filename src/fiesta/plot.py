@@ -21,8 +21,10 @@ plt.rcParams.update(pltparams)
 
 import numpy as np
 import pandas as pd
-
 from jaxtyping import Array
+import jax
+import jax.numpy as jnp
+
 from fiesta.logging import logger
 from fiesta.inference.lightcurve_model import SurrogateModel
 from fiesta.inference.systematic import process_file
@@ -85,6 +87,22 @@ def corner_plot(posterior: dict | pd.DataFrame,
                 legend_label:str = None,
                 fig: matplotlib.figure.Figure = None,
                 ax: matplotlib.axes.Axes = None):
+    """
+    Make a nice corner plot from the posterior with automated parameter labels.
+
+    Args:
+       posterior (dict | pd.DataFrame): posterior samples for which to do the corner plot.
+       parameter_names (list[str]): parameters from posterior that should be included in the corner plot.
+       truths (dict[str, float]): True (injected values) for some of the parameters. Defaults to {}.
+       color (str): color for the corner plot contours. Defaults to blue.
+       legend_label (str): Label for the legend. If not set, no legend will be shown. Defaults to None.
+       fig (matplotlib.figure.Figure): Figure over which to do the corner plot. If set, ax must also be provided. Defaults to None.
+       ax (matplotlib.axes.Axes): Axes over which to do the corner plot. If set, fig must also be provided. Defaults to None.
+
+    Returns:
+        fig (matplotlib.figure.Figure): Figure with the corner plot.
+        ax (matplotlib.axes.Axes): array of axes
+    """
     
     try:
         import corner
@@ -132,6 +150,15 @@ def corner_plot(posterior: dict | pd.DataFrame,
 
 
 class LightcurvePlotter:
+    """
+    Interface to plot lightcurves from a given posterior.
+
+    Args:
+        posterior (dict | pd.DataFrame): Posterior samples for which the light curves should be plotted.
+        likelihood (EMLikelihood): Likelihood object that was used to sample the posterior.
+        systematics_file (str): Systematics file that was used to sample the posterior. Defaults to None.
+        free_syserr (bool): Whether a global systematic uncertainty was sampled freely. Defaults to False. Will overwrite systematics_file.
+    """
     
     def __init__(self, 
                  posterior: dict | pd.DataFrame,
@@ -169,6 +196,15 @@ class LightcurvePlotter:
                   filt: str,
                   zorder=3,
                   **kwargs):
+        """
+        Plots data points from a filter over ax.
+
+        Args:
+            ax (matplotlib.axes.Axes): ax to plot the data points to.
+            filt (str): Which filter from the data should be plotted on ax.
+            zorder (int): zorder with which the data points should be plotted.
+            **kwargs: kwargs to be passed to errorbar and scatter.
+        """
             
         # Detections
         t, mag, err = self.times_det[filt], self.mag_det[filt], self.mag_err[filt]
@@ -184,6 +220,15 @@ class LightcurvePlotter:
                          filt: str,
                          zorder=2,
                          **kwargs):
+        """
+        Plots one filter from the best fit light curve from the posterior over ax.
+
+        Args:
+            ax (matplotlib.axes.Axes): ax to plot the light curve onto.
+            filt (str): Which filter from the best fit lightcurve should be plotted on ax.
+            zorder (int): zorder with which the lightcurve should be plotted.
+            **kwargs: kwargs to be passed to plot.
+        """
 
         self._get_best_fit_lc()
         ax.plot(self.t_best_fit, self.best_fit_lc[filt], zorder=zorder, **kwargs)
@@ -215,6 +260,14 @@ class LightcurvePlotter:
                        ax: matplotlib.axes.Axes,
                        filt: str,
                        zorder=1):
+        """
+        Plots background light curves from the posterior over ax.
+
+        Args:
+            ax (matplotlib.axes.Axes): ax to plot the light curve onto.
+            filt (str): Which filter from the background light curves should be plotted on ax.
+            zorder (int): zorder with which the lightcurve should be plotted.
+        """
         
         self._get_samples_lcs()
 
@@ -244,6 +297,15 @@ class LightcurvePlotter:
                                   filt: str,
                                   zorder=2,
                                   **kwargs):
+        """
+        Plots systematic uncertainty band from the best fit light curve for one filter over ax.
+
+        Args:
+            ax (matplotlib.axes.Axes): ax to plot the band onto.
+            filt (str): Which filter from the band should be plotted on ax.
+            zorder (int): zorder with which the band should be plotted.
+            **kwargs: kwargs to be passed to fill_between.
+        """
         self._get_best_fit_lc()
 
         if self.systematics=="from_file":
@@ -267,6 +329,48 @@ class LightcurvePlotter:
             sigma_sys  = self.likelihood.error_budget
 
         ax.fill_between(self.t_best_fit, self.best_fit_lc[filt] + sigma_sys, self.best_fit_lc[filt] - sigma_sys, alpha=0.1, zorder=zorder, **kwargs)
+    
+    def get_chisquared(self, per_dof: bool=False):
+        """
+        Get the total chisquared value and the chisquared values per filter. 
+        This is different from the log_prob value in the posterior, because the likelihood function contains (2 pi sigma)^(-1/2).
+
+        Args:
+            per_dof (bool): Whether to return reduced chi-squared values, i.e., per number of data points.
+        
+        Returns:
+            tuple(float, dict): The total chi-squared value across all data points and a dict with the chi-squared value in each filter.
+        """
+       
+        self._get_best_fit_lc()
+        
+        mag_est_det = jax.tree.map(lambda t, m: jnp.interp(t, self.t_best_fit, m, left = "extrapolate", right = "extrapolate"), # TODO extrapolation is maybe problematic here
+                                          self.times_det, self.best_fit_lc)
+        
+        mag_est_nondet = jax.tree.map(lambda t, m: jnp.interp(t, self.t_best_fit, m, left = "extrapolate", right = "extrapolate"),
+                                          self.times_nondet, self.best_fit_lc)
+        
+        # Get the systematic uncertainty + data uncertainty
+        sigma = self.likelihood.get_sigma(self.best_fit_params)
+        nondet_sigma = self.likelihood.get_nondet_sigma(self.best_fit_params)
+        
+        # Get chisq
+        chisq_dict = jax.tree.map(lambda mstar, md, s: jnp.sum((mstar-md)**2/s**2), 
+                             mag_est_det, self.mag_det, sigma)
+        
+        chisq_total = sum(chisq_dict.values())
+        
+
+        if per_dof:
+            n_data_total = 0
+            for key in self.mag_det.keys():
+                n_data = self.mag_det[key].shape[0]
+                chisq_dict[key] = chisq_dict[key] / n_data
+                n_data_total += n_data
+
+            chisq_total /= n_data_total
+        
+        return chisq_total, chisq_dict
 
         
                                   

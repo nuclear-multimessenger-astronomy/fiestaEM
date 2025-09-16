@@ -251,7 +251,6 @@ class EMLikelihood:
         """
         Return the log likelihood of the chisquare part of the likelihood function for a single filter.
         Branch-off of jax.lax.cond is based on provided detection limit (lim). If the limit is infinite, the likelihood is calculated without truncation and without resorting to scipy for faster evaluation. If the limit is finite, the likelihood is calculated with truncation and with scipy. 
-        TODO: can we circumvent using scipy and implement this ourselves to speed up?
 
         Args:
             mag_est (Array): The estimated apparent magnitudes at the detection times
