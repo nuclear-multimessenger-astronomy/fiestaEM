@@ -38,40 +38,48 @@ from fiesta.inference.likelihood import EMLikelihood
 
 default_corner_kwargs = dict(bins=40, 
                         smooth=True, 
-                        label_kwargs=dict(fontsize=16),
-                        title_kwargs=dict(fontsize=16), 
+                        label_kwargs=dict(fontsize=14),
+                        title_kwargs=dict(fontsize=14), 
                         quantiles=[],
                         levels=[0.68, 0.95],
                         plot_density=False, 
                         plot_datapoints=False, 
-                        fill_contours=False,
+                        fill_contours=True,
                         max_n_ticks=3, 
                         min_n_ticks=3,
                         save=False,
                         truth_color="darkorange",
                         labelpad=0.2)
 
-latex_labels=dict(inclination_EM="$\\iota$",
-                  log10_E0="$\\log_{10}(E_0)$", 
-                  thetaCore="$\\theta_{\\mathrm{c}}$", 
-                  thetaWing="$\\theta_{\\mathrm{w}}$", 
+latex_labels=dict(inclination_EM="$\\iota$ [rad]",
+                  log10_E0="$\\log_{10}(E_0)$ [erg]", 
+                  thetaCore="$\\theta_{\\mathrm{c}}$ [rad]", 
+                  thetaWing="$\\theta_{\\mathrm{w}}$ [rad]", 
                   alphaWing="$\\alpha_{\\mathrm{w}}$", 
-                  log10_n0="$\\log_{10}(n_{\mathrm{ism}})$",
+                  log10_n0="$\\log_{10}(n_{\\mathrm{ism}})$ [cm$^{-3}$]",
                   p="$p$", 
                   log10_epsilon_e="$\\log_{10}(\\epsilon_e)$",
                   log10_epsilon_B="$\\log_{10}(\\epsilon_B)$",
                   epsilon_e="$\\epsilon_e$",
                   epsilon_B="$\\epsilon_B$",
-                  log10_mej_dyn="$\\log_{10}(m_{\\mathrm{ej,dyn}})$",
-                  log10_mej_wind="$\\log_{10}(m_{\\mathrm{ej,wind}})$",
-                  v_ej_dyn="$\\bar{v}_{\\mathrm{ej,dyn}}$",
-                  v_ej_wind="$\\bar{v}_{\\mathrm{ej,wind}}$",
+                  log10_mej_dyn="$\\log_{10}(m_{\\mathrm{ej,dyn}})$ [$M_\\odot$]",
+                  log10_mej_wind="$\\log_{10}(m_{\\mathrm{ej,wind}})$ [$M_\\odot$]",
+                  v_ej_dyn="$\\bar{v}_{\\mathrm{ej,dyn}}$ [$c$]",
+                  v_ej_wind="$\\bar{v}_{\\mathrm{ej,wind}}$ [$c$]",
                   Ye_dyn="$\\bar{Y}_{e,\\mathrm{dyn}}$",
                   Ye_wind="$Y_{e,\\mathrm{wind}}$",
-                  luminosity_distance="$d_L$",
+                  luminosity_distance="$d_L$ [Mpc]",
                   redshift="$z$",
-                  sys_err="$\\sigma_{\mathrm{sys}}$",
-                  Gamma0="$\\Gamma_0$")
+                  sys_err="$\\sigma_{\\mathrm{sys}}$ [mag]",
+                  Gamma0="$\\Gamma_0$",
+                  timeshift = "$t_0$ [days]",
+                  log10_Menv = "$\\log_{10}(M_{\\rm e})$ [$M_\\odot$]",
+                  log10_Renv = "$\\log_{10}(R_{\\rm e})$ [cm]",
+                  log10_Ee = "$\\log_{10}(E_e)$ [erg]", 
+                  em_syserr = "$\\sigma_{\\rm sys}$ [mag]",
+                  Ebv = "$E(B-V)$ [mag]",
+                  amplitude = "$A$",
+                  supernova_mag_stretch = "$s$")
 
 
 
@@ -86,7 +94,8 @@ def corner_plot(posterior: dict | pd.DataFrame,
                 color:str = "blue",
                 legend_label:str = None,
                 fig: matplotlib.figure.Figure = None,
-                ax: matplotlib.axes.Axes = None):
+                ax: matplotlib.axes.Axes = None, 
+                **kwargs):
     """
     Make a nice corner plot from the posterior with automated parameter labels.
 
@@ -125,12 +134,15 @@ def corner_plot(posterior: dict | pd.DataFrame,
     if (fig is None and ax is not None) or (fig is not None and ax is None):
         raise ValueError("fig and ax must be either both be specified or both be None.")
 
+    corner_args = default_corner_kwargs.copy()
+    corner_args.update(kwargs)
+
     corner.corner(posterior[parameter_names], 
                   fig=fig,
                   color=color,
                   labels=labels,
                   truths=truths_list,
-                  **default_corner_kwargs,
+                  **corner_args,
                   hist_kwargs=dict(density=True, color=color))
     
     if legend_label is not None:
