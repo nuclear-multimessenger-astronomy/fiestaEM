@@ -84,8 +84,8 @@ class FluxTrainer:
     
     def plot_example_lc(self, lc_model):
         _, _, X, y = self.data_manager.load_raw_data_from_file(0,1) # loads validation data
-        y = y.reshape(len(self.data_manager.nus), len(self.data_manager.times))
-        mJys_val = np.exp(y)
+        y = y.reshape(len(self.data_manager.nus), len(self.data_manager.times))        
+        mJys_val = np.power(10, y)
         params = dict(zip(self.parameter_names, X.flatten() ))
         _, mag_predict = lc_model.predict_abs_mag(params)
         mag_val = {Filt.name: Filt.get_mag(mJys_val, self.data_manager.nus) for Filt in lc_model.Filters}
@@ -183,7 +183,7 @@ class PCATrainer(FluxTrainer):
         Preprocessing method to get the PCA coefficients of the standardized training data.
         It assigns the attributes self.train_X, self.train_y, self.val_X, self.val_y that are passed to the fitting method.
         """
-        logger.info(f"Preprocessing data by decomposing data into {self.n_pca}.")
+        logger.info(f"Preprocessing data by decomposing data into {self.n_pca} components.")
         self.train_X, self.train_y, self.val_X, self.val_y, self.X_scaler, self.y_scaler = self.data_manager.preprocess_pca(self.n_pca, self.conversion)
         if np.any(np.isnan(self.train_y)) or np.any(np.isnan(self.val_y)):
             raise ValueError(f"Data preprocessing introduced nans. Check raw data for nans of infs or vanishing variance in a specific entry.")

@@ -212,11 +212,11 @@ class AfterglowData:
                     if comment is not None:
                         f["special_train"][label].attrs["comment"] = comment
                     f["special_train"][label].create_dataset("X", data = X, maxshape=(None, len(self.parameter_names)), chunks = (self.chunk_size, len(self.parameter_names)))
-                    f["special_train"][label].create_dataset("y", data = y, maxshape=(None, len(self.times)*len(self.nus)), chunks = (self.chunk_size, len(self.times)*len(self.nus)))
+                    f["special_train"][label].create_dataset("y", data = y, maxshape=(None, len(self.nus), len(self.times)), chunks = (self.chunk_size, len(self.times), len(self.nus)))
 
             else: # or if we need to create a new data set
                 f[group].create_dataset("X", data = X, maxshape=(None, len(self.parameter_names)), chunks = (self.chunk_size, len(self.parameter_names)))
-                f[group].create_dataset("y", data = y, maxshape=(None, len(self.times)*len(self.nus)), chunks = (self.chunk_size, len(self.times)*len(self.nus)))
+                f[group].create_dataset("y", data = y, maxshape=(None, len(self.nus), len(self.times)), chunks = (self.chunk_size, len(self.nus), len(self.times)))
 
 class AfterglowpyData(AfterglowData):
 
@@ -228,7 +228,7 @@ class AfterglowpyData(AfterglowData):
 
     def run_afterglow_model(self, X):
         """Uses multiprocessing to run afterglowpy on the supplied parameters in X."""
-        y = np.empty((len(X), len(self.times)*len(self.nus)))
+        y = np.empty((len(X), len(self.nus), len(self.times)))
         afgpy = RunAfterglowpy(self.jet_type, self.times, self.nus, X, self.parameter_names, self.fixed_parameters)
         pool = Pool(processes=self.n_pool)
         jobs = [pool.apply_async(func=afgpy, args=(argument,)) for argument in range(len(X))]
@@ -238,7 +238,7 @@ class AfterglowpyData(AfterglowData):
                 idx, out = job.get()
                 y[idx] = out
             except:
-                y[Idx] = np.full(len(self.times)*len(self.nus), np.nan)
+                y[Idx] = np.full(len(self.nus), len(self.times), np.nan)
         return X, y
 
 
@@ -254,7 +254,7 @@ class PyblastafterglowData(AfterglowData):
 
     def run_afterglow_model(self, X):
         """Should be run in parallel with different mpi processes to run pyblastafterglow on the parameters in the array X."""
-        y = np.empty((len(X), len(self.times)*len(self.nus)))
+        y = np.empty((len(X), len(self.nus), len(self.times)))
 
         pbag = RunPyblastafterglow(self.jet_type,
                                    self.times, 
@@ -279,10 +279,11 @@ class PyblastafterglowData(AfterglowData):
                     y[idx] = out
                     pbag.ntb = old_ntb
                 except:
-                    y[j] = np.full(len(self.times)*len(self.nus), np.nan)           
+                    y[j] = np.full(len(self.nus), len(self.times), np.nan)           
         return X, y
     
     def supplement_time(self,t_supp):
+        """ WARNING: NOT READY TO BE USED"""
         self.times = t_supp
 
         for group in ["train", "val", "test"]:
@@ -302,9 +303,9 @@ class PyblastafterglowData(AfterglowData):
                 y = np.concatenate((y_new, y_old), axis=-1)
 
                 new_time_shape = len(self.times) + f["times"].shape[0]
-                y = y.reshape(-1, new_time_shape * len(self.nus))
+                y = y.reshape(-1, len(self.nus), new_time_shape)
                 del f[group]["y"]
-                f[group].create_dataset("y", data=y, maxshape=(None, new_time_shape*len(self.nus)), chunks = (self.chunk_size, new_time_shape*len(self.nus)) )
+                f[group].create_dataset("y", data=y, maxshape=(None, len(self.nus), new_time_shape), chunks = (self.chunk_size, len(self.nus), new_time_shape) )
         
 
         with h5py.File(self.outfile,"r+") as f:
@@ -378,7 +379,7 @@ class RunAfterglowpy:
         param_dict = dict(zip(self.parameter_names, self.X[idx]))
         param_dict.update(self.fixed_parameters)
         mJys = self._call_afterglowpy(param_dict)
-        return  idx, np.log(mJys).flatten()
+        return  idx, np.log10(mJys)
 
 
 
@@ -507,4 +508,4 @@ class RunPyblastafterglow:
         param_dict = dict(zip(self.parameter_names, self.X[idx]))
         param_dict.update(self.fixed_parameters)
         mJys = self._call_pyblastafterglow(param_dict)
-        return  idx, np.log(mJys).flatten()
+        return  idx, np.log10(mJys)

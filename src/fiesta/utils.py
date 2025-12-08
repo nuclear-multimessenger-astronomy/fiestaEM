@@ -25,7 +25,7 @@ from fiesta.constants import c, days_to_seconds
 
 def read_parameters_POSSIS(filename):
     num_str = re.findall(r'\d+\.\d+', filename) 
-    parlist = list(map(float, num_str)) # the first entry here is the photon package number
+    parlist = list(map(float, num_str)) # the first entry here is the number of photon packets
     return parlist[1:]
 
 def read_POSSIS_file(filename):
@@ -44,7 +44,7 @@ def read_POSSIS_file(filename):
         flux = np.transpose(flux, axes = [0,2,1])
     
     mJys, _ = jax.vmap(Flambda_to_Fnu, in_axes = (0, None), out_axes = (0, None))(flux, waves)
-    y_file = np.log(mJys).reshape(-1, 1000 *100)
+    y_file = np.log10(mJys).reshape(-1, 1000, 100)
     
     X_file = np.array([[*parameters, obs_angle] for obs_angle in inclinations])
     
@@ -53,11 +53,11 @@ def read_POSSIS_file(filename):
 def convert_POSSIS_outputs_to_h5(possis_dirs: list[str] | str,
                                  outfile: str,
                                  parameter_names: list[str] = ["log10_mej_dyn", "v_ej_dyn", "Ye_dyn", "log10_mej_wind", "v_ej_wind", "Ye_wind", "inclination_EM"],
-                                 clip: float = 15.,
+                                 clip: float = 6.5144,
                                  log_arguments = [0, 3]):
     
     if isinstance(possis_dirs, str):
-        possis_dirs = list(possis_dirs)
+        possis_dirs = [possis_dirs]
     
     files = []
     for dir in possis_dirs:
@@ -100,8 +100,82 @@ def convert_POSSIS_outputs_to_h5(possis_dirs: list[str] | str,
                         times,
                         nus,
                         parameter_names,
-                        parameter_distributions) 
+                        parameter_distributions)
     
+#####################
+# GWEMOPT UTILITIES #
+#####################
+
+def read_gwemopt_parameters(filename: str):
+    # QNLTE_n6_toy_KN_3E-03X_lan_0.3v_2.0E-02M_1D_spec_final.h5
+    num_str = re.findall(r'\d+\.?\d*E?-?\d*', filename)
+    parlist = list(map(float, num_str)) # the last entry here is 1D and h5
+    return parlist[:-2]
+
+def read_gwemopt_file(filename: str):
+
+    parameters = read_gwemopt_parameters(filename)
+    with h5py.File(filename) as f:
+        Lnu = f["Lnu"][::, ::2]
+        Lnu = np.maximum(Lnu, 1e-15)
+        Lnu /= 4*np.pi* ((10*u.pc).to(u.cm).value)**2 # to erg / (s Hz cm^2)
+        Lnu *= 1e26 # to mJy
+        
+        y_file = np.log10(Lnu.T)
+    
+    X_file = np.array(parameters)
+    
+    return X_file, y_file
+
+
+def convert_gwemopt_to_h5(dirs: list[str],
+                          outfile: str,
+                          parameter_names: list[str] = ["dens_slope", "log10_X_lan", "vkin", "log10_mej"],
+                          clip: float = 6.5144,
+                          log_arguments = [1, 3]):
+    if isinstance(dirs, str):
+        dirs = [dirs]
+    
+    files = []
+    for dir in dirs:
+        files.extend([os.path.join(dir, f) for f in os.listdir(dir) if f.endswith(".h5")])
+    
+    with h5py.File(files[0]) as f:
+        nus = f["nu"][::2]
+        times = f["time"][:] / days_to_seconds
+
+    X, y = [], []
+    for file in files:
+        
+        X_file, y_file = read_gwemopt_file(file)
+        X.append(X_file)
+        y.append(y_file)
+    
+    X, y = np.array(X), np.array(y)
+
+    if X.shape[1] != len(parameter_names):
+        raise ValueError(f"parameter_names do not match parameters stored in POSSIS file ({X.shape[1]} parameters in POSSIS files).")
+    
+    y = np.maximum(y, clip)
+    X[:,log_arguments] = np.log10(X[:,log_arguments]) # make mej_dyn and mej_wind to log10
+
+    train_X, val_X, train_y, val_y = train_test_split(X, y, train_size=0.8)
+    val_X, test_X, val_y, test_y = train_test_split(val_X, val_y, train_size=0.5)
+    
+    parameter_distributions = {p: (np.min(train_X[:,j]).item(), np.max(train_X[:,j]).item(), "uniform") for j, p in enumerate(parameter_names)}
+
+    write_training_data(outfile, 
+                        train_X,
+                        train_y,
+                        val_X,
+                        val_y,
+                        test_X,
+                        test_y,
+                        times,
+                        nus,
+                        parameter_names,
+                        parameter_distributions)
+
 
 #########################
 ### GENERAL UTILITIES ###
@@ -137,8 +211,8 @@ def write_training_data(outfile: str,
         f.create_dataset("parameter_names", data = parameter_names)
         f.create_dataset("parameter_distributions", data = str(parameter_distributions))
         f.create_group("train"); f.create_group("val"); f.create_group("test"); f.create_group("special_train")
-        f["train"].create_dataset("X", data = train_X, maxshape=(None, len(parameter_names)), chunks = (1000, len(parameter_names)))
-        f["train"].create_dataset("y", data = train_y, maxshape=(None, len(times)*len(nus)), chunks = (1000, len(times)*len(nus)))
+        f["train"].create_dataset("X", data = train_X, maxshape=(None, len(parameter_names)), chunks = (100, len(parameter_names)))
+        f["train"].create_dataset("y", data = train_y, maxshape=(None, len(nus), len(times)), chunks = (100, len(nus), len(times)))
         f["val"].create_dataset("X", data = val_X)
         f["val"].create_dataset("y", data = val_y)
         f["test"].create_dataset("X", data= test_X)

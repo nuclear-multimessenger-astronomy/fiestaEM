@@ -2,33 +2,33 @@ import numpy as np
 import matplotlib.pyplot as plt
 import h5py
 
-from fiesta.train.FluxTrainer import CVAETrainer, DataManager
-from fiesta.inference.lightcurve_model import AfterglowFlux
+from fiesta.train.FluxTrainer import PCATrainer
+from fiesta.inference.lightcurve_model import FluxModel
 from fiesta.train.neuralnets import NeuralnetConfig
 
 #############
 ### SETUP ###
 #############
 
-tmin = 1e-4 # days
-tmax = 2000
+tmin = 0.21 # days
+tmax = 21
 
 
-numin = 1e9 # Hz 
-numax = 5e18
+numin = 1e14 # Hz 
+numax = 2e15
 
+n_training = 240 
+n_val = 30
 
-n_training = 80_000
-n_val = 7500
-image_size = np.array([42, 57])
+n_pca = 30
 
-name = "afgpy_gaussian"
+name = "gwemopt_MLP"
 outdir = f"./model/"
-file = "../_training_data/afterglowpy_gaussian_raw_data.h5"
+file = "./gwemopt_raw_data.h5"
 
-config = NeuralnetConfig(output_size= int(np.prod(image_size)),
-                         nb_epochs=200_000,
-                         hidden_layer_sizes = [600, 400, 200],
+config = NeuralnetConfig(output_size=n_pca,
+                         nb_epochs=100_000,
+                         hidden_layer_sizes = [32, 32],
                          learning_rate =2e-4)
 
 
@@ -44,20 +44,20 @@ data_manager_args = dict(file = file,
                            tmax= tmax,
                            numin = numin,
                            numax = numax, 
-                           special_training=["01"])
+                           )
 
-trainer = CVAETrainer(name,
+trainer = PCATrainer(name,
                      outdir,
                      data_manager_args = data_manager_args,
                      plots_dir=f"./benchmarks/",
-                     image_size=image_size,
-                     conversion="thetaWing_inclination",
+                     n_pca=n_pca,
                      save_preprocessed_data=False
                      )
 
 ###############
 ### FITTING ###
 ###############
+
 
 trainer.fit(config=config)
 trainer.save()
@@ -67,11 +67,10 @@ trainer.save()
 #############
 
 print("Producing example lightcurve . . .")
-FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
-lc_model = AfterglowFlux(name,
-                          outdir, 
-                          filters = FILTERS)
-
+FILTERS = ["ps1::y", "besselli", "bessellv", "bessellux"]
+lc_model = FluxModel(name,
+                     directory=outdir, 
+                     filters=FILTERS)
 
 trainer.plot_example_lc(lc_model)

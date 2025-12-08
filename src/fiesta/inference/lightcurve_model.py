@@ -446,7 +446,7 @@ class FluxModel(SurrogateModel):
     
     def convert_to_mag(self, y: Array, x: dict[str, Array]) -> tuple[Array, dict[str, Array]]:
 
-        mJys = jnp.exp(y)
+        mJys = jnp.power(10, y)
 
         mJys_obs, times_obs, nus_obs = apply_redshift(mJys, self.times, self.nus, x["redshift"])
         # TODO: Add EBL table here at some point
