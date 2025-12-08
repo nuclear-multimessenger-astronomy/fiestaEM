@@ -65,7 +65,7 @@ class Benchmarker:
             test_y_raw = test_y_raw.reshape(len(self.test_X_raw), len(f["nus"]), len(f["times"]) )
 
             test_y_raw = interp1d(f["times"][:], test_y_raw, axis = 2)(self.times) # interpolate the test data over the time range of the model
-            mJys = np.exp(test_y_raw)
+            mJys = np.power(10, test_y_raw)
         
         if "redshift" in self.parameter_names:
             from fiesta.train.DataManager import concatenate_redshift, redshifted_magnitude
@@ -120,7 +120,7 @@ class Benchmarker:
         self.plot_error_distribution()
 
     def plot_lightcurves_mismatch(self,
-                                  parameter_labels: list[str] = ["$\\iota$", "$\log_{10}(E_0)$", "$\\theta_c$", "$\log_{10}(n_{\mathrm{ism}})$", "$p$", "$\\epsilon_E$", "$\\epsilon_B$"]
+                                  parameter_labels: list[str] = ["$\\iota$", "$\\log_{10}(E_0)$", "$\\theta_c$", "$\\log_{10}(n_{\mathrm{ism}})$", "$p$", "$\\epsilon_E$", "$\\epsilon_B$"]
                                   ):
         if self.metric_name == "$\\mathcal{L}_2$":
             vline = self.metric(np.ones(len(self.times)))
