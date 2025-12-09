@@ -17,17 +17,17 @@ tmax = 1e3
 numin = 1e9 # Hz 
 numax = 1e18
 
-n_training = 100
-n_val = 30
+n_training = 200
+n_val = 10
 
-n_pca = 30
+n_pca = 20
 
-name = "gwemopt_MLP"
+name = "test_MLP"
 outdir = f"./model/"
-file = "./data/test_raw_data.h5"
+file = "./data/afterglowpy_tophat_reduced_set.h5"
 
 config = NeuralnetConfig(output_size=n_pca,
-                         nb_epochs=100,
+                         nb_epochs=100_000,
                          hidden_layer_sizes = [32, 32],
                          learning_rate =2e-4)
 
@@ -43,7 +43,8 @@ data_manager_args = dict(file = file,
                          tmin= tmin,
                          tmax= tmax,
                          numin = numin,
-                         numax = numax, 
+                         numax = numax,
+                         special_training=["special_1"],
                          )
 
 trainer = PCATrainer(name,

@@ -1,4 +1,5 @@
 from typing import Callable
+import tqdm
 
 import numpy as np
 import jax.numpy as jnp
@@ -195,7 +196,7 @@ class DataManager:
         yscaler = DataScaler([scalers.PCADecomposer(n_components=n_components)])
         
         # load potentially large training data set
-        train_X, train_y, Xscaler, yscaler = self._preprocess_training_batches(Xscaler, yscaler, (n_components,))
+        train_X, train_y, Xscaler, yscaler = self._preprocess_training_batches(Xscaler, yscaler, n_components)
         
         # preprocess the special training data as well ass the validation data
         train_X, train_y, val_X, val_y = self.__preprocess__special_and_val_data(train_X, train_y, Xscaler, yscaler)
@@ -236,7 +237,7 @@ class DataManager:
         train_X, train_y, val_X, val_y = self.__preprocess__special_and_val_data(train_X, train_y, Xscaler, yscaler)
         return train_X, train_y, val_X, val_y, Xscaler, yscaler
     
-    def _preprocess_training_batches(self, Xscaler, yscaler, feature_shape: tuple[int]) -> tuple[Array, Array, object, object]:
+    def _preprocess_training_batches(self, Xscaler, yscaler, feature_shape) -> tuple[Array, Array, object, object]:
         # preprocess the training data
         with h5py.File(self.file, "r") as f:
 
@@ -261,7 +262,7 @@ class DataManager:
             chunk_size = y_set.chunks[0] # load raw data in chunks of chunk_size
             nchunks, rest = divmod(self.n_training, chunk_size) # load raw data in chunks of chunk_size
 
-            for j in range(nchunks):
+            for j in tqdm.tqdm(range(nchunks)):
                 sl = slice(j*chunk_size, (j+1)*chunk_size)
                 raw_batch = np.empty((chunk_size, len(self.nus_data), len(self.times_data)), dtype=jnp.float16)
                 y_set.read_direct(raw_batch, source_sel=np.s_[sl, :, :])
