@@ -22,9 +22,8 @@ numax = 1e18
 n_training = 200
 n_val = 10
 
-working_dir = os.path.dirname(__file__)
-file = "../examples/training/data/afterglowpy_tophat_reduced_set.h5"
-
+fiesta_dir = Path(__file__).parent.parent.absolute()
+file = os.path.join(fiesta_dir, "examples/training/data/afterglowpy_tophat_reduced_set.h5")
 
 
 ###############
