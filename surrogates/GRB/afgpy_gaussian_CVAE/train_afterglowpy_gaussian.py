@@ -59,8 +59,8 @@ trainer = CVAETrainer(name,
 ### FITTING ###
 ###############
 
-#trainer.fit(config=config)
-#trainer.save()
+trainer.fit(config=config)
+trainer.save()
 
 #############
 ### TEST ###
