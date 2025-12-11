@@ -24,7 +24,7 @@ n_pca = 100
 
 name = "Bu2025_MLP"
 outdir = f"./model/"
-file = "../training_data/Bu2025_raw_data.h5"
+file = "../_training_data/Bu2025_raw_data.h5"
 
 config = NeuralnetConfig(output_size=n_pca,
                          nb_epochs=240_000,

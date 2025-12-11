@@ -22,8 +22,8 @@ n_val = 7676
 image_size = np.array([42, 57])
 
 name = "pbag_gaussian"
-outdir = f"../../../src/fiesta/surrogates/GRB/pbag_gaussian_CVAE/model/"
-file = "../data/pyblastafterglow_gaussian_raw_data.h5"
+outdir = f"./model/"
+file = "../_training_data/pyblastafterglow_gaussian_raw_data.h5"
 
 config = NeuralnetConfig(output_size= int(np.prod(image_size)),
                          nb_epochs=250_000,
@@ -68,7 +68,7 @@ print("Producing example lightcurve . . .")
 FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
 lc_model = AfterglowFlux(name,
-                          outdir, 
-                          filters = FILTERS)
+                         directory=outdir, 
+                         filters = FILTERS)
 
 trainer.plot_example_lc(lc_model)
