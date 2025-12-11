@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --partition gpu
-#SBATCH --job-name=train_pbag
+#SBATCH --job-name=train_afgpy_CVAE
 #SBATCH -o ./log
 #SBATCH -e ./err
 

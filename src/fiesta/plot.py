@@ -2,7 +2,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 pltparams = {"axes.grid": False,
-        "text.usetex" : True,
+        "text.usetex" : False,
         "font.family" : "serif",
         "ytick.color" : "black",
         "xtick.color" : "black",

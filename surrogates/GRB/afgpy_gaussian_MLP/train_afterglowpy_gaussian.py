@@ -58,8 +58,8 @@ trainer = PCATrainer(name,
 ### FITTING ###
 ###############
 
-trainer.fit(config=config)
-trainer.save()
+#trainer.fit(config=config)
+#trainer.save()
 
 #############
 ### TEST  ###
@@ -69,7 +69,7 @@ print("Producing example lightcurve . . .")
 FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
 lc_model = AfterglowFlux(name,
-                          outdir, 
-                          filters = FILTERS)
+                         directory=outdir, 
+                         filters = FILTERS)
 
 trainer.plot_example_lc(lc_model)
