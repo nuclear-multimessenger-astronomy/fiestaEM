@@ -79,7 +79,7 @@ class FluxTrainer:
         plt.ylabel("Loss")
         plt.yscale('log')
         plt.title("Learning curves")
-        plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{self.name}.png"))
+        plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{self.name}.png"), bbox_inches="tight")
         plt.close()
     
     def plot_example_lc(self, lc_model):
@@ -107,7 +107,7 @@ class FluxTrainer:
 
             if self.plots_dir is None:
                 self.plots_dir = "."
-            plt.savefig(os.path.join(self.plots_dir, f"{self.name}_{filt.name}_example.png"))
+            plt.savefig(os.path.join(self.plots_dir, f"{self.name}_{filt.name}_example.png"), bbox_inches="tight")
             plt.close()
     
     def save(self) -> None:
