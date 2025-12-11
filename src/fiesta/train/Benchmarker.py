@@ -43,7 +43,7 @@ class Benchmarker:
             self.metric2d = lambda y: np.sqrt(trapezoid(x = self.nus, y =trapezoid(x = self.times, y = (y**2).reshape(-1, len(self.nus), len(self.times)) ) ))
             self.file_ending = "L2"
         else:
-            self.metric_name = "$\\mathcal{L}_\\inf$"
+            self.metric_name = "$\\mathcal{L}_\\infty$"
             self.metric = lambda y: np.max(np.abs(y), axis = -1)
             self.metric2d = lambda y: np.max(np.abs(y), axis = (1,2))
             self.file_ending = "Linf"

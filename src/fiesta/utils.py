@@ -88,7 +88,7 @@ def convert_POSSIS_outputs_to_h5(possis_dirs: list[str] | str,
     train_X, val_X, train_y, val_y = train_test_split(X, y, train_size=0.8)
     val_X, test_X, val_y, test_y = train_test_split(val_X, val_y, train_size=0.5)
     
-    parameter_distributions = {p: (min(train_X[:,j]), max(train_X[:,j]), "uniform") for j, p in enumerate(parameter_names)}
+    parameter_distributions = {p: (np.min(train_X[:,j]).item(), np.max(train_X[:,j]).item(), "uniform") for j, p in enumerate(parameter_names)}
 
     write_training_data(outfile, 
                         train_X,
@@ -107,7 +107,6 @@ def convert_POSSIS_outputs_to_h5(possis_dirs: list[str] | str,
 #####################
 
 def read_gwemopt_parameters(filename: str):
-    # QNLTE_n6_toy_KN_3E-03X_lan_0.3v_2.0E-02M_1D_spec_final.h5
     num_str = re.findall(r'\d+\.?\d*E?-?\d*', filename)
     parlist = list(map(float, num_str)) # the last entry here is 1D and h5
     return parlist[:-2]
