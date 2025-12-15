@@ -42,7 +42,11 @@ To train your own surrogate models, have a look at some of the example scripts i
 
 ## Examples
 
-We have example scripts for running an inference on AT2017gfo + GRB170817A. They can be found in `./examples/inference/`. We also plan to add an example section on training surrogates in the future.
+The `./examples/training/` directory contains scripts that show how to use the `fiesta` API to train a flux density surrogate either with a CVAE architecture or with a simple feed-forward NN.
+Mock training data is provided as well, but note that the data set is reduced significantly and thus you will not be able to get a decent surrogate from it. 
+If you want to use our training data, please contact us so we can figure out a way how to deliver the heavy files (> 10GB) to you.
+We also have example scripts for running an inference on AT2017gfo + GRB170817A. They can be found in `./examples/inference/`. 
+Note that for all of these example scripts it is highly recommended to use GPU-acceleration, since otherwise the runtime will rather long.
 
 ## Acknowledgements
 

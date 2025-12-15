@@ -446,7 +446,7 @@ class FluxModel(SurrogateModel):
     
     def convert_to_mag(self, y: Array, x: dict[str, Array]) -> tuple[Array, dict[str, Array]]:
 
-        mJys = jnp.exp(y)
+        mJys = jnp.power(10, y)
 
         mJys_obs, times_obs, nus_obs = apply_redshift(mJys, self.times, self.nus, x["redshift"])
         # TODO: Add EBL table here at some point
@@ -461,13 +461,13 @@ class FluxModel(SurrogateModel):
     
     def predict_log_flux(self, x: Array) -> Array:
         """
-        Predict the total log flux array for the parameters x.
+        Predict the total log10 flux array for the parameters x.
 
         Args:
             x [Array]: raw parameter array
 
         Returns:
-            log_flux [Array]: Array of log-fluxes.
+            log_flux [Array]: Array of log10-fluxes in mJy.
         """
         x = x.reshape(1,-1)
         x_tilde = self.X_scaler.transform(x)
@@ -475,9 +475,9 @@ class FluxModel(SurrogateModel):
         x_tilde = jnp.concatenate((self.latent_vector, x_tilde))
         y = self.models.apply_fn({'params': self.models.params}, x_tilde)
 
-        logflux = self.y_scaler.inverse_transform(y)
-        logflux = logflux.reshape(len(self.nus), len(self.times))
-        return logflux
+        log10_flux = self.y_scaler.inverse_transform(y)
+        log10_flux = log10_flux.reshape(len(self.nus), len(self.times))
+        return log10_flux
     
 class CombinedSurrogate(SurrogateModel):
     def __init__(self,

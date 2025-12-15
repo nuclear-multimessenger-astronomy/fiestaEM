@@ -5,8 +5,7 @@
 #SBATCH -o ./log
 #SBATCH -e ./err
 
-#SBATCH --nodelist=hgc02
-###SBATCH --nodes=1
+#SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:1
 #SBATCH --mem-per-gpu=80G

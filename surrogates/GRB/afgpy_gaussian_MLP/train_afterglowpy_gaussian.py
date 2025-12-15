@@ -23,8 +23,8 @@ n_val = 7500
 n_pca = 50
 
 name = "afgpy_gaussian"
-outdir = f"../../../src/fiesta/surrogates/GRB/afgpy_gaussian_MLP/model/"
-file = "../training_data/afterglowpy_gaussian_raw_data.h5"
+outdir = f"./model/"
+file = "../_training_data/afterglowpy_gaussian_raw_data.h5"
 
 config = NeuralnetConfig(output_size=n_pca,
                          nb_epochs=240_000,
@@ -58,8 +58,8 @@ trainer = PCATrainer(name,
 ### FITTING ###
 ###############
 
-trainer.fit(config=config)
-trainer.save()
+#trainer.fit(config=config)
+#trainer.save()
 
 #############
 ### TEST  ###
@@ -69,7 +69,7 @@ print("Producing example lightcurve . . .")
 FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
 lc_model = AfterglowFlux(name,
-                          outdir, 
-                          filters = FILTERS)
+                         directory=outdir, 
+                         filters = FILTERS)
 
 trainer.plot_example_lc(lc_model)

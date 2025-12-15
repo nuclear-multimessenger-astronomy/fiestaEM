@@ -117,6 +117,33 @@ class InjectionBase:
         
         # add additional non detections
         self.randomize_nondetections()
+
+    def create_injection_from_mags(self,
+                                   times: Array,
+                                   mag_app: Array):
+                
+        self.injection_dict = dict()
+        self.data = {}
+
+        for Filter in self.Filters:
+            t_detect = self.t_detect[Filter.name]
+            mu = np.interp(t_detect, times, mag_app[Filter.name])
+
+            sigma = self.error_budget * np.sqrt(np.random.chisquare(df=1, size = len(t_detect)))
+            sigma = np.maximum(sigma, 0.01)
+            sigma = np.minimum(sigma, 1)
+
+            mag_measured = np.random.normal(loc=mu, scale=sigma)
+            
+            # apply detection limit
+            not_detected = np.where(mag_measured > self.detection_limit)
+            mag_measured[not_detected] = self.detection_limit
+            sigma[not_detected] = np.inf
+
+            self.data[Filter.name] = np.array([t_detect + self.trigger_time, mag_measured, sigma]).T
+        
+        # add additional non detections
+        self.randomize_nondetections()
     
     def _get_injection_lc_from_file(self, injection_dict, file):
         """Create a synthetic lightcurve from training data file given the parameters in injection_dict."""

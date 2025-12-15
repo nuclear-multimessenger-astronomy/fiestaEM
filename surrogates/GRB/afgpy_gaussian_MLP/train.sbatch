@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --partition gpu
-#SBATCH --job-name=train_pbag
+#SBATCH --job-name=train_afgpy_MLP
 #SBATCH -o ./log
 #SBATCH -e ./err
 
@@ -12,8 +12,8 @@
 
 #SBATCH --time=24:00:00
 
-module load miniforge3
 eval "$(conda shell.bash hook)"  # Initialize Conda in the script
 conda activate fiesta
+echo $(which python)
 
 python train_afterglowpy_gaussian.py
