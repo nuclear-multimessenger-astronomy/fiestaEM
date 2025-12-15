@@ -131,7 +131,7 @@ class Benchmarker:
             bins = np.linspace(vmin, vmax, 20)
     
         cmap = colors.LinearSegmentedColormap.from_list(name = "mymap", colors = [(0, "lightblue"), (1, "darkred")])
-        label_dic = {p: latex_labels[p] for p in self.parameter_names}
+        label_dic = {p: latex_labels.get(p, p) for p in self.parameter_names}
 
         for Filt in self.Filters:
 
