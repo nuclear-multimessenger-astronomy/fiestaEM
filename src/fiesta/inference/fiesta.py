@@ -295,10 +295,11 @@ class Fiesta(object):
         # Save
         fig.savefig(os.path.join(self.outdir, "lightcurves.pdf"), bbox_inches = 'tight', dpi=250)
     
-    def plot_corner(self,):
+    def plot_corner(self, truths: dict = {}):
 
         fig, ax = corner_plot(self.posterior_samples,
-                              self.prior.naming)
+                              self.prior.naming,
+                              truths=truths)
         
         if fig==1:
             return

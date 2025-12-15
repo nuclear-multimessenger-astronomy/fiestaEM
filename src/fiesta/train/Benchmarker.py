@@ -12,6 +12,7 @@ from scipy.integrate import trapezoid
 from scipy.interpolate import interp1d
 
 from fiesta.inference.lightcurve_model import LightcurveModel, FluxModel
+from fiesta.plot import latex_labels
 
 class Benchmarker:
 
@@ -42,7 +43,7 @@ class Benchmarker:
             self.metric2d = lambda y: np.sqrt(trapezoid(x = self.nus, y =trapezoid(x = self.times, y = (y**2).reshape(-1, len(self.nus), len(self.times)) ) ))
             self.file_ending = "L2"
         else:
-            self.metric_name = "$\\mathcal{L}_\\inf$"
+            self.metric_name = "$\\mathcal{L}_\\infty$"
             self.metric = lambda y: np.max(np.abs(y), axis = -1)
             self.metric2d = lambda y: np.max(np.abs(y), axis = (1,2))
             self.file_ending = "Linf"
@@ -65,7 +66,7 @@ class Benchmarker:
             test_y_raw = test_y_raw.reshape(len(self.test_X_raw), len(f["nus"]), len(f["times"]) )
 
             test_y_raw = interp1d(f["times"][:], test_y_raw, axis = 2)(self.times) # interpolate the test data over the time range of the model
-            mJys = np.exp(test_y_raw)
+            mJys = np.power(10, test_y_raw)
         
         if "redshift" in self.parameter_names:
             from fiesta.train.DataManager import concatenate_redshift, redshifted_magnitude
@@ -119,9 +120,7 @@ class Benchmarker:
         self.plot_error_over_time()
         self.plot_error_distribution()
 
-    def plot_lightcurves_mismatch(self,
-                                  parameter_labels: list[str] = ["$\\iota$", "$\log_{10}(E_0)$", "$\\theta_c$", "$\log_{10}(n_{\mathrm{ism}})$", "$p$", "$\\epsilon_E$", "$\\epsilon_B$"]
-                                  ):
+    def plot_lightcurves_mismatch(self):
         if self.metric_name == "$\\mathcal{L}_2$":
             vline = self.metric(np.ones(len(self.times)))
             vmin, vmax = 0, vline*2
@@ -132,7 +131,7 @@ class Benchmarker:
             bins = np.linspace(vmin, vmax, 20)
     
         cmap = colors.LinearSegmentedColormap.from_list(name = "mymap", colors = [(0, "lightblue"), (1, "darkred")])
-        label_dic = {p: label for p, label in zip(self.parameter_names, parameter_labels)}
+        label_dic = {p: latex_labels.get(p, p) for p in self.parameter_names}
 
         for Filt in self.Filters:
 

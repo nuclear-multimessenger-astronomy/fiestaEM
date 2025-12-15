@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --partition gpu
-#SBATCH --job-name=train_pbag
+#SBATCH --job-name=train_pbag_tophat_CVAE
 #SBATCH -o ./log
 #SBATCH -e ./err
 
@@ -12,7 +12,6 @@
 
 #SBATCH --time=24:00:00
 
-module load miniforge3
 eval "$(conda shell.bash hook)"  # Initialize Conda in the script
 conda activate fiesta
 

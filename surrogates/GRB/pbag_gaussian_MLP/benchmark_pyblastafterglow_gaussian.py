@@ -16,22 +16,9 @@ for metric_name in ["L2", "Linf"]:
     
     benchmarker = Benchmarker(
                     model = lc_model,
-                    data_file = "../data/pyblastafterglow_gaussian_raw_data.h5",
+                    data_file = "../_training_data/pyblastafterglow_gaussian_raw_data.h5",
                     metric_name = metric_name
                     )
     
     benchmarker.benchmark()
-
-    benchmarker.plot_lightcurves_mismatch(parameter_labels = ["$\\iota$", 
-                                                              "$\log_{10}(E_0)$", 
-                                                              "$\\theta_{\\mathrm{c}}$",
-                                                              "$\\alpha_{\\mathrm{w}}$",
-                                                              "$\log_{10}(n_{\mathrm{ism}})$", 
-                                                              "$p$", 
-                                                              "$\log_{10}(\\epsilon_e)$", 
-                                                              "$\log_{10}(\\epsilon_B)$",
-                                                              "$\\Gamma_0$"])
-
-
-
-
+    benchmarker.plot_lightcurves_mismatch() 

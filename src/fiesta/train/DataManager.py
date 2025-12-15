@@ -1,4 +1,5 @@
 from typing import Callable
+import tqdm
 
 import numpy as np
 import jax.numpy as jnp
@@ -68,8 +69,7 @@ class DataManager:
             - "parameter_names": list of the parameter names that are present in the training data.
             - "parameter_distributions": utf-8-string of a dict containing the boundaries and distribution of the parameters.
         Additionally, it must contain three data groups "train", "val", "test". Each of these groups contains two data sets, namely "X" and "y". 
-        The X arrays contain the model parameters with columns in the order of "parameter_names" and thus have shape (-1, #parameters). The y array contains the associated log of the spectral flux densities in mJys and have shape (-1, #nus * #times).
-        To get the full 2D log spectral flux density arrays, one needs to reshape 1D entries of y to (#nus, #times). 
+        The X arrays contain the model parameters with columns in the order of "parameter_names" and thus have shape (-1, #parameters). The y array contains the associated log10 of the spectral flux densities in mJys and have shape (-1, #nus, #times).
         
         Args:
             file (str): Path to the .h5 file that contains the raw data.
@@ -81,7 +81,7 @@ class DataManager:
             max (float): Maximum time for which the data will be read in. Fluxes later than this time will not be loaded. Defaults to the maximum time of the stored data, if larger than that value.
             numin (float): Minimum frequency for which the data will be read in. Fluxes with frequencies lower than this frequency will not be loaded. Defaults to the minimum frequency of the stored data, if smaller than that value.
             numax (float): Maximum frequency for which the data will be read in. Fluxes with frequencies higher than this frequency will not be loaded. Defaults to the maximum frequency of the stored data, if larger than that value. Defaults to 1e9 Hz (1 GHz).
-            special_training (list[str]): Batch of 'special' training data to be added. This can be customly designed training data to cover a certain area of the parameter space more intensily and should be stored in the .h5 file as f['special_train'][label]['X'] and f['special_train'][label]['y'], where label is an entry in this special_training. Defaults to [].
+            special_training (list[str]): Batch of 'special' training data to be added. This can be customly designed training data to cover a certain area of the parameter space more intensily and should be stored in the .h5 file as f['special_train'][label]['X'] and f['special_train'][label]['y'], where label is an entry for this special_training argument. Defaults to [].
         """
         
         self.file = file
@@ -133,7 +133,8 @@ class DataManager:
         self.n_nus = len(self.nus)
 
         mask = nu_mask[:, None] & time_mask
-        self.mask = mask.flatten()
+        self.mask = mask
+        self.n_mask = np.sum(self.mask)
     
     def print_file_info(self,) -> None:
         """
@@ -159,13 +160,13 @@ class DataManager:
             if n_training>self.n_training_exists:
                 raise ValueError(f"Only {self.n_training_exists} entries in file, not enough to train with {self.n_training} data points.")
             train_X_raw = f["train"]["X"][:n_training]
-            train_y_raw = f["train"]["y"][:n_training, self.mask]
+            train_y_raw = f["train"]["y"][:n_training][:, self.mask]
 
             if n_val>self.n_val_exists:
                 raise ValueError(f"Only {self.n_val_exists} entries in file, not enough to validate with {self.n_val} data points.")
             
             val_X_raw = f["val"]["X"][:n_val]
-            val_y_raw = f["val"]["y"][:n_val, self.mask]
+            val_y_raw = f["val"]["y"][:n_val][:, self.mask]
         
         return train_X_raw, train_y_raw, val_X_raw, val_y_raw
     
@@ -194,31 +195,8 @@ class DataManager:
                                   conversion=conversion)
         yscaler = DataScaler([scalers.PCADecomposer(n_components=n_components)])
         
-        # preprocess the training data
-        with h5py.File(self.file, "r") as f:
-            train_X_raw = f["train"]["X"][:self.n_training]
-            train_X = Xscaler.fit_transform(train_X_raw) # fit the Xscaler and transform the train_X_raw
-            
-            y_set = f["train"]["y"]
-            loaded = y_set[: min(20_000, self.n_training), self.mask].astype(np.float16) # only load max. 20k cause otherwise we might run out of memory at this step
-            assert not np.any(np.isinf(loaded)), f"Found inftys in training data."
-            yscaler.fit(loaded) # fit the yscaler and transform with the loaded data
-            del loaded; gc.collect() # remove loaded from memory
-
-            train_y = np.empty((self.n_training, n_components))
-
-            chunk_size = y_set.chunks[0] # load raw data in chunks of chunk_size
-            nchunks, rest = divmod(self.n_training, chunk_size) # load raw data in chunks of chunk_size
-            for j, chunk in enumerate(y_set.iter_chunks()):
-                if j >= nchunks:
-                    break
-                loaded = y_set[chunk][:, self.mask]
-                assert not np.any(np.isinf(loaded)), f"Found inftys in training data."
-                train_y[j*chunk_size:(j+1)*chunk_size] = yscaler.transform(loaded)
-            if rest > 0:
-                loaded = y_set[-rest:, self.mask]
-                assert not np.any(np.isinf(loaded)), f"Found inftys in training data."
-                train_y[-rest:] = yscaler.transform(loaded)
+        # load potentially large training data set
+        train_X, train_y, Xscaler, yscaler = self._preprocess_training_batches(Xscaler, yscaler, n_components)
         
         # preprocess the special training data as well ass the validation data
         train_X, train_y, val_X, val_y = self.__preprocess__special_and_val_data(train_X, train_y, Xscaler, yscaler)
@@ -249,36 +227,61 @@ class DataManager:
                                   conversion=conversion)
         yscaler = DataScaler(scalers=[scalers.ImageScaler(downscale=image_size, upscale=(self.n_nus, self.n_times)), scalers.StandardScalerJax()])
         
-        # preprocess the training data
-        with h5py.File(self.file, "r") as f:
-            train_X_raw = f["train"]["X"][:self.n_training]
-            train_X = Xscaler.fit_transform(train_X_raw) # fit the Xscaler and transform the train_X_raw
-
-            y_set = f["train"]["y"]
-
-            train_y = np.empty((self.n_training, jnp.prod(image_size)), dtype=jnp.float16)
-            
-            chunk_size = y_set.chunks[0]
-            nchunks, rest = divmod(self.n_training, chunk_size) # create raw data in chunks of chunk_size
-            for j, chunk in enumerate(y_set.iter_chunks()):
-                if j>= nchunks:
-                    break
-                loaded = y_set[chunk][:, self.mask].astype(jnp.float16)
-                assert not np.any(np.isinf(loaded)), f"Found inftys in training data."
-                train_y[j*chunk_size:(j+1)*chunk_size] = yscaler.scalers[0].transform(loaded).reshape(-1, jnp.prod(image_size))
-
-            if rest > 0:
-                loaded = y_set[-rest:, self.mask].astype(jnp.float16)
-                assert not np.any(np.isinf(loaded)), f"Found inftys in training data."
-                train_y[-rest:] = yscaler.scalers[0].transform(loaded).reshape(-1, jnp.prod(image_size))
-            
-            train_y = yscaler.scalers[1].fit_transform(train_y) # this standardizes now the down sampled fluxes
+        # load potentially large training data set
+        train_X, train_y, Xscaler, yscaler.scalers[0] = self._preprocess_training_batches(Xscaler, yscaler.scalers[0], image_size)
+        train_y = train_y.reshape(-1, jnp.prod(image_size))
+        # standardize the down sampled fluxes
+        train_y = yscaler.scalers[1].fit_transform(train_y)
 
         # preprocess the special training data as well ass the validation data
         train_X, train_y, val_X, val_y = self.__preprocess__special_and_val_data(train_X, train_y, Xscaler, yscaler)
         return train_X, train_y, val_X, val_y, Xscaler, yscaler
     
+    def _preprocess_training_batches(self, Xscaler, yscaler, feature_shape) -> tuple[Array, Array, object, object]:
+        # preprocess the training data
+        with h5py.File(self.file, "r") as f:
 
+            # X preprocessing
+            train_X_raw = f["train"]["X"][:self.n_training]
+            train_X = Xscaler.fit_transform(train_X_raw) # fit the Xscaler and transform the train_X_raw
+            
+            # y preprocessing
+            y_set = f["train"]["y"]
+
+            # only load max. 20k cause otherwise we might run out of memory at this step
+            fit_batch = y_set[: min(20_000, self.n_training)].astype(np.float16)
+            fit_batch = fit_batch[:, self.mask]
+            if np.any(np.isinf(fit_batch)):
+                raise ValueError(f"Found inftys in training data (fit batch).")
+            
+            yscaler.fit(fit_batch) # fit the yscaler and transform with the loaded data
+            del fit_batch; gc.collect() # remove fit_batch from memory
+
+            # remaining y_data
+            train_y = np.empty((self.n_training, jnp.prod(feature_shape)))
+            chunk_size = y_set.chunks[0] # load raw data in chunks of chunk_size
+            nchunks, rest = divmod(self.n_training, chunk_size) # load raw data in chunks of chunk_size
+
+            for j in tqdm.tqdm(range(nchunks)):
+                sl = slice(j*chunk_size, (j+1)*chunk_size)
+                raw_batch = np.empty((chunk_size, len(self.nus_data), len(self.times_data)), dtype=jnp.float16)
+                y_set.read_direct(raw_batch, source_sel=np.s_[sl, :, :])
+                raw_batch = raw_batch[:, self.mask]
+                if np.any(np.isinf(raw_batch)):
+                    raise ValueError(f"Found infinities in training data chunk {j}")
+                train_y[sl] = yscaler.transform(raw_batch)
+
+            if rest:
+                sl = slice(self.n_training - rest, self.n_training)
+                raw_batch = np.empty((rest, len(self.nus_data), len(self.times_data)), dtype=jnp.float16)
+                y_set.read_direct(raw_batch, source_sel=np.s_[sl, :, :])
+                raw_batch = raw_batch[:, self.mask]
+                if np.any(np.isinf(raw_batch)):
+                    raise ValueError(f"Found infinities in training data rest chunk")
+                train_y[sl] = yscaler.transform(raw_batch)
+        
+        return train_X, train_y, Xscaler, yscaler
+    
     def __preprocess__special_and_val_data(self, train_X, train_y, Xscaler, yscaler) -> tuple[Array, Array, Array, Array]:
         """ sub method that just applies the scaling transforms to the validation and special training data """
         with h5py.File(self.file, "r") as f:
@@ -287,13 +290,13 @@ class DataManager:
                 special_train_X = Xscaler.transform(f["special_train"][label]["X"][:])
                 train_X = np.concatenate((train_X, special_train_X))
 
-                special_train_y = yscaler.transform(f["special_train"][label]["y"][:, self.mask])
+                special_train_y = yscaler.transform(f["special_train"][label]["y"][:][:, self.mask])
                 train_y = np.concatenate(( train_y, special_train_y.astype(jnp.float16) ))
 
             # preprocess validation data
             val_X_raw = f["val"]["X"][:self.n_val]
             val_X = Xscaler.transform(val_X_raw)
-            val_y_raw = f["val"]["y"][:self.n_val, self.mask]
+            val_y_raw = f["val"]["y"][:self.n_val][:, self.mask]
             val_y = yscaler.transform(val_y_raw)
         
         return train_X, train_y, val_X, val_y
