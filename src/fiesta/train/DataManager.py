@@ -51,12 +51,12 @@ class DataManager:
     
     def __init__(self,
                  file: str,
-                 n_training: Int,
-                 n_val: Int,
                  tmin: Float,
                  tmax: Float,
                  numin: Float = 1e9,
                  numax: Float = 2.5e18,
+                 n_training: Int = None,
+                 n_val: Int = None,
                  special_training: list = [],
                  ) -> None:
         """
@@ -73,14 +73,15 @@ class DataManager:
         
         Args:
             file (str): Path to the .h5 file that contains the raw data.
-            n_training (int): Number of training data points that will be read in and preprocessed. If used with a FluxTrainer, this is also the number of training data points used to train the model. 
-                              Will raise a ValueError, if n_training is larger than the number of training data points stored in the file.
-            n_val (int): Number of validation data points that will be read in and preprocessed. If used with a FluxTrainer, this is also the number of validation data points used to monitor the training progress. 
-                              Will raise a ValueError, if n_val is larger than the number of validation data points stored in the file.
             tmin (float): Minimum time for which the data will be read in. Fluxes earlier than this time will not be loaded. Defaults to the minimum time of the stored data, if smaller than that value.
             max (float): Maximum time for which the data will be read in. Fluxes later than this time will not be loaded. Defaults to the maximum time of the stored data, if larger than that value.
             numin (float): Minimum frequency for which the data will be read in. Fluxes with frequencies lower than this frequency will not be loaded. Defaults to the minimum frequency of the stored data, if smaller than that value.
             numax (float): Maximum frequency for which the data will be read in. Fluxes with frequencies higher than this frequency will not be loaded. Defaults to the maximum frequency of the stored data, if larger than that value. Defaults to 1e9 Hz (1 GHz).
+            n_training (int): Number of training data points that will be read in and preprocessed. If used with a FluxTrainer, this is also the number of training data points used to train the model. 
+                              Will raise a ValueError, if n_training is larger than the number of training data points stored in the file.
+            n_val (int): Number of validation data points that will be read in and preprocessed. If used with a FluxTrainer, this is also the number of validation data points used to monitor the training progress. 
+                              Will raise a ValueError, if n_val is larger than the number of validation data points stored in the file.
+    
             special_training (list[str]): Batch of 'special' training data to be added. This can be customly designed training data to cover a certain area of the parameter space more intensily and should be stored in the .h5 file as f['special_train'][label]['X'] and f['special_train'][label]['y'], where label is an entry for this special_training argument. Defaults to [].
         """
         
@@ -110,6 +111,11 @@ class DataManager:
             self.n_training_exists = f["train"]["X"].shape[0]
             self.n_val_exists = f["val"]["X"].shape[0]
             self.parameter_distributions = f['parameter_distributions'][()].decode('utf-8')
+
+            if self.n_training is None:
+                self.n_training = self.n_training_exists
+            if self.n_val is None:
+                self.n_val = self.n_val_exists
         
         # check if there is enough data
         if self.n_training > self.n_training_exists: 
