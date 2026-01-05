@@ -2,6 +2,7 @@ import copy
 from multiprocessing import Value
 import os
 import re
+import tqdm
 
 import numpy as np
 import pandas as pd
@@ -67,40 +68,39 @@ def convert_POSSIS_outputs_to_h5(possis_dirs: list[str] | str,
         waves = f["observables"]["wave"][:]
         times = f["observables"]["time"][:] / days_to_seconds
         nus = c / (waves[::-1] * 1e-10)
+        
+        X_file, y_file = read_POSSIS_file(files[0])
+        if X_file.shape[1] != len(parameter_names):
+            raise ValueError(f"parameter_names do not match parameters stored in POSSIS file ({X.shape[1]} parameters in POSSIS files).")
+        
+        X_file[:,log_arguments] = np.log10(X_file[:,log_arguments]) # make mej_dyn and mej_wind to log10
+        y_file = np.maximum(y_file, clip)
 
-    X, y = [], []
-    for file in files:
+        # initialize training data file
+        write_training_data(outfile, X_file[:4], y_file[:4], X_file[4:7], y_file[4:7], X_file[7:], y_file[7:], times, nus, parameter_names, {})
+    
+
+    for file in tqdm.tqdm(files[1:]):
         
         X_file, y_file = read_POSSIS_file(file)
         
-        X.extend(X_file)
-        y.extend(y_file)
-    
-    X, y = np.array(X), np.array(y)
+        if X_file.shape[1] != len(parameter_names):
+            raise ValueError(f"parameter_names do not match parameters stored in POSSIS file ({X.shape[1]} parameters in POSSIS files).")
+        
+        X_file[:,log_arguments] = np.log10(X_file[:,log_arguments]) # make mej_dyn and mej_wind to log10
+        y_file = np.maximum(y_file, clip)
 
-    if X.shape[1] != len(parameter_names):
-        raise ValueError(f"parameter_names do not match parameters stored in POSSIS file ({X.shape[1]} parameters in POSSIS files).")
+        train_X, val_X, train_y, val_y = train_test_split(X_file, y_file, train_size=0.8)
+        val_X, test_X, val_y, test_y = train_test_split(val_X, val_y, train_size=0.5)
 
-    y = np.maximum(y, clip)
-    X[:,log_arguments] = np.log10(X[:,log_arguments]) # make mej_dyn and mej_wind to log10
+        append_training_data_file(outfile, train_X, train_y, val_X, val_y, test_X, test_y)
 
+    with h5py.File(outfile, "a") as f:
+        train_X = f["train"]["X"][:]
+        parameter_distributions = {p: (np.min(train_X[:,j]).item(), np.max(train_X[:,j]).item(), "uniform") for j, p in enumerate(parameter_names)}
+        del f["parameter_distributions"]
+        f["parameter_distributions"] = str(parameter_distributions)
 
-    train_X, val_X, train_y, val_y = train_test_split(X, y, train_size=0.8)
-    val_X, test_X, val_y, test_y = train_test_split(val_X, val_y, train_size=0.5)
-    
-    parameter_distributions = {p: (np.min(train_X[:,j]).item(), np.max(train_X[:,j]).item(), "uniform") for j, p in enumerate(parameter_names)}
-
-    write_training_data(outfile, 
-                        train_X,
-                        train_y,
-                        val_X,
-                        val_y,
-                        test_X,
-                        test_y,
-                        times,
-                        nus,
-                        parameter_names,
-                        parameter_distributions)
     
 #####################
 # GWEMOPT UTILITIES #
@@ -176,19 +176,23 @@ def convert_gwemopt_to_h5(dirs: list[str],
                         parameter_distributions)
 
 
-#########################
-### GENERAL UTILITIES ###
-#########################
+###############################
+### TRAINING DATA UTILITIES ###
+###############################
 
-def train_test_split(X, y, train_size):
-
-    if isinstance(train_size, float):
+def train_test_split(X, y, train_size: float | int):
+    
+    if isinstance(train_size, int):
+        assert train_size > 0 and train_size <= X.shape[0], f"train_size needs to be smaller than X shape, it was {train_size:.2f}."
+        train_size /= X.shape[0]
+        
+    elif isinstance(train_size, float):
         assert train_size > 0 and train_size < 1, f"train_size needs to be between 0 and 1, it was {train_size:.2f}."
-        train_size = int(X.shape[0] * train_size)
+    
+    else:
+        raise ValueError(f"train_size needs to be float or int")
 
-    mask = np.zeros(X.shape[0]).astype(bool)
-    mask[np.random.choice(a=X.shape[0], size=train_size, replace=False)] = True
-
+    mask = np.random.choice(a=[True, False], size=X.shape[0], replace=True, p=[train_size, 1-train_size])
     return X[mask], X[~mask], y[mask], y[~mask]
 
 
@@ -210,12 +214,42 @@ def write_training_data(outfile: str,
         f.create_dataset("parameter_names", data = parameter_names)
         f.create_dataset("parameter_distributions", data = str(parameter_distributions))
         f.create_group("train"); f.create_group("val"); f.create_group("test"); f.create_group("special_train")
-        f["train"].create_dataset("X", data = train_X, maxshape=(None, len(parameter_names)), chunks = (100, len(parameter_names)))
-        f["train"].create_dataset("y", data = train_y, maxshape=(None, len(nus), len(times)), chunks = (100, len(nus), len(times)))
-        f["val"].create_dataset("X", data = val_X)
-        f["val"].create_dataset("y", data = val_y)
-        f["test"].create_dataset("X", data= test_X)
-        f["test"].create_dataset("y", data = test_y)
+        f["train"].create_dataset("X", data = train_X, maxshape=(None, len(parameter_names)), chunks = (1, len(parameter_names)))
+        f["train"].create_dataset("y", data = train_y, maxshape=(None, len(nus), len(times)), chunks = (1, len(nus), len(times)))
+        f["val"].create_dataset("X", data = val_X, maxshape=(None, len(parameter_names)), chunks=(1, len(parameter_names)))
+        f["val"].create_dataset("y", data = val_y, maxshape=(None, len(nus), len(times)), chunks = (1, len(nus), len(times)))
+        f["test"].create_dataset("X", data= test_X, maxshape=(None, len(parameter_names)), chunks=(1, len(parameter_names)))
+        f["test"].create_dataset("y", data = test_y, maxshape=(None, len(nus), len(times)), chunks = (1, len(nus), len(times)))
+    
+
+def append_training_data_file(outfile: str,
+                              train_X: Array,
+                              train_y: Array,
+                              val_X: Array,
+                              val_y: Array,
+                              test_X: Array,
+                              test_y: Array):
+
+    with h5py.File(outfile, "a") as f:
+
+        for Xnew, ynew, group in zip([train_X, val_X, test_X],[train_y, val_y, test_y], ["train", "val", "test"]):
+
+            Xset = f[group]["X"]
+            yset = f[group]["y"]
+            
+            if Xnew.shape[0] > 0:
+                Xset.resize(Xset.shape[0]+Xnew.shape[0], axis = 0)
+                Xset[-Xnew.shape[0]:] = Xnew
+                
+                yset.resize(yset.shape[0]+ynew.shape[0], axis=0)
+                yset[-ynew.shape[0]:] = ynew
+
+
+
+
+##########################
+### I/O DATA UTILITIES ###
+##########################
 
 def load_event_data(filename):
     """

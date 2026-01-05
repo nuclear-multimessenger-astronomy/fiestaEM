@@ -10,7 +10,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem-per-gpu=80G
 
-#SBATCH --time=24:00:00
+#SBATCH --time=01:30:00
 
 eval "$(conda shell.bash hook)"  # Initialize Conda in the script
 conda activate fiesta

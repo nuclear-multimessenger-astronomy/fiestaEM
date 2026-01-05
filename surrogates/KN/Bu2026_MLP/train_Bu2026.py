@@ -18,9 +18,6 @@ tmax = 26
 numin = 1e14 # Hz 
 numax = 2e15
 
-n_training = 13_692 
-n_val = 1712
-
 n_pca = 100
 
 name = "Bu2026_MLP"
@@ -28,7 +25,7 @@ outdir = f"./model/"
 file = "../_training_data/Bu2026_raw_data.h5"
 
 config = NeuralnetConfig(output_size=n_pca,
-                         nb_epochs=240_000,
+                         nb_epochs=300_000,
                          hidden_layer_sizes = [256, 512, 256],
                          learning_rate =2e-3)
 
@@ -39,13 +36,11 @@ config = NeuralnetConfig(output_size=n_pca,
 
 
 data_manager_args = dict(file = file,
-                           n_training= n_training, 
-                           n_val= n_val, 
-                           tmin= tmin,
-                           tmax= tmax,
-                           numin = numin,
-                           numax = numax, 
-                           )
+                         tmin= tmin,
+                         tmax= tmax,
+                         numin = numin,
+                         numax = numax, 
+                         )
 
 trainer = PCATrainer(name,
                      outdir,
