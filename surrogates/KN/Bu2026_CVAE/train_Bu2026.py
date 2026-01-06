@@ -18,9 +18,6 @@ tmax = 26
 numin = 1e14 # Hz 
 numax = 2e15
 
-n_training = 13_692 
-n_val = 1712
-
 image_size= np.array([64, 40])
 
 name = "Bu2026"
@@ -39,8 +36,6 @@ config = NeuralnetConfig(output_size= int(np.prod(image_size)),
 
 
 data_manager_args = dict(file = file,
-                           n_training= n_training, 
-                           n_val= n_val, 
                            tmin= tmin,
                            tmax= tmax,
                            numin = numin,
