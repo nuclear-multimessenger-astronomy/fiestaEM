@@ -19,7 +19,9 @@ import fiesta.constants as constants
 class Filter:
 
     def __init__(self,
-                 name: str,):
+                 name: str,
+                 nus: Array = None,
+                 trans: Array = None):
         """
         Filter class that uses the bandpass properties from sncosmo or just a simple monochromatic filter based on the name.
         The necessary attributes are stored as jnp arrays.
@@ -28,7 +30,6 @@ class Filter:
             name (str): Name of the filter. Will be either passed to sncosmo to get the optical bandpass, or the unit at the end will be used to create a monochromatic filter. Supported units are keV and GHz.
         """
         self.name = name
-
         if self.name in list(map(lambda x: x[0], _BANDPASSES._primary_loaders)):
             bandpass = get_bandpass(self.name) # sncosmo bandpass
             self.nu = constants.c / (bandpass.wave_eff*1e-10)
@@ -80,7 +81,18 @@ class Filter:
             
             else: 
                 raise ValueError(f"X-ray filter {self.name} must either be in format 'X-ray-*-keV' or 'X-ray-*-*-keV' ")
+            
+        elif nus is not None:
+            self.nus = nus
+            self.nu = jnp.mean(self.nus)
+            
+            if trans is not None:
+                self.trans = trans
+            else:
+                trans = np.ones_like(nus)
 
+            self.filt_type = "bandpass"
+            
         else:
             raise ValueError(f"Filter {self.name} not recognized")
                     
