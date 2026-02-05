@@ -89,7 +89,7 @@ class Filter:
             if trans is not None:
                 self.trans = trans
             else:
-                trans = np.ones_like(nus)
+                trans = jnp.ones_like(nus)
 
             self.filt_type = "bandpass"
             

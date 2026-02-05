@@ -2,6 +2,7 @@
 
 # TODO: improve them with jax treemaps, since dicts are essentially pytrees
 from ast import literal_eval
+from typing import Iterable
 import dill
 from functools import partial
 import os
@@ -229,6 +230,20 @@ class SurrogateModel:
         times, mag_apps = jax.vmap(predict_single)(X_array)
 
         return times, mag_apps
+    
+    def add_filter(self, filters: list[str] | str | fiesta_filters.Filter):
+        if isinstance(filters, str) or isinstance(filters, fiesta_filters.Filter):
+            filters = [filters]
+        
+        for filt in filters:
+            if isinstance(filt, str):
+                self.filters.append(filt)
+                self.Filters.append(fiesta_filters.Filter(filt))
+            elif isinstance(filt, fiesta_filters.Filter):
+                self.Filters.append(filt)
+                self.filters.append(filt.name)
+            else:
+                raise ValueError(f"Added filter needs to be a valid filter name or a fiesta.filters.Filter object.")
     
     def __repr__(self) -> str:
         return self.name
@@ -459,18 +474,19 @@ class FluxModel(SurrogateModel):
         
         return times_obs, dict(zip(self.filters, mag_app))
     
-    def predict_log_flux(self, x: Array) -> Array:
+    def predict_log_flux(self, x: dict[str, Array]) -> Array:
         """
         Predict the total log10 flux array for the parameters x.
 
         Args:
-            x [Array]: raw parameter array
+            x (dict[str, Array]): Input array, unnormalized and untransformed.
 
         Returns:
             log_flux [Array]: Array of log10-fluxes in mJy.
         """
-        x = x.reshape(1,-1)
-        x_tilde = self.X_scaler.transform(x)
+        x_array = jnp.array([x[name] for name in self.parameter_names])
+        x_array = x_array.reshape(1,-1)
+        x_tilde = self.X_scaler.transform(x_array)
         x_tilde = x_tilde.reshape(-1)
         x_tilde = jnp.concatenate((self.latent_vector, x_tilde))
         y = self.models.apply_fn({'params': self.models.params}, x_tilde)
@@ -500,7 +516,7 @@ class CombinedSurrogate(SurrogateModel):
     def predict(self, x: dict[str, Array]):
         def predict_per_model(model):
             times, mags = model.predict(x)
-            mag_interp = jax.tree.map(lambda mag: jnp.interp(self.sample_times, times, mag, left=jnp.inf, right=jnp.inf) , mags)
+            mag_interp = jax.tree.map(lambda mag: jnp.interp(self.sample_times, times, mag) , mags)
             return mag_interp
         
         mag_dicts = jax.tree.map(predict_per_model, self.models)
@@ -512,6 +528,15 @@ class CombinedSurrogate(SurrogateModel):
             return total_mag
         mags = jax.tree.map(add_magnitudes, self.filters)
         return self.sample_times, dict(zip(self.filters, mags))
+    
+    def add_filter(self, filters: list[str] | str | fiesta_filters.Filter):
+        super().add_filter(filters)
+        for model in self.models:
+            model.add_filter(filters)
+    
+    def __repr__(self):
+        return f"Combined surrogate {[model for model in self.models]}"
+  
 
 
 #################
