@@ -82,12 +82,26 @@ def Fnu_to_Flambda(F_nu: Float[Array, "n_nus n_times"], nus: Float[Array, "n_nus
     return F_lambda, lambdas
 
 def apply_redshift(F_nu: Float[Array, "n_nus n_times"], times: Float[Array, "n_times"], nus: Float[Array, "n_nus"], z: Float):
+    """
+    Transforms a 2D flux density array from source frame in observer frame, as well as the associated time and frequency array.
+    Does not account for the distance factor, so cosmological energy loss and time elongation are taken into account by the luminosity distance.
+
+    Args:
+       F_nu (Float[Array]): 2D flux density array in mJy in source frame. The rows correspond to the frequencies provided in nus, the columns to times.
+       times (Float[Array]): 1D time array in source frame.
+       nus (Float[Array]): 1D frequency array in source frame
+    Returns:
+        tuple:
+            times (Float[Array]): 1D time array in observer frame.
+            nus (Float[Array]): 1D frequency array in source frame.
+            F_nu (Float[Array]): 2D flux density redshifted to observer frame.
+    """
     
     F_nu = F_nu * (1 + z) # this is just the frequency redshift, cosmological energy loss and time elongation are taken into account by luminosity_distance
     times = times * (1 + z)
     nus = nus / (1 + z)
 
-    return F_nu, times, nus
+    return times, nus, F_nu
 
 ########################
 # MAGNITUDE CONVERSION #
