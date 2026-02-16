@@ -193,8 +193,9 @@ class SurrogateModel:
             x (dict[str, Array]): Input array, unnormalized and untransformed.
 
         Returns:
-            times
-            mag (dict[str, Array]): The desired magnitudes per filter
+            tuple:
+                times (Array): time array in observer frame
+                mag (dict[str, Array]): The desired magnitudes per filter
         """
         
         # Use saved parameter names to extract the parameters in the correct order into an array
@@ -463,7 +464,7 @@ class FluxModel(SurrogateModel):
 
         mJys = jnp.power(10, y)
 
-        mJys_obs, times_obs, nus_obs = apply_redshift(mJys, self.times, self.nus, x["redshift"])
+        times_obs, nus_obs, mJys_obs= apply_redshift(mJys, self.times, self.nus, x["redshift"])
         # TODO: Add EBL table here at some point
 
         mag_abs = jax.tree.map(lambda Filter: Filter.get_mag(mJys_obs, nus_obs), 
@@ -479,10 +480,13 @@ class FluxModel(SurrogateModel):
         Predict the total log10 flux array for the parameters x.
 
         Args:
-            x (dict[str, Array]): Input array, unnormalized and untransformed.
+            x (dict[str, Array]): Input parameters, unnormalized and untransformed.
 
         Returns:
-            log_flux [Array]: Array of log10-fluxes in mJy.
+            tuple:
+                times [Array]: time array in observer frame
+                nus [Array]: frequency array in observer frame
+                log10_flux [Array]: Array of log10-fluxes in mJy.
         """
         x_array = jnp.array([x[name] for name in self.parameter_names])
         x_array = x_array.reshape(1,-1)
@@ -493,7 +497,11 @@ class FluxModel(SurrogateModel):
 
         log10_flux = self.y_scaler.inverse_transform(y)
         log10_flux = log10_flux.reshape(len(self.nus), len(self.times))
-        return log10_flux
+
+        times, nus, flux = apply_redshift(10**log10_flux, self.times, self.nus, x.get("redshift", 0.0))
+        log10_flux = jnp.log10(flux) - 10 - 2*jnp.log10(x.get("luminosity_distance", 1e-5))
+
+        return times, nus, log10_flux
     
 class CombinedSurrogate(SurrogateModel):
     def __init__(self,
