@@ -98,13 +98,14 @@ class Filter:
                     
         self.wavelength = constants.c/self.nu*1e10
         self._calculate_ref_flux()
+        self._precompute_filter_constants()
 
         if self.filt_type=="bandpass":
-            self.get_mag = lambda Fnu, nus: bandpass_AB_mag(Fnu, nus, self.nus, self.trans, self.ref_flux)
+            self.get_mag = lambda Fnu, nus: bandpass_AB_mag(Fnu, nus, self.nus, self.trans, self.ref_flux, self._log_trans_over_hnu)
         elif self.filt_type=="monochromatic":
             self.get_mag = lambda Fnu, nus: monochromatic_AB_mag(Fnu, nus, self.nus, self.trans, self.ref_flux)
         elif self.filt_type=="integrated":
-            self.get_mag = lambda Fnu, nus: integrated_AB_mag(Fnu, nus, self.nus, self.trans)
+            self.get_mag = lambda Fnu, nus: integrated_AB_mag(Fnu, nus, self.nus, self.trans, self._log_trans)
 
     
     def _calculate_ref_flux(self,):
@@ -115,11 +116,24 @@ class Filter:
             integrand = self.trans / (constants.h_erg_s * self.nus) # https://en.wikipedia.org/wiki/AB_magnitude
             integral = jnp.trapezoid(y = integrand, x = self.nus)
             self.ref_flux = 3631000. * integral.item() # mJy
-    
+
+    def _precompute_filter_constants(self):
+        """Pre-compute constant log terms used in magnitude calculations.
+
+        For bandpass filters: log10(T / (h * nu)) avoids recomputing three log10
+        calls per evaluation. For integrated filters: log10(T) avoids one.
+        """
+        if self.filt_type == "bandpass":
+            self._log_trans_over_hnu = (jnp.log10(self.trans)
+                                        - jnp.log10(constants.h_erg_s)
+                                        - jnp.log10(self.nus))
+        elif self.filt_type == "integrated":
+            self._log_trans = jnp.log10(self.trans)
+
     def get_mags(self, fluxes: Float[Array, "n_samples n_nus n_times"], nus: Float[Array, "n_nus"]) -> Float[Array, "n_samples n_times"]:
 
         def get_single(flux):
             return self.get_mag(flux, nus)
-        
+
         mags = jax.vmap(get_single)(fluxes)
         return mags

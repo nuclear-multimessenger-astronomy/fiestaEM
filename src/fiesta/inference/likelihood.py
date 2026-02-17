@@ -1,6 +1,7 @@
 """Functions for computing likelihoods of data given a model."""
 
 import copy
+from functools import partial
 from typing import Callable
 
 import numpy as np
@@ -8,7 +9,7 @@ import jax
 from jaxtyping import Float, Array
 import jax.numpy as jnp
 
-from fiesta.inference.lightcurve_model import LightcurveModel
+from fiesta.inference.lightcurve_model import LightcurveModel, CombinedSurrogate
 from fiesta.utils import truncated_gaussian
 from fiesta.logging import logger
 
@@ -119,10 +120,14 @@ class EMLikelihood:
         self._setup_sys_uncertainty_fixed(error_budget=error_budget)
                 
         self.fixed_params = fixed_params
-        
+
         # Sanity check:
         detection_present = any([len(self.times_det[filt]) > 0 for filt in self.filters])
         assert detection_present, "No detections found in the data. Please check your data."
+
+        # Pre-compute interpolation weights for models with fixed output time grids
+        self._precompute_interpolation()
+
         logger.info("Loading and preprocessing observations in likelihood . . . DONE")
 
     def _setup_sys_uncertainty_fixed(self, error_budget: dict | float | int):
@@ -193,12 +198,71 @@ class EMLikelihood:
         self.get_sigma = _get_sigma
         self.get_nondet_sigma = _nondet_sigma
 
+    def _precompute_interpolation(self):
+        """Pre-compute interpolation indices and weights for models with fixed output time grids.
 
-        
+        For LightcurveModel and CombinedSurrogate, the model always returns predictions
+        on the same time grid regardless of input parameters. We pre-compute the linear
+        interpolation mapping from model times to observation times once at initialization,
+        avoiding repeated binary searches during each likelihood evaluation.
+        """
+        if isinstance(self.model, LightcurveModel):
+            model_times = jnp.asarray(self.model.times)
+        elif isinstance(self.model, CombinedSurrogate):
+            model_times = jnp.asarray(self.model.sample_times)
+        else:
+            self._use_precomputed_interp = False
+            return
+
+        self._use_precomputed_interp = True
+        self._interp_det_idx = {}
+        self._interp_det_w = {}
+        self._interp_nondet_idx = {}
+        self._interp_nondet_w = {}
+
+        for filt in self.filters:
+            if len(self.times_det[filt]) > 0:
+                idx, w = self._compute_interp_weights(self.times_det[filt], model_times)
+                self._interp_det_idx[filt] = idx
+                self._interp_det_w[filt] = w
+            else:
+                self._interp_det_idx[filt] = jnp.array([], dtype=jnp.int32)
+                self._interp_det_w[filt] = jnp.array([])
+
+            if len(self.times_nondet[filt]) > 0:
+                idx, w = self._compute_interp_weights(self.times_nondet[filt], model_times)
+                self._interp_nondet_idx[filt] = idx
+                self._interp_nondet_w[filt] = w
+            else:
+                self._interp_nondet_idx[filt] = jnp.array([], dtype=jnp.int32)
+                self._interp_nondet_w[filt] = jnp.array([])
+
+        logger.info("Pre-computed interpolation weights for fixed model time grid.")
+
+    @staticmethod
+    def _compute_interp_weights(obs_times, model_times):
+        """Compute interpolation indices and weights for linear interpolation.
+
+        Supports extrapolation beyond the model time range, matching
+        jnp.interp(left='extrapolate', right='extrapolate') behavior.
+        """
+        obs_times = jnp.asarray(obs_times)
+        idx = jnp.searchsorted(model_times, obs_times, side='right') - 1
+        idx = jnp.clip(idx, 0, len(model_times) - 2)
+        dt = model_times[idx + 1] - model_times[idx]
+        w = (obs_times - model_times[idx]) / dt
+        return idx, w
+
+    @staticmethod
+    def _apply_precomputed_interp(idx, w, values):
+        """Apply pre-computed linear interpolation weights."""
+        return (1.0 - w) * values[idx] + w * values[idx + 1]
+
     def __call__(self, theta):
         return self.evaluate(theta)
         
-    def evaluate(self, 
+    @partial(jax.jit, static_argnums=(0,))
+    def evaluate(self,
                  theta: dict[str, Array],
                  data: dict = None) -> Float:
         """
@@ -215,30 +279,41 @@ class EMLikelihood:
         theta = {**theta, **self.fixed_params}
         theta = self.conversion(theta)
         times, mag_app = self.model.predict(theta)
-        
-        # Interpolate the mags to the times of interest
-        mag_est_det = jax.tree_util.tree_map(lambda t, m: jnp.interp(t, times, m, left = "extrapolate", right = "extrapolate"), # TODO extrapolation is maybe problematic here
-                                          self.times_det, mag_app)
-        
-        mag_est_nondet = jax.tree_util.tree_map(lambda t, m: jnp.interp(t, times, m, left = "extrapolate", right = "extrapolate"),
-                                          self.times_nondet, mag_app)
-        
+
+        # Interpolate model magnitudes to observation times.
+        # For models with fixed output time grids (LightcurveModel, CombinedSurrogate),
+        # use pre-computed interpolation weights to avoid repeated binary searches.
+        if self._use_precomputed_interp:
+            mag_est_det = {f: self._apply_precomputed_interp(
+                self._interp_det_idx[f], self._interp_det_w[f], mag_app[f]
+            ) for f in self.filters}
+            mag_est_nondet = {f: self._apply_precomputed_interp(
+                self._interp_nondet_idx[f], self._interp_nondet_w[f], mag_app[f]
+            ) for f in self.filters}
+        else:
+            mag_est_det = jax.tree_util.tree_map(
+                lambda t, m: jnp.interp(t, times, m, left="extrapolate", right="extrapolate"),
+                self.times_det, mag_app)
+            mag_est_nondet = jax.tree_util.tree_map(
+                lambda t, m: jnp.interp(t, times, m, left="extrapolate", right="extrapolate"),
+                self.times_nondet, mag_app)
+
         # Get the systematic uncertainty + data uncertainty
         sigma = self.get_sigma(theta)
         nondet_sigma = self.get_nondet_sigma(theta)
-        
+
         # Get chisq
-        chisq = jax.tree_util.tree_map(self.get_chisq_filt, 
+        chisq = jax.tree_util.tree_map(self.get_chisq_filt,
                              mag_est_det, self.mag_det, sigma, self.detection_limit)
         chisq_flatten, _ = jax.flatten_util.ravel_pytree(chisq)
-        chisq_total = jnp.sum(chisq_flatten)#.astype(jnp.float64)
-        
+        chisq_total = jnp.sum(chisq_flatten)
+
         # Get gaussprob:
-        gaussprob = jax.tree_util.tree_map(self.get_gaussprob_filt, 
+        gaussprob = jax.tree_util.tree_map(self.get_gaussprob_filt,
                                  mag_est_nondet, self.mag_nondet, nondet_sigma)
         gaussprob_flatten, _ = jax.flatten_util.ravel_pytree(gaussprob)
-        gaussprob_total = jnp.sum(gaussprob_flatten)#.astype(jnp.float64)
-        
+        gaussprob_total = jnp.sum(gaussprob_flatten)
+
         return chisq_total + gaussprob_total
     
     ### LIKELIHOOD FUNCTIONS ###
@@ -307,8 +382,21 @@ class EMLikelihood:
                     )
         return jnp.sum(gausslogsf)
     
-    def v_evaluate(self, theta: dict[str, Array]):
+    def v_evaluate(self, theta: dict[str, Array], chunk_size: int = 1000):
+        """Vectorized likelihood evaluation with chunked batching to avoid OOM.
 
-        def _evaluate_single(_theta):
-            return self(_theta)
-        return jax.vmap(_evaluate_single)(theta)
+        Args:
+            theta: Dict of parameter arrays, each with shape (n_samples, ...).
+            chunk_size: Number of samples to evaluate per chunk.
+        """
+        n_samples = jax.tree_util.tree_leaves(theta)[0].shape[0]
+        _vmap_evaluate = jax.vmap(lambda t: self.evaluate(t))
+
+        if n_samples <= chunk_size:
+            return _vmap_evaluate(theta)
+
+        results = []
+        for i in range(0, n_samples, chunk_size):
+            chunk = jax.tree_util.tree_map(lambda x: x[i:i + chunk_size], theta)
+            results.append(_vmap_evaluate(chunk))
+        return jnp.concatenate(results)

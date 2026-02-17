@@ -124,7 +124,8 @@ def bandpass_AB_mag(flux: Float[Array, "n_nus n_times"],
                     nus: Float[Array, "n_nus"],
                     nus_filt: Float[Array, "n_nus_filt"],
                     trans_filt: Float[Array, "n_nus_filt"],
-                    ref_flux: Float) -> Float[Array, "n_times"]:
+                    ref_flux: Float,
+                    log_trans_over_hnu: Float[Array, "n_nus_filt"] = None) -> Float[Array, "n_times"]:
     """
     This is a JAX-compatile equivalent of sncosmo.TimeSeriesSource.bandmag(). Unlike sncosmo, we use the frequency flux and not wavelength flux,
     but this function is tested to yield the same results as the sncosmo version.
@@ -135,14 +136,19 @@ def bandpass_AB_mag(flux: Float[Array, "n_nus n_times"],
         nus_filt (Float[Array, "n_nus_filt"]): frequency array of the filter in Hz
         trans_filt (Float[Array, "n_nus_filt"]): transmissivity array of the filter in transmitted photons / incoming photons
         ref_flux (Float): flux in mJy for which the filter is 0 mag
+        log_trans_over_hnu (Float[Array, "n_nus_filt"], optional): Pre-computed log10(trans / (h * nu)).
+            When provided, avoids recomputing these constant terms on every call.
     """
-    
+
     interp_col = lambda col: jnp.interp(nus_filt, nus, col)
     mJys = jax.vmap(interp_col, in_axes = 1, out_axes = 1)(flux) # apply vectorized interpolation to interpolate columns of 2D array
 
     log_mJys = jnp.log10(mJys) # go to log because of large factors
-    log_mJys = log_mJys + jnp.log10(trans_filt[:, None])
-    log_mJys = log_mJys - jnp.log10(h_erg_s) - jnp.log10(nus_filt[:, None])  # https://en.wikipedia.org/wiki/AB_magnitude
+    if log_trans_over_hnu is not None:
+        log_mJys = log_mJys + log_trans_over_hnu[:, None]
+    else:
+        log_mJys = log_mJys + jnp.log10(trans_filt[:, None])
+        log_mJys = log_mJys - jnp.log10(h_erg_s) - jnp.log10(nus_filt[:, None])  # https://en.wikipedia.org/wiki/AB_magnitude
 
     max_log_mJys = jnp.max(log_mJys)
     integrand = 10**(log_mJys - max_log_mJys) # make the integrand between 0 and 1, otherwise infs could appear
@@ -150,19 +156,23 @@ def bandpass_AB_mag(flux: Float[Array, "n_nus n_times"],
     norm_band_flux = jax.vmap(integrate_col, in_axes = 1)(integrand) # normalized band flux
 
     log_integrated_flux = jnp.log10(norm_band_flux) + max_log_mJys # reintroduce scale here
-    mag = -2.5 * log_integrated_flux + 2.5 * jnp.log10(ref_flux) 
+    mag = -2.5 * log_integrated_flux + 2.5 * jnp.log10(ref_flux)
     return mag
 
 def integrated_AB_mag(flux: Float[Array, "n_nus n_times"],
                       nus: Float[Array, "n_nus"],
                       nus_filt: Float[Array, "n_nus_filt"],
-                      trans_filt: Float[Array, "n_nus_filt"]) -> Float[Array, "n_times"]:
-    
+                      trans_filt: Float[Array, "n_nus_filt"],
+                      log_trans: Float[Array, "n_nus_filt"] = None) -> Float[Array, "n_times"]:
+
     interp_col = lambda col: jnp.interp(nus_filt, nus, col)
     mJys = jax.vmap(interp_col, in_axes = 1, out_axes = 1)(flux) # apply vectorized interpolation to interpolate columns of 2D array
 
     log_mJys = jnp.log10(mJys) # go to log because of large factors
-    log_mJys = log_mJys + jnp.log10(trans_filt[:, None])
+    if log_trans is not None:
+        log_mJys = log_mJys + log_trans[:, None]
+    else:
+        log_mJys = log_mJys + jnp.log10(trans_filt[:, None])
 
     max_log_mJys = jnp.max(log_mJys)
     integrand = 10**(log_mJys - max_log_mJys) # make the integrand between 0 and 1, otherwise infs could appear
@@ -172,7 +182,7 @@ def integrated_AB_mag(flux: Float[Array, "n_nus n_times"],
     log_integrated_flux = jnp.log10(norm_band_flux) + max_log_mJys # reintroduce scale here
     log_integrated_flux = log_integrated_flux - jnp.log10(nus_filt[-1] - nus_filt[0]) # divide by integration range
     mJys = 10**log_integrated_flux
-    mag = mJys_to_mag_jnp(mJys) 
+    mag = mJys_to_mag_jnp(mJys)
     return mag
 
 @jax.jit
