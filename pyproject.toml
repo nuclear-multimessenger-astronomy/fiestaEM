@@ -41,6 +41,7 @@ dependencies = [
 [project.optional-dependencies]
 grb = ["afterglowpy"]
 gpu = ["jax[cuda12]"]
+onnx = ["onnx>=1.14", "onnxruntime>=1.16"]
 
 [tool.setuptools]
 packages = { find = { where = ["src"] } }
