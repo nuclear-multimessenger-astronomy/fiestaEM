@@ -6,9 +6,10 @@ import tempfile
 
 import jax.numpy as jnp
 import numpy as np
-import onnx
-import onnxruntime as ort
 import pytest
+
+onnx = pytest.importorskip("onnx")
+ort = pytest.importorskip("onnxruntime")
 
 from fiesta.export_onnx import export_flux_model, export_lightcurve_model
 
