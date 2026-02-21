@@ -36,10 +36,11 @@ class NeuralnetConfig(ConfigDict):
                  hidden_layer_sizes: list[int] = [64, 128, 64],
                  latent_dim: int = 20,
                  learning_rate: Float = 1e-3,
+                 weight_decay: Float = 0.0,
                  batch_size: int = 128,
                  nb_epochs: Int = 1_000,
                  nb_report: Int = None):
-        
+
         super().__init__()
         self.name = name
         self.output_size = output_size
@@ -47,6 +48,7 @@ class NeuralnetConfig(ConfigDict):
         self.layer_sizes = [*hidden_layer_sizes, output_size]
         self.latent_dim = latent_dim
         self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
         self.batch_size = batch_size
         self.nb_epochs = nb_epochs
         if nb_report is None:
@@ -111,7 +113,10 @@ class CVAE:
         key, subkey, subkey2 = jax.random.split(key, 3)
 
         params = net.init(subkey, jnp.ones(config.output_size), jnp.ones(conditional_dim), subkey2)['params']
-        tx = optax.adam(config.learning_rate)
+        if getattr(config, 'weight_decay', 0.0) > 0:
+            tx = optax.adamw(config.learning_rate, weight_decay=config.weight_decay)
+        else:
+            tx = optax.adam(config.learning_rate)
         self.state = TrainState.create(apply_fn = net.apply, params = params, tx = tx) # initialize the training state
     
     @staticmethod

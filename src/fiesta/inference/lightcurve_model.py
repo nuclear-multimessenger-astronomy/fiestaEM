@@ -47,7 +47,7 @@ def get_default_directory(name):
     current_dir = Path(__file__).resolve().parent
     surrogate_dir = current_dir.parent / "surrogates"
     
-    if name.startswith("afgpy") or name.startswith("pbag"):
+    if name.startswith("afgpy") or name.startswith("pbag") or name.startswith("jetsimpy"):
         if not name.endswith("_CVAE") and not name.endswith("_MLP"):
              name = "_".join((name, "CVAE")) # default for now is to load the CVAE
 
@@ -63,7 +63,7 @@ def get_default_directory(name):
              surrogate_dir = surrogate_dir / "KN" / name / "model"
     
     else:
-        raise ValueError(f"If no model directory is provided, the name for the default models must either start with 'afgpy', 'pbag', 'Bu'.")
+        raise ValueError(f"If no model directory is provided, the name for the default models must either start with 'afgpy', 'pbag', 'jetsimpy', or 'Bu'.")
     
     surrogate_dir = str(surrogate_dir)
     if not os.path.exists(surrogate_dir):

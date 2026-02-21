@@ -239,6 +239,8 @@ class ParameterScaler(Scaler):
 
         if conversion == "thetaWing_inclination":
             self.conversion = thetaWing_inclination
+        elif conversion == "thetCore_inclination":
+            self.conversion = thetCore_inclination
         else:
             self.conversion = identity
             
