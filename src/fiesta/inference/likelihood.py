@@ -46,16 +46,6 @@ class EMLikelihood:
         # Save as attributes
         self.model = model
         self.conversion = conversion_function
-        if filters is None:
-            self.filters = list(model.filters)
-        else:
-            self.filters = []
-            for filt in filters:
-                if filt in self.model.filters:
-                    self.filters.append(filt)
-                else:
-                    logger.warning(f"Filter {filt} from likelihood not in model.filters. Removing for inference.")
-                    continue
                 
         self.trigger_time = trigger_time
         self.tmin = tmin
@@ -71,20 +61,9 @@ class EMLikelihood:
         self.times_nondet = {}
         self.mag_nondet = {}
         
-        processed_data = copy.deepcopy(data)
-        for filt in data.keys():
-            if filt not in self.filters:
-                logger.warning(f"Filter {filt} from data not found in likelihood.filters. Removing for inference.")
-                del processed_data[filt]
+        processed_data = self._setup_filters_and_data(filters, data)
 
-        filter_copy = self.filters.copy()
-
-        for filt in filter_copy:
-            if filt not in processed_data:
-                logger.warning(f"Filter {filt} from likelihood.filters not found in the data. Removing for inference.")
-                self.filters.remove(filt)
-                continue
-            
+        for filt in processed_data:    
             # Preprocess times before data selection
             times, mag, mag_err = processed_data[filt].T
             times -= self.trigger_time
@@ -124,6 +103,34 @@ class EMLikelihood:
         detection_present = any([len(self.times_det[filt]) > 0 for filt in self.filters])
         assert detection_present, "No detections found in the data. Please check your data."
         logger.info("Loading and preprocessing observations in likelihood . . . DONE")
+    
+    def _setup_filters_and_data(self, filters, data):
+        if filters is None:
+            self.filters = list(data.keys())
+        else:
+            self.filters = []
+            for filt in filters:
+                if filt in self.data:
+                    self.filters.append(filt)
+                else:
+                    logger.warning(f"Filter {filt} from likelihood argument not in data. Ignoring for inference.")
+                    continue
+        
+        for filt in self.model.filters:
+            if filt not in data:
+                logger.warning(f'Filter {filt} from likelihood.model not in data. Removing from model for inference.')
+                self.model.filters.remove(filt)
+        
+        processed_data = copy.deepcopy(data)
+        for filt in data.keys():
+            if filt not in self.filters:
+                logger.warning(f"Filter {filt} from data not found in likelihood.filters. Removing for inference.")
+                del processed_data[filt]
+            elif filt not in self.model.filters:
+                logger.warning(f"Filter {filt} from data not found in likelihood.model.filters. Removing for inference.")
+                del processed_data[filt]
+
+        return processed_data
 
     def _setup_sys_uncertainty_fixed(self, error_budget: dict | float | int):
         
