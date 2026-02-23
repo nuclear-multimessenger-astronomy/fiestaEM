@@ -97,7 +97,14 @@ class Benchmarker:
 
         if isinstance(self.model, FluxModel):
             self.nus = self.model.nus
-            log_mJys = np.array([self.model.predict_log_flux(self.test_X_raw[j]) for j in range(len(self.test_X_raw))])
+            log_flux_list = []
+            for j in range(len(self.test_X_raw)):
+                param_dict_j = dict(zip(self.parameter_names, self.test_X_raw[j]))
+                param_dict_j["luminosity_distance"] = 1e-5
+                param_dict_j["redshift"] = 0.0
+                _, _, log_flux = self.model.predict_log_flux(param_dict_j)
+                log_flux_list.append(log_flux)
+            log_mJys = np.array(log_flux_list)
             self.error["total"] = self.metric2d(log_mJys)
         else:
             max_errors = {key: np.max(value) for key, value in self.error.items()}
