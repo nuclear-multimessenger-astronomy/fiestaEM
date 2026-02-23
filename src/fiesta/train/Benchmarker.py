@@ -1,5 +1,6 @@
 import os
 import ast
+import warnings
 
 import h5py
 import numpy as np
@@ -112,8 +113,22 @@ class Benchmarker:
             test_log_interp = interp1d(self.data_nus, self.test_log_flux, axis=1,
                                        bounds_error=False, fill_value=np.nan)(pred_nus)
             log_flux_residual = log_flux_pred - test_log_interp
-            self.error["total"] = self.metric2d(np.where(np.isfinite(log_flux_residual),
-                                                         log_flux_residual, 0.0))
+            nan_mask = ~np.isfinite(log_flux_residual)
+            n_nan = np.count_nonzero(nan_mask)
+            n_total = log_flux_residual.size
+            self.nan_fraction = n_nan / n_total if n_total > 0 else 0.0
+            if n_nan > 0:
+                warnings.warn(
+                    f"Benchmarker: {n_nan}/{n_total} ({100*self.nan_fraction:.1f}%) "
+                    f"residual entries are NaN/Inf (likely from frequency grid "
+                    f"extrapolation). These entries are excluded from the total "
+                    f"error calculation.")
+            # Exclude NaN/Inf: use nan-safe max for Linf, mask with 0 for L2
+            if self.file_ending == "Linf":
+                self.error["total"] = np.nanmax(np.abs(log_flux_residual), axis=(1, 2))
+            else:
+                self.error["total"] = self.metric2d(
+                    np.where(nan_mask, 0.0, log_flux_residual))
         else:
             max_errors = {key: np.max(value) for key, value in self.error.items()}
             max_key = max(max_errors, key=max_errors.get)
@@ -335,7 +350,13 @@ class Benchmarker:
         nrows = int(np.ceil(n_params / ncols))
         fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.5 * nrows))
         axes = np.atleast_2d(axes)
-        fig.subplots_adjust(hspace=0.6, wspace=0.4, bottom=0.10, top=0.92, left=0.07, right=0.97)
+        fig.subplots_adjust(hspace=0.6, wspace=0.4, bottom=0.10, top=0.90, left=0.07, right=0.97)
+
+        nan_frac = getattr(self, 'nan_fraction', 0.0)
+        title = "Total error distribution per parameter"
+        if nan_frac > 0:
+            title += f"  ({100*nan_frac:.1f}% of flux residual entries were NaN/Inf, excluded)"
+        fig.suptitle(title, fontsize=10)
 
         for j, p in enumerate(self.parameter_names):
             cax = axes[j // ncols, j % ncols]
