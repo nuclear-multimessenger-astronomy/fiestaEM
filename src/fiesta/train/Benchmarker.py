@@ -122,13 +122,15 @@ class Benchmarker:
                     f"Benchmarker: {n_nan}/{n_total} ({100*self.nan_fraction:.1f}%) "
                     f"residual entries are NaN/Inf (likely from frequency grid "
                     f"extrapolation). These entries are excluded from the total "
-                    f"error calculation.")
-            # Exclude NaN/Inf: use nan-safe max for Linf, mask with 0 for L2
+                    f"error calculation.",
+                    stacklevel=2)
+            # Exclude NaN/Inf entries from error calculation
             if self.file_ending == "Linf":
                 self.error["total"] = np.nanmax(np.abs(log_flux_residual), axis=(1, 2))
             else:
-                self.error["total"] = self.metric2d(
-                    np.where(nan_mask, 0.0, log_flux_residual))
+                # NaN-aware L2: integrate only over finite entries per sample
+                r2 = np.where(nan_mask, np.nan, log_flux_residual ** 2)
+                self.error["total"] = np.sqrt(np.nanmean(r2, axis=(1, 2)))
         else:
             max_errors = {key: np.max(value) for key, value in self.error.items()}
             max_key = max(max_errors, key=max_errors.get)
@@ -332,7 +334,7 @@ class Benchmarker:
         for i in range(n_filters, nrows * ncols):
             axes[i // ncols, i % ncols].set_visible(False)
 
-        fig.savefig(os.path.join(self.outdir, f"error_over_time.pdf"), dpi=200)
+        fig.savefig(os.path.join(self.outdir, "error_over_time.pdf"), dpi=200)
         plt.close(fig)
 
     def print_correlations(self, ):
@@ -381,5 +383,5 @@ class Benchmarker:
         for i in range(n_params, nrows * ncols):
             axes[i // ncols, i % ncols].set_visible(False)
 
-        fig.savefig(os.path.join(self.outdir, f"error_distribution.pdf"), dpi=200)
+        fig.savefig(os.path.join(self.outdir, "error_distribution.pdf"), dpi=200)
         plt.close(fig)
