@@ -508,6 +508,15 @@ class CombinedSurrogate(SurrogateModel):
                  models: list[SurrogateModel],
                  sample_times: Array
                  ):
+        """
+        API to combine several surrogates in to one object. 
+        The predict method here predicts the joined light curve from the surrogates provided in ``models``.
+
+        Args:
+            models (list[SurrogateModel]): A list of the surrogates that should be combined.
+            sample_times (Array): (jax)-numpy array for the source frame time at which the joint emission should be computed.
+                                  Can reach beyond the time range of the individual surrogates, in which case their magnitudes will be extrapolated as their first or last value.
+        """
         self.models = models
         self.sample_times = sample_times
         self._load_filters()

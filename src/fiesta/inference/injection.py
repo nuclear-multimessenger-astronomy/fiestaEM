@@ -52,7 +52,7 @@ class InjectionBase:
                  error_budget: Float = 1.0,
                  nondetections: bool = False,
                  nondetections_fraction: Float = 0.1,
-                 detection_limit: Float = np.inf):
+                 detection_limit: Float | dict[str, Float] = np.inf):
         
         self.Filters = [Filter(filt) for filt in filters]
         logger.info(f"Creating injection with filters: {filters}")
@@ -68,6 +68,11 @@ class InjectionBase:
         self.error_budget = error_budget
         self.nondetections = nondetections
         self.nondetections_fraction = nondetections_fraction
+        
+        if isinstance(detection_limit, float):
+            detection_limit_val = detection_limit_val
+            detection_limit = {Filter.name: detection_limit_val for Filter in self.Filters}
+        
         self.detection_limit = detection_limit
     
     def create_t_detect(self, tmin, tmax, N):
@@ -88,6 +93,15 @@ class InjectionBase:
     def create_injection(self,
                          injection_dict: dict[str, Float],
                          file: str = None):
+        """
+        Creates an injection that is stored as a ``.data'' attribute.
+
+        Args:
+           injection_dict (dict): Parameters for the synthetic light curve.
+           file (str, optional): Training data file that stores light curves from the physical base model of the surrogate. 
+                                 If provided, the method will take a random test element and base the injection on it.
+                                 In this case, the ``.injection_parameter'' attribute is updated to contain the real parameters used to generate the light curve.       
+        """
         
 
         if file is None:
@@ -109,8 +123,8 @@ class InjectionBase:
             mag_measured = np.random.normal(loc=mu, scale=sigma)
             
             # apply detection limit
-            not_detected = np.where(mag_measured > self.detection_limit)
-            mag_measured[not_detected] = self.detection_limit
+            not_detected = np.where(mag_measured > self.detection_limit[Filter.name])
+            mag_measured[not_detected] = self.detection_limit[Filter.name]
             sigma[not_detected] = np.inf
 
             self.data[Filter.name] = np.array([t_detect + self.trigger_time, mag_measured, sigma]).T
@@ -136,8 +150,8 @@ class InjectionBase:
             mag_measured = np.random.normal(loc=mu, scale=sigma)
             
             # apply detection limit
-            not_detected = np.where(mag_measured > self.detection_limit)
-            mag_measured[not_detected] = self.detection_limit
+            not_detected = np.where(mag_measured > self.detection_limit[Filter.name])
+            mag_measured[not_detected] = self.detection_limit[Filter.name]
             sigma[not_detected] = np.inf
 
             self.data[Filter.name] = np.array([t_detect + self.trigger_time, mag_measured, sigma]).T
@@ -193,11 +207,32 @@ class InjectionBase:
              o.write(str(self.injection_dict))
 
 class InjectionSurrogate(InjectionBase):
+    """
+    Class to create synthetic injection lightcurves from a surrogate.
+    After instantiation one can call the .create_injection() method to get synthetic lightcurve data. 
+    The method .write_to_file() writes the synthetic lightcurve data to file.    
+    """
     
     def __init__(self, 
                  model: LightcurveModel,
                  *args,
                  **kwargs):
+        """
+        Args:
+            model: The surrogate used for creating the injection light curves.
+            filters (list): List of filters in which the synthetic data should be given out.
+            tmin (float): Time of earliest synthetic detection possible in days. Defaults to 0.1.
+            tmax (float): Time of latest synthetic detection possible in days. Defaults to 10.0
+            N_datapoints (int): Total number of datapoints (across all filters) for the synthetic lightcurve. Defaults to 10.
+            t_detect (dict[str, Array]): Detection time points in each filter. If none is specified, then the detection times will be sampled randomly.
+            error_budget (float): Typical measurement error scale of the synthetic data. Defaults to 1.
+            detection_limit (float): Synthetic datapoints with mangnitude higher than this value (i.e. less brighter) will be turned into nondetections. Defaults to np.inf.
+            nondetections (bool): Additional to detection_limit, this turns some of the synthetic datapoints to nondetections. Defaults to False.
+            nondetections_fraction (float): If nondetections is True, then this will determine the fractions of N_datapoints turned into nondetections. Defaults to 0.1.
+    
+        Then one can call the .create_injection() method to get synthetic lightcurve data. 
+        The method .write_to_file() writes the synthetic lightcurve data to file.    
+        """
         
         self.model = model
         super().__init__(*args, **kwargs)

@@ -1,4 +1,3 @@
-""" TODO: This is copied over from jim, later on, we can make jim a dependence and then remove this?"""
 from dataclasses import field
 from typing import Callable
 
@@ -6,6 +5,9 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray, jaxtyped
 from beartype import beartype as typechecker
+
+from astropy.cosmology import Planck18, z_at_value
+import astropy.units as u
 
 class Prior(object):
     """
@@ -90,6 +92,44 @@ class Prior(object):
     def log_prob(self, x: dict[str, Array]) -> Float:
         raise NotImplementedError
 
+class InterpedPrior(Prior):
+
+    xx: Array
+    yy: Array
+
+    def __repr__(self,):
+        return f"InterpedPrior(x={self.xx}, y={self.yy})"
+    
+    def __init__(self,
+                 xx: Array,
+                 yy: Array,
+                 naming: list[str]):
+        
+
+        normalization_factor = jnp.trapezoid(y=yy, x=xx)
+        
+        self.xx = jnp.array(xx)
+        self.yy = jnp.array(yy) / normalization_factor       
+        
+        dx = jnp.diff(self.xx)
+        increments = 0.5 * (self.yy[:-1] + self.yy[1:]) * dx
+        cdf = jnp.concatenate(
+            [jnp.array([0.0]), jnp.cumsum(increments)]
+        )
+        self.cdf = cdf
+
+        super().__init__(naming, {})
+        assert self.n_dim == 1, "UniformSourceFrame needs to be a 1D distribution"
+
+
+    def sample(self, rng_key: PRNGKeyArray, n_samples: int) -> dict[str, Float[Array, "n_samples"]]:
+        alpha = jax.random.uniform(rng_key, shape=(n_samples))
+        samples = jnp.interp(alpha, self.cdf, self.xx)
+        return self.add_name(samples[None])
+    
+    def log_prob(self, x: dict[str, Array]) -> Float:
+        variable = x[self.naming[0]]
+        return jnp.log(jnp.interp(variable, self.xx, self.yy, left=0, right=0))
 
 @jaxtyped(typechecker=typechecker)
 class Uniform(Prior):
@@ -194,6 +234,7 @@ class Normal(Prior):
         variable = x[self.naming[0]]
         return -1/(2*self.sigma**2) * (variable-self.mu)**2 - jnp.sqrt(2*jnp.pi*self.sigma**2)
 
+
 @jaxtyped(typechecker=typechecker)
 class UniformVolume(Prior):
     xmin: float = 10.
@@ -256,6 +297,48 @@ class UniformVolume(Prior):
             ),
         )
         return output
+
+
+@jaxtyped(typechecker=typechecker)
+class UniformSourceFrame(InterpedPrior):
+    xmin: float = 10.
+    xmax: float = 1e5
+
+    """
+    Prior that is uniform in comoving volume and source frame time, analogue to the corresponding bilby prior.
+    Uses the default cosmology in fiesta which is Planck18.
+    """
+
+    def __repr__(self):
+        return f"UniformSourceFrame(xmin={self.xmin}, xmax={self.xmax})"
+
+    def __init__(
+        self,
+        dmin: Float,
+        dmax: Float,
+        naming: list[str],
+        cosmology = Planck18,
+        **kwargs,
+    ):
+        """
+        Args:
+           dmin (Float): Minimum luminosity distance in Mpc.
+           dmax (Float): Maximum luminosity distance in Mpc.
+           naming (list[str]): Parameter name. Must be ['luminosity_distance'].
+           cosmology (astropy.cosmology): Astropy cosmology. Defaults to Planck18.
+        """
+
+        self.dmax = dmax
+        self.dmin = dmin
+
+        xx = jnp.linspace(self.dmin, self.dmax, 500)
+        redshift_arr = jnp.array(z_at_value(cosmology.luminosity_distance, xx * u.Mpc))
+        ddl_dz = jnp.gradient(xx, redshift_arr)
+        yy = cosmology.differential_comoving_volume(redshift_arr).value / (1 + redshift_arr) * 1/ ddl_dz
+        
+        if naming != ["luminosity_distance"]:
+            raise NotImplementedError(f"For now, parameter must be 'luminosity_distance'. {naming[0]} not yet supported.")
+        super().__init__(xx, yy, naming)
 
 @jaxtyped(typechecker=typechecker)
 class Sine(Prior):
@@ -372,28 +455,7 @@ class LogUniform(Prior):
         )
         return output + jnp.log(1.0 / (jnp.log(self.xmax) - jnp.log(self.xmin)) ) - jnp.log(variable)
 
-# class DiracDelta(Prior):
-    
-#     value: float
-    
-#     def __init__(self, 
-#                  value: float,
-#                  naming: list[str],
-#                  transforms: dict[str, tuple[str, Callable]] = {},
-#                  **kwargs):
-#         super().__init__(naming, transforms)
-#         self.value = value
-        
-#     def sample(self,
-#                 rng_key: PRNGKeyArray,
-#                 n_samples: int) -> dict[str, Float[Array, " n_samples"]]:
-#           return self.add_name(jnp.ones(n_samples) * self.value)
-      
-#     def log_prob(self, x: dict[str, Array]) -> Float:
-#         variable = x[self.naming[0]]
-#         output = jnp.where(variable == self.value, jnp.zeros_like(variable), jnp.zeros_like(variable) - jnp.inf)
-#         return output
-    
+
 class CompositePrior(Prior):
     priors: list[Prior] = field(default_factory=list)
 
