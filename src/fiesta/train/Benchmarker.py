@@ -193,49 +193,62 @@ class Benchmarker:
     def plot_worst_lightcurves(self,):
         label_dic = {p: latex_labels.get(p, p) for p in self.parameter_names}
 
+        MAG_FAINT_CLIP = 40  # magnitudes fainter than this are unphysical
+
         n_filters = len(self.Filters)
         ncols = min(n_filters, 3)
         nrows = int(np.ceil(n_filters / ncols))
-        fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 3.5 * nrows))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4.5 * nrows))
         axes = np.atleast_2d(axes)
-        fig.subplots_adjust(hspace=0.45, wspace=0.3, bottom=0.08, top=0.92, left=0.08, right=0.97)
+        fig.subplots_adjust(hspace=0.55, wspace=0.35, bottom=0.06, top=0.94, left=0.07, right=0.97)
 
         for i, filt in enumerate(self.Filters):
             cax = axes[i // ncols, i % ncols]
             ind = np.argmax(self.error[filt.name])
-            prediction = self.pred_mag[filt.name][ind]
-            truth = self.test_mag[filt.name][ind]
+            prediction = np.array(self.pred_mag[filt.name][ind])
+            truth = np.array(self.test_mag[filt.name][ind])
 
-            cax.plot(self.times, truth, color="red", lw=1.5, label="Baseline")
-            cax.plot(self.times, prediction, color="blue", lw=1.0, label="Surrogate")
-            cax.fill_between(self.times, prediction - 1, prediction + 1, color="blue", alpha=0.15)
+            cax.plot(self.times, truth, color="red", lw=1.8, label="Baseline", zorder=3)
+            cax.plot(self.times, prediction, color="royalblue", lw=1.0, alpha=0.85, label="Surrogate", zorder=2)
+            cax.fill_between(self.times, prediction - 1, prediction + 1,
+                             color="royalblue", alpha=0.12, zorder=1)
 
-            # Set sensible y-limits based on the data range
-            finite_vals = np.concatenate([np.array(truth), np.array(prediction)])
-            finite_vals = finite_vals[np.isfinite(finite_vals)]
-            if len(finite_vals) > 0:
-                ylo, yhi = np.percentile(finite_vals, [1, 99])
-                pad = max(2.0, (yhi - ylo) * 0.15)
-                cax.set_ylim(yhi + pad, ylo - pad)  # inverted for magnitudes
+            # Y-limits from truth only, clamped to physical range
+            truth_finite = truth[np.isfinite(truth)]
+            truth_clipped = truth_finite[truth_finite < MAG_FAINT_CLIP]
+            if len(truth_clipped) > 0:
+                ylo = np.min(truth_clipped)
+                yhi = np.max(truth_clipped)
+            elif len(truth_finite) > 0:
+                ylo, yhi = np.min(truth_finite), MAG_FAINT_CLIP
             else:
-                cax.invert_yaxis()
+                ylo, yhi = -5, MAG_FAINT_CLIP
+            pad = max(2.0, (yhi - ylo) * 0.12)
+            cax.set_ylim(yhi + pad, ylo - pad)  # inverted for magnitudes
 
             cax.set(xscale="log", xlim=(self.times[0], self.times[-1]))
-            cax.set_xlabel("$t$ [days]")
-            cax.set_ylabel("mag")
-            cax.set_title(filt.name, fontsize=10, fontweight="bold")
+            cax.set_xlabel("$t$ [days]", fontsize=9)
+            cax.set_ylabel("mag", fontsize=9)
+            cax.set_title(filt.name, fontsize=11, fontweight="bold")
+            cax.grid(True, alpha=0.25, lw=0.5)
+            cax.tick_params(labelsize=8)
 
-            # Format parameters with names
-            param_str = ", ".join(f"{label_dic.get(p, p)}={self.test_X_raw[ind, j]:.2g}"
-                                  for j, p in enumerate(self.parameter_names))
-            cax.text(0.02, 0.03, param_str, transform=cax.transAxes,
-                     fontsize=5.5, color="grey", va="bottom",
-                     bbox=dict(facecolor="white", alpha=0.7, edgecolor="none", pad=1))
+            # Multi-line parameter annotation (4 params per line)
+            params_per_line = 4
+            items = [f"{label_dic.get(p, p)}={self.test_X_raw[ind, j]:.2g}"
+                     for j, p in enumerate(self.parameter_names)]
+            lines = [", ".join(items[k:k + params_per_line])
+                     for k in range(0, len(items), params_per_line)]
+            param_str = "\n".join(lines)
+            cax.text(0.03, 0.04, param_str, transform=cax.transAxes,
+                     fontsize=6.5, color="0.35", va="bottom", family="monospace",
+                     bbox=dict(facecolor="white", alpha=0.85, edgecolor="0.8",
+                               pad=2, boxstyle="round,pad=0.3"))
 
             if i == 0:
-                cax.legend(fontsize=8, loc="upper right")
+                cax.legend(fontsize=9, loc="upper right",
+                           framealpha=0.9, edgecolor="0.8")
 
-        # Turn off unused axes
         for i in range(n_filters, nrows * ncols):
             axes[i // ncols, i % ncols].set_visible(False)
 
@@ -246,49 +259,60 @@ class Benchmarker:
         n_filters = len(self.Filters)
         ncols = min(n_filters, 3)
         nrows = int(np.ceil(n_filters / ncols))
-        fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 3.5 * nrows))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4.5 * nrows))
         axes = np.atleast_2d(axes)
-        fig.subplots_adjust(hspace=0.45, wspace=0.3, bottom=0.08, top=0.92, left=0.08, right=0.97)
+        fig.subplots_adjust(hspace=0.55, wspace=0.35, bottom=0.06, top=0.94, left=0.07, right=0.97)
 
         # Pick time indices evenly in log-space
         log_times = np.log10(self.times)
-        target_log = np.linspace(log_times[0], log_times[-1], 12)
+        target_log = np.linspace(log_times[0], log_times[-1], 10)
         indices = np.array([np.argmin(np.abs(log_times - t)) for t in target_log])
         indices = np.unique(indices)
 
         for i, filt in enumerate(self.Filters):
             cax = axes[i // ncols, i % ncols]
             error = np.abs(np.array(self.pred_mag[filt.name]) - np.array(self.test_mag[filt.name]))
-            # Replace NaN/Inf with 0 for plotting
             error = np.where(np.isfinite(error), error, 0.0)
+
+            # Clip outliers at 99th percentile across all times for cleaner violins
+            all_err = error[:, indices].ravel()
+            clip_val = np.percentile(all_err[all_err > 0], 99) if np.any(all_err > 0) else 1.0
+            error_clipped = np.clip(error, 0, clip_val)
 
             # Use log-space positions for the violin plot
             log_pos = np.log10(self.times[indices])
-            width = np.diff(np.concatenate([[log_pos[0] - 0.3], log_pos])) * 0.6
-            width = np.clip(width, 0.1, None)
+            spacing = np.diff(np.concatenate([[log_pos[0] - 0.5], log_pos]))
+            width = spacing * 0.55
+            width = np.clip(width, 0.08, None)
 
-            parts = cax.violinplot(error[:, indices], positions=log_pos, widths=width, points=400,
+            data_list = [error_clipped[:, idx] for idx in indices]
+            parts = cax.violinplot(data_list, positions=log_pos, widths=width, points=300,
                                    showmedians=True, showextrema=False)
             for pc in parts["bodies"]:
                 pc.set_facecolor("steelblue")
-                pc.set_alpha(0.6)
+                pc.set_edgecolor("steelblue")
+                pc.set_alpha(0.5)
             parts["cmedians"].set_color("darkred")
+            parts["cmedians"].set_linewidth(1.5)
 
             # Manual log-scale tick labels
             tick_vals = np.array([1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100, 1000])
             tick_vals = tick_vals[(tick_vals >= self.times[0]) & (tick_vals <= self.times[-1])]
             cax.set_xticks(np.log10(tick_vals))
-            cax.set_xticklabels([f"$10^{{{int(np.log10(v))}}}$" for v in tick_vals])
-            cax.set_xlim(log_times[0] - 0.2, log_times[-1] + 0.2)
+            cax.set_xticklabels([f"$10^{{{int(np.log10(v))}}}$" for v in tick_vals],
+                                fontsize=8)
+            cax.set_xlim(log_times[0] - 0.3, log_times[-1] + 0.3)
 
-            # Set y-limits from data
-            finite_error = error[np.isfinite(error)]
-            p95 = np.percentile(finite_error, 95) if len(finite_error) > 0 else 1.0
-            cax.set_ylim(0, max(p95 * 1.3, 0.5))
+            # Y-limit from the clipped data median + a few sigma
+            medians = np.array([np.median(d) for d in data_list])
+            p90 = np.percentile(error_clipped[:, indices].ravel(), 90)
+            cax.set_ylim(0, max(p90 * 1.5, np.max(medians) * 3, 0.5))
 
-            cax.set_xlabel("$t$ [days]")
-            cax.set_ylabel("error [mag]")
-            cax.set_title(filt.name, fontsize=10, fontweight="bold")
+            cax.set_xlabel("$t$ [days]", fontsize=9)
+            cax.set_ylabel("error [mag]", fontsize=9)
+            cax.set_title(filt.name, fontsize=11, fontweight="bold")
+            cax.grid(True, axis="y", alpha=0.25, lw=0.5)
+            cax.tick_params(labelsize=8)
 
         for i in range(n_filters, nrows * ncols):
             axes[i // ncols, i % ncols].set_visible(False)
@@ -309,9 +333,9 @@ class Benchmarker:
         n_params = len(self.parameter_names)
         ncols = min(n_params, 4)
         nrows = int(np.ceil(n_params / ncols))
-        fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3 * nrows))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.5 * nrows))
         axes = np.atleast_2d(axes)
-        fig.subplots_adjust(hspace=0.5, wspace=0.35, bottom=0.08, top=0.92, left=0.06, right=0.97)
+        fig.subplots_adjust(hspace=0.6, wspace=0.4, bottom=0.10, top=0.92, left=0.07, right=0.97)
 
         for j, p in enumerate(self.parameter_names):
             cax = axes[j // ncols, j % ncols]
@@ -319,7 +343,7 @@ class Benchmarker:
             pmin, pmax = self.parameter_distributions[p][0], self.parameter_distributions[p][1]
             bins = np.linspace(pmin, pmax, 15)
 
-            # Weighted histogram (mean error per bin) instead of density
+            # Mean error per bin
             counts, _ = np.histogram(p_array, bins=bins)
             weighted, _ = np.histogram(p_array, bins=bins, weights=self.error["total"])
             mean_error = np.where(counts > 0, weighted / counts, 0)
@@ -327,9 +351,11 @@ class Benchmarker:
             bin_centers = 0.5 * (bins[:-1] + bins[1:])
             cax.bar(bin_centers, mean_error, width=np.diff(bins) * 0.85,
                     color="steelblue", edgecolor="white", linewidth=0.5)
-            cax.set_xlabel(label_dic.get(p, p))
-            cax.set_ylabel(f"mean {self.metric_name}")
+            cax.set_xlabel(label_dic.get(p, p), fontsize=9)
+            cax.set_ylabel(f"mean {self.metric_name}", fontsize=9)
             cax.set_xlim(pmin, pmax)
+            cax.grid(True, axis="y", alpha=0.25, lw=0.5)
+            cax.tick_params(labelsize=8)
 
         for i in range(n_params, nrows * ncols):
             axes[i // ncols, i % ncols].set_visible(False)
