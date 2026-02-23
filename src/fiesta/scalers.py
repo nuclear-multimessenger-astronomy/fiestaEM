@@ -183,7 +183,7 @@ class SVDDecomposer(Scaler):
 class ImageScaler(Scaler):
     """
     Scaler that down samples 2D arrays of shape upscale to downscale and the inverse.
-    Note that the methods always assume that the input array x is flattened along the last axis, i.e. it will reshape the input x.reshape(-1, *upscale). 
+    Note that the methods always assume that the input array x is flattened along the last axis, i.e. it will reshape the input ``x.reshape(-1, *upscale)``.
     The down sampled image is scaled once more with a scaler object.
     Attention, this object has no proper fit method, because of its application in FluxTrainerCVAE and the way the data is loaded there to avoid memory issues.
     """

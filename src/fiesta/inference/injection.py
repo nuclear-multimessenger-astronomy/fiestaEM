@@ -28,6 +28,7 @@ class InjectionBase:
     """
     Base class to create synthetic injection lightcurves.
     The injection model is first initialized with the following parameters:
+
         filters (list): List of filters in which the synthetic data should be given out.
         tmin (float): Time of earliest synthetic detection possible in days. Defaults to 0.1.
         tmax (float): Time of latest synthetic detection possible in days. Defaults to 10.0
