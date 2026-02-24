@@ -90,7 +90,13 @@ class InjectionBase:
     def create_injection(self,
                          injection_dict: dict[str, Float],
                          file: str = None):
-        
+        """Create synthetic injection lightcurve from model predictions or training data.
+
+        Args:
+            injection_dict (dict): Dictionary mapping parameter names to their values.
+            file (str, optional): Path to a training data file to draw a lightcurve from.
+                If None, uses the surrogate model's predict method. Defaults to None.
+        """
 
         if file is None:
             times, mag_app = self._get_injection_lc(injection_dict)

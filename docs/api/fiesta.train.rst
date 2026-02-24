@@ -10,11 +10,13 @@ Trainers
    :members:
    :undoc-members:
    :show-inheritance:
+   :exclude-members: train_X, train_y, val_X, val_y
 
 .. automodule:: fiesta.train.LightcurveTrainer
    :members:
    :undoc-members:
    :show-inheritance:
+   :exclude-members: train_X, train_y, val_X, val_y
 
 Data
 ----
