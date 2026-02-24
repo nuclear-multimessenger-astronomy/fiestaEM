@@ -1,21 +1,42 @@
 """
+NOTE: this requires the main branch of jesterTOV to be installed (NOT pip installation!)
+
+```bash
+git clone https://github.com/nuclear-multimessenger-astronomy/jester
+cd jester
+pip install -e .
+```
+
+---
+
 Kilonova inference using the jesterTOV SMC Random Walk sampler.
 
 This script mirrors inference_KN.py but uses the BlackJAX SMC (Sequential Monte
 Carlo) sampler from jesterTOV instead of flowMC.  Thin wrapper classes bridge
 the two APIs:
 
-  FiestaJesterPrior     – exposes `parameter_names` (jester) as an alias for
-                           fiesta's `naming` attribute.
-  FiestaJesterLikelihood – exposes `evaluate(params_dict)` (jester) and
-                           internally applies `prior.transform()` before
-                           calling the fiesta EMLikelihood.
+* FiestaJesterPrior: exposes `parameter_names` (jester) as an alias for fiesta's `naming` attribute.
+* FiestaJesterLikelihood: exposes `evaluate(params_dict)` (jester) and internally applies `prior.transform()` before calling the fiesta EMLikelihood.
 """
 
+import time
 import os
 import numpy as np
 import jax
 import jax.numpy as jnp
+
+# Persistent compilation cache -- stores jitted functions on disk to speed up subsequent runs
+# More info: https://docs.jax.dev/en/latest/persistent_compilation_cache.html
+jax.config.update("jax_compilation_cache_dir", "./jax_cache")
+jax.config.update("jax_persistent_cache_min_entry_size_bytes", 1)
+jax.config.update("jax_persistent_cache_min_compile_time_secs", 0.01)
+jax.config.update("jax_persistent_cache_enable_xla_caches", "xla_gpu_per_fusion_autotune_cache_dir")
+
+# Avoid excessive useless warning errors in my jax setup
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
+# Start timing the scripts here (not sure how long it takes to import things from fiesta...)
+start_script_time = time.time()
 
 # ── fiesta imports ────────────────────────────────────────────────────────────
 from fiesta.inference.prior import Uniform
@@ -137,13 +158,14 @@ likelihood = FiestaJesterLikelihood(fiesta_likelihood, fiesta_prior)
 outdir = "./outdir_KN_SMC/"
 os.makedirs(outdir, exist_ok=True)
 
+# Choose the sampler hyperparameters here
 sampler_config = SMCRandomWalkSamplerConfig(
-    n_particles=500,
-    n_mcmc_steps=5,
+    n_particles=2000,
+    n_mcmc_steps=10,
     target_ess=0.9,
-    random_walk_sigma=0.3,
+    random_walk_sigma=0.1,
     output_dir=outdir,
-    log_prob_batch_size=100,
+    log_prob_batch_size=1000,
 )
 
 ########################################################################
@@ -168,7 +190,9 @@ if __name__ == "__main__":
     print(f"n_mcmc_steps: {sampler_config.n_mcmc_steps}")
     print()
 
+    start_sampler_time = time.time()
     sampler.sample(jax.random.PRNGKey(42))
+    end_sampler_time = time.time()
 
     # ── diagnostics ──────────────────────────────────────────────────
     sampler.plot_diagnostics(outdir=outdir, filename="smc_diagnostics.png")
@@ -252,3 +276,9 @@ if __name__ == "__main__":
         print(f"Lightcurves  → {outdir}lightcurves.pdf")
     except Exception as e:
         print(f"[WARNING] Lightcurve plot failed: {e}")
+end_script_time = time.time()
+
+total_time_sampler = end_sampler_time - start_sampler_time
+total_time_script = end_script_time - start_script_time
+print(f"\nTotal sampler runtime: {total_time_sampler:.1f} seconds")
+print(f"\nTotal script runtime: {total_time_script:.1f} seconds")
