@@ -8,7 +8,11 @@ import tqdm
 from multiprocessing import Pool, Value
 
 from fiesta.constants import days_to_seconds
-import afterglowpy as grb
+
+try:
+    import afterglowpy as grb
+except ImportError:
+    pass
 
 
 class AfterglowData:
