@@ -56,6 +56,9 @@ autodoc_default_options = {
     "undoc-members": True,
     "show-inheritance": True,
     "members": True,
+    # act_func is a Callable-typed flax field; autodoc errors trying to
+    # introspect nn.relu's signature against the annotation.
+    "exclude-members": "act_func",
 }
 
 # Type hints rendering
