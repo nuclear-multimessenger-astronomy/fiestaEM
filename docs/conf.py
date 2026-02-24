@@ -16,8 +16,8 @@ warnings.filterwarnings("ignore", category=UserWarning, module="dust_extinction"
 # -- Project information -----------------------------------------------------
 
 project = "fiesta"
-copyright = "2024, Thibeau Wouters, Hauke Koehn"
-author = "Thibeau Wouters, Hauke Koehn"
+copyright = "2026, fiestaEM developers"
+author = "fiestaEM developers"
 release = "0.1.0"
 
 # -- General configuration ---------------------------------------------------
@@ -101,5 +101,5 @@ copybutton_prompt_is_regexp = True
 # -- Suppress specific warnings ----------------------------------------------
 
 suppress_warnings = [
-    "ref.python",
+    "sphinx_autodoc_typehints.forward_reference",
 ]
