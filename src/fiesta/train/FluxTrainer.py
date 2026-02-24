@@ -69,18 +69,27 @@ class FluxTrainer:
         raise NotImplementedError
     
     def plot_learning_curve(self, train_losses, val_losses):
-        plt.figure(figsize=(10, 5))
-        ls = "-o"
-        ms = 3
-        plt.plot([i+1 for i in range(len(train_losses))], train_losses, ls, markersize=ms, label="Train", color="red")
-        plt.plot([i+1 for i in range(len(val_losses))], val_losses, ls, markersize=ms, label="Validation", color="blue")
-        plt.legend()
-        plt.xlabel("Epoch")
-        plt.ylabel("Loss")
-        plt.yscale('log')
-        plt.title("Learning curves")
-        plt.savefig(os.path.join(self.plots_dir, f"learning_curves_{self.name}.png"), bbox_inches="tight")
-        plt.close()
+        fig, ax = plt.subplots(figsize=(10, 5))
+        epochs = np.arange(1, len(train_losses) + 1)
+        ax.plot(epochs, train_losses, "-", lw=1.0, label="Train", color="red")
+        ax.plot(epochs, val_losses, "-", lw=1.0, label="Validation", color="blue")
+
+        # Mark best validation epoch
+        best_idx = np.argmin(val_losses)
+        ax.axvline(best_idx + 1, color="blue", ls="--", alpha=0.4, lw=0.8)
+        ax.annotate(f"best val @ {best_idx + 1}", xy=(best_idx + 1, val_losses[best_idx]),
+                    fontsize=8, color="blue", alpha=0.7,
+                    xytext=(10, 10), textcoords="offset points")
+
+        ax.legend(fontsize=11)
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Loss")
+        ax.set_yscale("log")
+        ax.set_title("Learning curves")
+        ax.grid(True, alpha=0.3)
+        fig.savefig(os.path.join(self.plots_dir, f"learning_curves_{self.name}.png"),
+                    bbox_inches="tight", dpi=150)
+        plt.close(fig)
     
     def plot_example_lc(self, lc_model):
         _, _, X, y = self.data_manager.load_raw_data_from_file(0,1) # loads validation data
