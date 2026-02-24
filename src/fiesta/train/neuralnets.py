@@ -314,10 +314,7 @@ class MLP:
                    val_y: Float[Array, "n_batch_val ndim_output"] = None,
                    verbose: bool = True):
 
-        n_train = train_X.shape[0]
-        batch_size = min(self.config.batch_size, n_train)
-        n_batches = max(1, n_train // batch_size)
-        total_steps = self.config.nb_epochs * n_batches
+        total_steps = self.config.nb_epochs
 
         # Component weights for smoothness regularization
         n_pca = train_y.shape[1]
@@ -358,25 +355,9 @@ class MLP:
         start = time.time()
 
         for i in range(self.config.nb_epochs):
-            # Shuffle training data
-            rng, shuffle_rng = jax.random.split(rng)
-            perm = jax.random.permutation(shuffle_rng, n_train)
-            X_shuf = train_X[perm]
-            y_shuf = train_y[perm]
-
-            # Mini-batch loop
-            epoch_loss = 0.0
-            for b in range(n_batches):
-                s = b * batch_size
-                bX = jax.lax.dynamic_slice(X_shuf, (s, 0),
-                                           (batch_size, train_X.shape[1]))
-                by = jax.lax.dynamic_slice(y_shuf, (s, 0),
-                                           (batch_size, train_y.shape[1]))
-                rng, dropout_rng = jax.random.split(rng)
-                state, batch_loss = self.train_step(
-                    state, bX, by, dropout_rng, component_weights)
-                epoch_loss += batch_loss
-            epoch_loss /= n_batches
+            rng, dropout_rng = jax.random.split(rng)
+            state, epoch_loss = self.train_step(
+                state, train_X, train_y, dropout_rng, component_weights)
 
             # Evaluate on full validation set
             if val_X is not None:
