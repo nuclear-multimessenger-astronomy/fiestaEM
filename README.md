@@ -48,6 +48,76 @@ If you want to use our training data, please contact us so we can figure out a w
 We also have example scripts for running an inference on AT2017gfo + GRB170817A. They can be found in `./examples/inference/`. 
 Note that for all of these example scripts it is highly recommended to use GPU-acceleration, since otherwise the runtime will rather long.
 
+## For Developers
+
+### Running tests
+
+Install the package in editable mode and run the test suite with:
+
+```bash
+pip install -e .
+python -m coverage run --source fiesta -m pytest tests/*.py
+```
+
+To run a single test file:
+
+```bash
+python -m pytest tests/test_models.py
+```
+
+### Building the docs locally
+
+Install the documentation dependencies:
+
+```bash
+pip install -e ".[docs]"
+```
+
+Then build the HTML docs from the `docs/` directory:
+
+```bash
+sphinx-build docs docs/_build/html
+```
+
+Open the result in your browser:
+
+```bash
+open docs/_build/html/index.html   # macOS
+xdg-open docs/_build/html/index.html  # Linux
+```
+
+For a live-reloading development server:
+
+```bash
+sphinx-autobuild docs docs/_build/html
+# Visit http://127.0.0.1:8000
+```
+
+To check for broken references (mirrors the CI check):
+
+```bash
+sphinx-build -W --keep-going docs docs/_build/html
+```
+
+## Citing fiesta
+
+If you use ``fiesta`` in your research, please cite our paper:
+
+```bibtex
+@article{Koehn:2025zzb,
+    author = "Koehn, Hauke and Wouters, Thibeau and Pang, Peter T. H. and Bulla, Mattia and Rose, Henrik and Wichern, Hannah and Dietrich, Tim",
+    title = "{Efficient Bayesian analysis of kilonovae and gamma ray burst afterglows with FIESTA}",
+    eprint = "2507.13807",
+    archivePrefix = "arXiv",
+    primaryClass = "astro-ph.HE",
+    doi = "10.1051/0004-6361/202556626",
+    journal = "Astron. Astrophys.",
+    volume = "704",
+    pages = "A55",
+    year = "2025"
+}
+```
+
 ## Acknowledgements
 
-The logo was created by [ideogram AI](https://ideogram.ai/). 
+The logo was created by [ideogram AI](https://ideogram.ai/).

@@ -28,7 +28,9 @@ class InjectionBase:
     """
     Base class to create synthetic injection lightcurves.
     The injection model is first initialized with the following parameters:
+
         filters (list): List of filters in which the synthetic data should be given out.
+        trigger_time (float): Reference trigger time (e.g. MJD or GPS seconds) added as an offset to all detection time stamps. Required.
         tmin (float): Time of earliest synthetic detection possible in days. Defaults to 0.1.
         tmax (float): Time of latest synthetic detection possible in days. Defaults to 10.0
         N_datapoints (int): Total number of datapoints (across all filters) for the synthetic lightcurve. Defaults to 10.
@@ -94,13 +96,13 @@ class InjectionBase:
                          injection_dict: dict[str, Float],
                          file: str = None):
         """
-        Creates an injection that is stored as a ``.data'' attribute.
+        Creates an injection that is stored as a ``.data`` attribute.
 
         Args:
            injection_dict (dict): Parameters for the synthetic light curve.
-           file (str, optional): Training data file that stores light curves from the physical base model of the surrogate. 
+           file (str, optional): Training data file that stores light curves from the physical base model of the surrogate.
                                  If provided, the method will take a random test element and base the injection on it.
-                                 In this case, the ``.injection_parameter'' attribute is updated to contain the real parameters used to generate the light curve.       
+                                 In this case, the ``.injection_parameter`` attribute is updated to contain the real parameters used to generate the light curve.
         """
         
 
