@@ -1,6 +1,8 @@
 __pycache__
 .coverage
 *egg-info
+docs/_build/
+docs/api/_autosummary/
 **/benchmarks/*
 /surrogates/*/_training_data/*
 !surrogates/*/_training_data/README.md

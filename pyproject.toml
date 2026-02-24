@@ -10,7 +10,7 @@ name = "fiestaEM"
 description = "Fast inference of electromagnetic signals with JAX"
 version = "0.1.0"
 readme = "README.md"
-authors = [{ name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"}, { name = "Hauke Koehn", email = "hauke.koehn@uni-potsdam.de"}]
+authors = [{ name = "Hauke Koehn", email = "hauke.koehn@uni-potsdam.de"}, { name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"}]
 license = "MIT"
 classifiers = [
     "Programming Language :: Python",
@@ -41,6 +41,16 @@ dependencies = [
 [project.optional-dependencies]
 grb = ["afterglowpy"]
 gpu = ["jax[cuda12]"]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-autobuild",
+    "sphinx-book-theme>=1.0",
+    "sphinx-design>=0.5",
+    "sphinx-autodoc-typehints>=2.0",
+    "sphinx-copybutton>=0.5",
+    "myst-parser>=2.0",
+    "dust-extinction",
+]
 
 [tool.setuptools]
 packages = { find = { where = ["src"] } }
