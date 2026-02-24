@@ -14,7 +14,7 @@ from flax import linen as nn  # Linen API
 class BaseNeuralnet(nn.Module):
     """Abstract base class. Needs layer sizes and activation function used"""
     layer_sizes: Sequence[int]
-    act_func: Callable[[Array], Array] = nn.relu
+    act_func: Callable = nn.relu
     
     def setup(self):
         raise NotImplementedError
@@ -47,7 +47,7 @@ class MLP(BaseNeuralnet):
 
 class Encoder(nn.Module):
     layer_sizes: Sequence[int]
-    act_func: Callable[[Array], Array] = nn.relu
+    act_func: Callable = nn.relu
 
     def setup(self):
         self.mu_layers = [nn.Dense(n) for n in self.layer_sizes]
@@ -113,7 +113,7 @@ class CNN(nn.Module):
     conv_layer_sizes: Sequence[Int]
     output_shape: tuple[Int, Int]
     spatial: Int = 32
-    act_func: Callable[[Array], Array] = nn.relu
+    act_func: Callable = nn.relu
 
     def setup(self):
         if self.dense_layer_sizes[-1] != self.conv_layer_sizes[0]:
