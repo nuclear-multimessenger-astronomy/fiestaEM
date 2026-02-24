@@ -35,6 +35,9 @@ You can check which built-in surrogates are available by running
 python -c "from fiesta.inference.lightcurve_model import list_built_in_surrogates; list_built_in_surrogates()"
 ```
 
+## Documentation
+
+The documentation is available at https://nuclear-multimessenger-astronomy.github.io/fiestaEM/
 
 ## Training surrogate models
 
