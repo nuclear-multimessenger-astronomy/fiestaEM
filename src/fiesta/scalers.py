@@ -239,6 +239,8 @@ class ParameterScaler(Scaler):
 
         if conversion == "thetaWing_inclination":
             self.conversion = thetaWing_inclination
+        elif conversion == "thetaCore_inclination":
+            self.conversion = thetaCore_inclination
         else:
             self.conversion = identity
             
@@ -255,7 +257,7 @@ class ParameterScaler(Scaler):
 def thetaWing_inclination(x):
     return jnp.hstack((x, (x[:,3]*x[:,2]-x[:,0]).reshape(-1,1) ))
 
-def thetCore_inclination(x):
+def thetaCore_inclination(x):
     return jnp.hstack((x, (x[:,2]-x[:,0]).reshape(-1,1) ))
 
 def identity(x):

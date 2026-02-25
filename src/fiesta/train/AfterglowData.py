@@ -30,8 +30,10 @@ class AfterglowData:
                  numin: float = 1e9,
                  numax: float = 2.5e18,
                  n_nu: int = 256,
-                 fixed_parameters: dict = {}) -> None:
-        
+                 fixed_parameters: dict = None) -> None:
+        if fixed_parameters is None:
+            fixed_parameters = {}
+
         outdir = os.path.dirname(outfile)
         if not os.path.exists(outdir):
             os.makedirs(outdir)
@@ -45,8 +47,8 @@ class AfterglowData:
             self._read_file()
         else:
             self.jet_type = jet_type
-            if self.jet_type not in [-1,0]:
-                raise ValueError(f"Jet type {jet_type} is not supported. Supported jet types are: [-1, 0]")
+            if self.jet_type not in [-1, 0, 2]:
+                raise ValueError(f"Jet type {jet_type} is not supported. Supported jet types are: [-1, 0, 2]")
             self.initialize_times(tmin, tmax, n_times, use_log_spacing) # create time array
             self.initialize_nus(numin, numax, n_nu) # create frequency array
             self.parameter_names = list(parameter_distributions.keys())
@@ -241,7 +243,7 @@ class AfterglowpyData(AfterglowData):
             try:
                 idx, out = job.get()
                 y[idx] = out
-            except:
+            except Exception:
                 y[Idx] = np.full(len(self.nus), len(self.times), np.nan)
         return X, y
 
@@ -274,15 +276,15 @@ class PyblastafterglowData(AfterglowData):
             try:
                 idx, out = pbag(j)
                 y[idx] = out
-            except:
-                try: 
+            except Exception:
+                try:
                     # increase blast wave evolution time grid if there is an error
                     old_ntb = pbag.ntb
-                    pbag.ntb = 3000 
+                    pbag.ntb = 3000
                     idx, out = pbag(j)
                     y[idx] = out
                     pbag.ntb = old_ntb
-                except:
+                except Exception:
                     y[j] = np.full(len(self.nus), len(self.times), np.nan)           
         return X, y
     
@@ -319,7 +321,9 @@ class PyblastafterglowData(AfterglowData):
             f.create_dataset("times", data=time)
 
 class RunAfterglowpy:
-    def __init__(self, jet_type, times, nus, X, parameter_names, fixed_parameters = {}):
+    def __init__(self, jet_type, times, nus, X, parameter_names, fixed_parameters=None):
+        if fixed_parameters is None:
+            fixed_parameters = {}
         self.jet_type = jet_type
         self.times = times
         self._times_afterglowpy = self.times * days_to_seconds # afterglowpy takes seconds as input
@@ -380,7 +384,7 @@ class RunAfterglowpy:
         return mJys
 
     def __call__(self, idx):
-        param_dict = dict(zip(self.parameter_names, self.X[idx]))
+        param_dict = dict(zip(self.parameter_names, self.X[idx], strict=True))
         param_dict.update(self.fixed_parameters)
         mJys = self._call_afterglowpy(param_dict)
         return  idx, np.log10(mJys)
@@ -394,8 +398,8 @@ class RunPyblastafterglow:
                  nus, 
                  X, 
                  parameter_names, 
-                 fixed_parameters={}, 
-                 rank = 0, 
+                 fixed_parameters=None,
+                 rank = 0,
                  path_to_exec: str="./pba.out", 
                  grb_resolution: int=12,
                  ntb: int=1000,
@@ -424,6 +428,8 @@ class RunPyblastafterglow:
 
         self.X = X
         self.parameter_names = parameter_names
+        if fixed_parameters is None:
+            fixed_parameters = {}
         self.fixed_parameters = fixed_parameters
         self.rank = rank
         self.path_to_exec = path_to_exec
@@ -509,7 +515,124 @@ class RunPyblastafterglow:
         return mJys
 
     def __call__(self, idx):
-        param_dict = dict(zip(self.parameter_names, self.X[idx]))
+        param_dict = dict(zip(self.parameter_names, self.X[idx], strict=True))
         param_dict.update(self.fixed_parameters)
         mJys = self._call_pyblastafterglow(param_dict)
         return  idx, np.log10(mJys)
+
+
+class JetsimpyData(AfterglowData):
+
+    def __init__(self, *args, **kwargs):
+        self.chunk_size = 100
+        super().__init__(*args, **kwargs)
+
+    def create_raw_data(self, n: int, training: bool = True):
+        """Create draws X in the parameter space and run the jetsimpy model on it."""
+        X_raw = np.empty((n, len(self.parameter_names)))
+
+        if training:
+            for j, key in enumerate(self.parameter_names):
+                a, b, distribution = self.parameter_distributions[key]
+                if distribution == "uniform":
+                    X_raw[:, j] = np.random.uniform(a, b, size=n)
+                elif distribution == "loguniform":
+                    X_raw[:, j] = np.exp(np.random.uniform(np.log(a), np.log(b), size=n))
+        else:
+            for j, key in enumerate(self.parameter_distributions.keys()):
+                a, b, _ = self.parameter_distributions[key]
+                X_raw[:, j] = np.random.uniform(a, b, size=n)
+
+        # Ensure that epsilon_e + epsilon_B < 1
+        epsilon_e_ind = self.parameter_names.index("log10_epsilon_e")
+        epsilon_B_ind = self.parameter_names.index("log10_epsilon_B")
+        epsilon_tot = (10**(X_raw[:, epsilon_e_ind]) + 10**(X_raw[:, epsilon_B_ind]))
+        mask = epsilon_tot >= 1
+        X_raw[mask, epsilon_B_ind] += np.log10(0.99 / epsilon_tot[mask])
+        X_raw[mask, epsilon_e_ind] += np.log10(0.99 / epsilon_tot[mask])
+
+        X, y = self.run_afterglow_model(X_raw)
+        return X, y
+
+    def run_afterglow_model(self, X):
+        """Run jetsimpy on the supplied parameters in X.
+
+        No multiprocessing.Pool needed — the Rust jetsimpy extension uses
+        rayon for automatic parallelism within each FluxDensity call (releases
+        the GIL via py.allow_threads). This avoids the fork+C-extension
+        deadlock that occurred with the old pybind11/C++ version on SLURM.
+        """
+        y = np.empty((len(X), len(self.nus), len(self.times)))
+        jsim = RunJetsimpy(self.times, self.nus, X, self.parameter_names, self.fixed_parameters)
+        for idx in tqdm.tqdm(range(len(X)), desc=f"Computing {len(X)} jetsimpy calculations.", leave=False):
+            try:
+                i, out = jsim(idx)
+                y[i] = out
+            except Exception:
+                y[idx] = np.full((len(self.nus), len(self.times)), np.nan)
+        return X, y
+
+
+class RunJetsimpy:
+    def __init__(self, times, nus, X, parameter_names, fixed_parameters=None):
+        if fixed_parameters is None:
+            fixed_parameters = {}
+        self.times = np.array(times)
+        self._times_seconds = self.times * days_to_seconds
+        self.nus = np.array(nus)
+        self.X = np.array(X)
+        self.parameter_names = list(parameter_names)
+        self.fixed_parameters = dict(fixed_parameters)
+
+    def _call_jetsimpy(self, params_dict):
+        """
+        Call jetsimpy to generate a single flux density output for a given set of parameters.
+        Returns flux density in mJy as a 2D array (n_nu, n_times).
+        """
+        try:
+            import jetsimpy_rs as jetsimpy
+        except ImportError as err:
+            raise ImportError(
+                "jetsimpy_rs is not installed. Install it from "
+                "https://github.com/nuclear-multimessenger-astronomy/jetsimpy-rs"
+            ) from err
+
+        theta_c = params_dict["thetaCore"]
+        Eiso = 10 ** params_dict["log10_E0"]
+        lf = 10 ** params_dict["log10_lf"]
+        n0 = 10 ** params_dict["log10_n0"]
+        p = params_dict["p"]
+        eps_e = 10 ** params_dict["log10_epsilon_e"]
+        eps_b = 10 ** params_dict["log10_epsilon_B"]
+        theta_v = params_dict["inclination_EM"]
+
+        P = dict(
+            Eiso=Eiso,
+            lf=lf,
+            theta_c=theta_c,
+            n0=n0,
+            A=0,
+            eps_e=eps_e,
+            eps_b=eps_b,
+            p=p,
+            theta_v=theta_v,
+            d=9.99e-6,  # ~10 pc in Mpc
+            z=0.0,
+        )
+
+        tmax = float(np.max(self._times_seconds)) * 2
+
+        tt, nunu = np.meshgrid(self._times_seconds, self.nus)
+        mJys = jetsimpy.FluxDensity_gaussian(
+            tt.flatten(), nunu.flatten(), P,
+            tmax=tmax,
+        )
+        mJys = mJys.reshape(len(self.nus), len(self._times_seconds))
+        return mJys
+
+    def __call__(self, idx):
+        param_dict = dict(zip(self.parameter_names, self.X[idx], strict=True))
+        param_dict.update(self.fixed_parameters)
+        mJys = self._call_jetsimpy(param_dict)
+        mJys = np.clip(mJys, 1e-300, None)
+        return idx, np.log10(mJys)
