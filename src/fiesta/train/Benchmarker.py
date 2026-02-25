@@ -113,8 +113,7 @@ class Benchmarker:
             test_log_interp = interp1d(self.data_nus, self.test_log_flux, axis=1,
                                        bounds_error=False, fill_value=np.nan)(pred_nus)
             log_flux_residual = log_flux_pred - test_log_interp
-            # Clip extreme residuals: any |residual| > 100 dex is unphysical
-            log_flux_residual = np.clip(log_flux_residual, -100, 100)
+            # Mask non-finite entries before clipping
             nan_mask = ~np.isfinite(log_flux_residual)
             n_nan = np.count_nonzero(nan_mask)
             n_total = log_flux_residual.size
@@ -126,6 +125,9 @@ class Benchmarker:
                     f"extrapolation). These entries are excluded from the total "
                     f"error calculation.",
                     stacklevel=2)
+            # Set non-finite entries to NaN, then clip physical residuals
+            log_flux_residual = np.where(nan_mask, np.nan, log_flux_residual)
+            log_flux_residual = np.clip(log_flux_residual, -100, 100)
             # Exclude NaN/Inf entries from error calculation
             if self.file_ending == "Linf":
                 self.error["total"] = np.nanmax(np.abs(log_flux_residual), axis=(1, 2))
@@ -146,7 +148,10 @@ class Benchmarker:
         # Normalize weights to prevent overflow in density computation
         total = self.error["total"]
         w_max = np.max(np.abs(total))
-        weights = total / w_max if w_max > 0 else total
+        if w_max > 0:
+            weights = total / w_max
+        else:
+            weights = np.ones_like(total)
         for j, p in enumerate(self.parameter_names):
             p_array = self.test_X_raw[:,j]
             bins = np.linspace(self.parameter_distributions[p][0], self.parameter_distributions[p][1], 12)
