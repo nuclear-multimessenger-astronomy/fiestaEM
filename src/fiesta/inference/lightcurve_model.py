@@ -27,49 +27,37 @@ from fiesta.logging import logger
 ###########################
 
 
-def list_built_in_surrogates():
+def built_in_surrogates():
     current_dir = Path(__file__).resolve().parent
     surrogate_dir = current_dir.parent / "surrogates"
-    
-    logger.info(f"Available built-in surrogates in fiesta are:")
 
-    for transient_dir in surrogate_dir.iterdir():
+    for transient_dir in sorted(surrogate_dir.iterdir()):
+        if not transient_dir.is_dir():
+            continue
         transient_type = transient_dir.name
 
-        for model_dir in transient_dir.iterdir():
+        for model_dir in sorted(transient_dir.iterdir()):
+            if not transient_dir.is_dir():
+                continue
             model_name = model_dir.name
 
             if not model_name.startswith("_"):
-                logger.info(f"\t {model_name} ({transient_type})")
+                yield model_name, model_dir, transient_type
+
+def print_built_in_surrogates():
+    logger.info(f"Available built-in surrogates in fiesta are:")
+    for model_name, _, transient_type in built_in_surrogates():
+        logger.info(f"\t {model_name} ({transient_type})")
 
 
 def get_default_directory(name):
-    current_dir = Path(__file__).resolve().parent
-    surrogate_dir = current_dir.parent / "surrogates"
     
-    if name.startswith("afgpy") or name.startswith("pbag") or name.startswith("jetsimpy"):
-        if not name.endswith("_CVAE") and not name.endswith("_MLP"):
-             name = "_".join((name, "CVAE")) # default for now is to load the CVAE
-
-        surrogate_dir = surrogate_dir / "GRB" / name / "model"
-
-    
-    elif name.startswith("Bu"):
-        if name.endswith("_CVAE") or name.endswith("_MLP") or name.endswith("_lc"):
-            surrogate_dir = surrogate_dir / "KN" / name / "model"
-
-        else:
-             name = "_".join((name, "lc")) # default for now is to load the lightcurve model
-             surrogate_dir = surrogate_dir / "KN" / name / "model"
-    
-    else:
-        raise ValueError("If no model directory is provided, the name for the default models must either start with 'afgpy', 'pbag', 'jetsimpy', or 'Bu'.")
-    
-    surrogate_dir = str(surrogate_dir)
-    if not os.path.exists(surrogate_dir):
-        raise OSError(f"Could not find model directory for name {name} in {surrogate_dir}. Please change the name or provide a path manually.")
-    
-    return surrogate_dir
+    for model_name, surrogate_dir, _ in built_in_surrogates():
+        if name==model_name:
+            if not os.path.exists(surrogate_dir / "model"):
+                raise OSError(f"Could not find model directory for name {name} in {surrogate_dir}. Please change the name or provide a path manually.")
+            return surrogate_dir / "model"
+    raise ValueError(f"No model directory provided, but could not find built-in surrogate for {name}.")
 
 
 ########################
