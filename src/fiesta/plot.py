@@ -254,7 +254,7 @@ class LightcurvePlotter:
         if hasattr(self, "_best_fit_lc_determined"):
             return
 
-        best_ind = np.argmax(self.posterior["log_prob"])
+        best_ind = np.argmax(self.posterior["log_likelihood"])
         self.best_fit_params = {}
         for key in self.posterior.keys():
             self.best_fit_params[key] = self.posterior[key][best_ind]
@@ -348,7 +348,7 @@ class LightcurvePlotter:
     def get_chisquared(self, per_dof: bool=False):
         """
         Get the total chisquared value and the chisquared values per filter. 
-        This is different from the log_prob value in the posterior, because the likelihood function contains (2 pi sigma)^(-1/2).
+        This is different from the log_likelihood value in the posterior, because the likelihood function contains (2 pi sigma)^(-1/2).
 
         Args:
             per_dof (bool): Whether to return reduced chi-squared values, i.e., per number of data points.
@@ -385,7 +385,9 @@ class LightcurvePlotter:
 
             chisq_total /= n_data_total
         
-        return chisq_total, chisq_dict
+        chisq_dict["chisqu_total"] = chisq_total
+
+        return chisq_dict
 
         
                                   

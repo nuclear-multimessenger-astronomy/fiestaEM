@@ -81,7 +81,14 @@ class InjectionBase:
         """Create a time grid for the injection data."""
 
         self.t_detect = {}
-        points_list = np.random.multinomial(N, [1/len(self.Filters)]*len(self.Filters)) # random number of time points in each filter
+
+        n_filters = len(self.Filters)
+        if N < n_filters:
+            raise ValueError(f"Number of injected data points needs to be larger than number of filters.")
+        
+        base = np.ones(n_filters) # each filter at least one point
+        points_list = base + np.random.multinomial(N-n_filters, [1/n_filters]*n_filters) # random number of time points in each filter
+        points_list = points_list.astype(int)
 
         for points, Filt in zip(points_list, self.Filters):
             t = np.exp(np.random.uniform(np.log(tmin), np.log(tmax), size=points))
@@ -179,8 +186,7 @@ class InjectionBase:
         injection_dict["redshift"] = injection_dict.get("redshift", 0.0)
         print(f"Found suitable injection with {injection_dict}")
         mJys = np.exp(log_flux).reshape(len(nus), len(times))
-        mJys, times_obs, nus = apply_redshift(mJys, times, nus, injection_dict["redshift"])
-
+        mJys, times_obs, nus = apply_redshift(mJys, times, nus, injection_dict["redshift"])        
         if self.tmin < times_obs[0] or self.tmax > times_obs[-1]:
             raise ValueError(f"Time range {(self.tmin, self.tmax)} is too large for file {file} with time range {(times[0], times[-1])} at redshift {injection_dict['redshift']}.")
 
@@ -246,7 +252,6 @@ class InjectionSurrogate(InjectionBase):
         injection_dict["redshift"] = injection_dict.get('redshift', 0)
 
         times, mags = self.model.predict(injection_dict)
-        
         if self.tmin < times[0] or self.tmax > times[-1]:
             raise ValueError(f"Time range {(self.tmin, self.tmax)} is too large for model {self.model} with time range {(self.model.times[0], self.model.times[-1])} at redshift {injection_dict['redshift']}.")
         return times, mags
