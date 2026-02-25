@@ -591,11 +591,11 @@ class RunJetsimpy:
         """
         try:
             import jetsimpy_rs as jetsimpy
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "jetsimpy_rs is not installed. Install it from "
                 "https://github.com/nuclear-multimessenger-astronomy/jetsimpy-rs"
-            )
+            ) from err
 
         theta_c = params_dict["thetaCore"]
         Eiso = 10 ** params_dict["log10_E0"]

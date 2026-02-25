@@ -90,11 +90,11 @@ latex_labels=dict(inclination_EM="$\\iota$ [rad]",
 
 def corner_plot(posterior: dict | pd.DataFrame,
                 parameter_names: list[str],
-                truths: dict = None,
-                color:str = "blue",
-                legend_label:str = None,
-                fig: matplotlib.figure.Figure = None,
-                ax: matplotlib.axes.Axes = None,
+                truths: dict | None = None,
+                color: str = "blue",
+                legend_label: str | None = None,
+                fig: matplotlib.figure.Figure | None = None,
+                ax: matplotlib.axes.Axes | None = None,
                 **kwargs):
     """
     Make a nice corner plot from the posterior with automated parameter labels.
@@ -102,7 +102,7 @@ def corner_plot(posterior: dict | pd.DataFrame,
     Args:
        posterior (dict | pd.DataFrame): posterior samples for which to do the corner plot.
        parameter_names (list[str]): parameters from posterior that should be included in the corner plot.
-       truths (dict[str, float]): True (injected values) for some of the parameters. Defaults to {}.
+       truths (dict[str, float] | None): True (injected values) for some of the parameters. Defaults to None.
        color (str): color for the corner plot contours. Defaults to blue.
        legend_label (str): Label for the legend. If not set, no legend will be shown. Defaults to None.
        fig (matplotlib.figure.Figure): Figure over which to do the corner plot. If set, ax must also be provided. Defaults to None.

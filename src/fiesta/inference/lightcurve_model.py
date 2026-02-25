@@ -63,7 +63,7 @@ def get_default_directory(name):
              surrogate_dir = surrogate_dir / "KN" / name / "model"
     
     else:
-        raise ValueError(f"If no model directory is provided, the name for the default models must either start with 'afgpy', 'pbag', 'jetsimpy', or 'Bu'.")
+        raise ValueError("If no model directory is provided, the name for the default models must either start with 'afgpy', 'pbag', 'jetsimpy', or 'Bu'.")
     
     surrogate_dir = str(surrogate_dir)
     if not os.path.exists(surrogate_dir):
