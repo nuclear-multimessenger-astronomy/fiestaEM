@@ -90,11 +90,11 @@ latex_labels=dict(inclination_EM="$\\iota$ [rad]",
 
 def corner_plot(posterior: dict | pd.DataFrame,
                 parameter_names: list[str],
-                truths: dict = {},
+                truths: dict = None,
                 color:str = "blue",
                 legend_label:str = None,
                 fig: matplotlib.figure.Figure = None,
-                ax: matplotlib.axes.Axes = None, 
+                ax: matplotlib.axes.Axes = None,
                 **kwargs):
     """
     Make a nice corner plot from the posterior with automated parameter labels.
@@ -116,11 +116,14 @@ def corner_plot(posterior: dict | pd.DataFrame,
     try:
         import corner
     except ImportError:
-        logger.warning(f"Install corner to create corner plots.")
-        return 1, 1
-    
+        logger.warning("Install corner to create corner plots.")
+        return None, None
+
+    if truths is None:
+        truths = {}
+
     posterior = pd.DataFrame(posterior)
-    
+
     labels= []
     truths_list = []
     for p in parameter_names:

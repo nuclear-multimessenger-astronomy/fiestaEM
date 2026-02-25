@@ -58,7 +58,7 @@ class NeuralnetConfig(ConfigDict):
         self.batch_size = batch_size
         self.nb_epochs = nb_epochs
         if nb_report is None:
-            nb_report = self.nb_epochs // 10
+            nb_report = max(1, self.nb_epochs // 10)
         self.nb_report = nb_report
         self.dropout_rate = dropout_rate
         self.use_cosine_schedule = use_cosine_schedule
