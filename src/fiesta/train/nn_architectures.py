@@ -24,25 +24,20 @@ class BaseNeuralnet(nn.Module):
     
 class MLP(BaseNeuralnet):
     """Basic multi-layer perceptron: a feedforward neural network with multiple Dense layers."""
+    dropout_rate: float = 0.0
 
     def setup(self):
         self.layers = [nn.Dense(n) for n in self.layer_sizes]
 
     @nn.compact
-    def __call__(self, x: Array):
-        """_summary_
-
-        Args:
-            x (Array): Input data of the neural network.
-        """
-
+    def __call__(self, x: Array, train: bool = False):
         for layer in self.layers[:-1]:
-            # Apply the linear part of the layer's operation
             x = layer(x)
-            # Apply the given activation function
             x = self.act_func(x)
-
-        x = self.layers[-1](x) # for the output layer only apply the linear part
+            if self.dropout_rate > 0.0:
+                x = nn.Dropout(rate=self.dropout_rate,
+                               deterministic=not train)(x)
+        x = self.layers[-1](x)
         return x
 
 class Encoder(nn.Module):

@@ -185,9 +185,12 @@ try:
 
     # corner plot
     fig, ax = corner_plot(posterior_plot, prior.parameter_names)
-    fig.savefig(os.path.join(outdir, "corner.pdf"), dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Corner plot  → {outdir}corner.pdf")
+    if fig is not None:
+        fig.savefig(os.path.join(outdir, "corner.pdf"), dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Corner plot  → {outdir}corner.pdf")
+    else:
+        print("[WARNING] Corner plot skipped (corner package not installed)")
 except Exception as e:
     print(f"[WARNING] Corner plot failed: {e}")
 
