@@ -49,6 +49,88 @@ _LOG10_KM_CGS = jnp.log10(km_cgs)
 
 
 # ---------------------------------------------------------------------------
+# Barnes+16 thermalisation (interpolated, matching Redback exactly)
+# ---------------------------------------------------------------------------
+
+_BARNES_V = jnp.array([0.1, 0.2, 0.3, 0.4])
+_BARNES_M = jnp.array([1.e-3, 5.e-3, 1.e-2, 5.e-2, 1.e-1])
+
+_BARNES_A = jnp.array([[2.01, 4.52, 8.16, 16.3],
+                        [0.81, 1.9, 3.2, 5.0],
+                        [0.56, 1.31, 2.19, 3.0],
+                        [0.27, 0.55, 0.95, 2.0],
+                        [0.20, 0.39, 0.65, 0.9]])
+
+_BARNES_B = jnp.array([[0.28, 0.62, 1.19, 2.4],
+                        [0.19, 0.28, 0.45, 0.65],
+                        [0.17, 0.21, 0.31, 0.45],
+                        [0.10, 0.13, 0.15, 0.17],
+                        [0.06, 0.11, 0.12, 0.12]])
+
+_BARNES_D = jnp.array([[1.12, 1.39, 1.52, 1.65],
+                        [0.86, 1.21, 1.39, 1.5],
+                        [0.74, 1.13, 1.32, 1.4],
+                        [0.6, 0.9, 1.13, 1.25],
+                        [0.63, 0.79, 1.04, 1.5]])
+
+
+def _bilinear_interp(grid_x, grid_y, values, x, y):
+    """JAX-compatible bilinear interpolation on a 2-D regular grid.
+
+    Clamps at boundaries (matching scipy RegularGridInterpolator fill_value=None).
+    grid_x: (Nx,), grid_y: (Ny,), values: (Nx, Ny), x/y: scalars.
+    """
+    x = jnp.clip(x, grid_x[0], grid_x[-1])
+    y = jnp.clip(y, grid_y[0], grid_y[-1])
+
+    ix = jnp.searchsorted(grid_x, x, side='right') - 1
+    ix = jnp.clip(ix, 0, len(grid_x) - 2)
+    iy = jnp.searchsorted(grid_y, y, side='right') - 1
+    iy = jnp.clip(iy, 0, len(grid_y) - 2)
+
+    x0 = grid_x[ix]
+    x1 = grid_x[ix + 1]
+    y0 = grid_y[iy]
+    y1 = grid_y[iy + 1]
+
+    tx = (x - x0) / (x1 - x0)
+    ty = (y - y0) / (y1 - y0)
+
+    v00 = values[ix, iy]
+    v10 = values[ix + 1, iy]
+    v01 = values[ix, iy + 1]
+    v11 = values[ix + 1, iy + 1]
+
+    return (v00 * (1 - tx) * (1 - ty) + v10 * tx * (1 - ty)
+            + v01 * (1 - tx) * ty + v11 * tx * ty)
+
+
+def _barnes16_thermalisation_coefficients(mej_solar, vej_c):
+    """Return (av, bv, dv) for Barnes+16 thermalisation, matching Redback."""
+    av = _bilinear_interp(_BARNES_M, _BARNES_V, _BARNES_A, mej_solar, vej_c)
+    bv = _bilinear_interp(_BARNES_M, _BARNES_V, _BARNES_B, mej_solar, vej_c)
+    dv = _bilinear_interp(_BARNES_M, _BARNES_V, _BARNES_D, mej_solar, vej_c)
+    return av, bv, dv
+
+
+def _barnes16_e_th(t_days, av, bv, dv):
+    """Barnes+16 thermalisation efficiency (Eq 25 Metzger 2017), matching Redback."""
+    return 0.36 * (jnp.exp(jnp.clip(-av * t_days, -80.0, 0.0))
+                   + jnp.log1p(2.0 * bv * t_days ** dv)
+                   / (2.0 * bv * t_days ** dv))
+
+
+# Tanaka+19 kappa-to-Ye table (matching Redback electron_fraction_from_kappa)
+_TANAKA_KAPPA = jnp.array([35.0, 32.2, 22.3, 5.60, 5.36, 3.30, 0.96, 0.5])
+_TANAKA_YE = jnp.array([0.10, 0.15, 0.2, 0.25, 0.30, 0.35, 0.4, 0.5])
+
+
+def _electron_fraction_from_kappa(kappa):
+    """Tanaka+19 interpolation from gray opacity to electron fraction (JAX)."""
+    return jnp.interp(kappa, _TANAKA_KAPPA[::-1], _TANAKA_YE[::-1])
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

@@ -354,6 +354,7 @@ class TestMagnetarBoostedKilonova:
             "log10_bp": 0.0,       # 1e14 G
             "mass_ns": 1.4,
             "theta_pb": 1.0,       # ~57 degrees
+            "thermalisation_efficiency": 0.5,
             "luminosity_distance": 40.0,
             "redshift": 0.01,
         }
@@ -385,7 +386,8 @@ class TestMagnetarBoostedKilonova:
             "redshift": 0.01,
         }
         mag_params = {**shared, "log10_p0": 0.0, "log10_bp": 0.0,
-                      "mass_ns": 1.4, "theta_pb": 1.0}
+                      "mass_ns": 1.4, "theta_pb": 1.0,
+                      "thermalisation_efficiency": 0.5}
         _, mags_mag = mag_model.predict(mag_params)
         _, mags_met = metz_model.predict(shared)
         # Brighter = lower apparent magnitude for at least some times
