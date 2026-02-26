@@ -1023,7 +1023,15 @@ class TestAfterglow:
 
 SALT3_FILTERS = ["ztfg", "ztfr"]
 
+_has_jax_bandflux = True
+try:
+    import jax_supernovae  # noqa: F401
+except ModuleNotFoundError:
+    _has_jax_bandflux = False
 
+
+@pytest.mark.skipif(not _has_jax_bandflux,
+                    reason="jax-bandflux not installed")
 class TestSALT3:
     def _make_model_and_params(self):
         model = SALT3Model(
