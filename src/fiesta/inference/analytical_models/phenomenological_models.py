@@ -171,7 +171,8 @@ class BazinModel(PhenomenologicalModel):
         tau_rise = jnp.power(10.0, x["log10_tau_rise"])
         tau_fall = jnp.power(10.0, x["log10_tau_fall"])
         dt = t_days - t0
-        return jnp.exp(-dt / tau_fall) * jax.nn.sigmoid(dt / tau_rise)
+        exp_arg = jnp.clip(-dt / tau_fall, -80.0, 80.0)
+        return jnp.exp(exp_arg) * jax.nn.sigmoid(dt / tau_rise)
 
 
 class VillarModel(PhenomenologicalModel):

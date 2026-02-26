@@ -118,7 +118,7 @@ def _magnetar_luminosity(t_sec, log10_p0, log10_bp, mass_ns, theta_pb):
     log10_tau_p = (5.0 + jnp.log10(1.3)
                    - 2.0 * log10_bp + 2.0 * log10_p0
                    + 1.5 * log10_mass_ratio
-                   - 2.0 * jnp.log10(jnp.sin(theta_pb)))
+                   - 2.0 * jnp.log10(jnp.maximum(jnp.sin(theta_pb), 1e-6)))
     tau_p = jnp.power(10.0, log10_tau_p)
 
     # L_mag = E_rot / tau_p / (1 + t/tau_p)^2
@@ -333,7 +333,7 @@ class AnalyticalModel:
             elif isinstance(filt, fiesta_filters.Filter):
                 F = filt
             else:
-                raise ValueError("Filter must be a name string or Filter object.")
+                raise TypeError("Filter must be a name string or Filter object.")
             if F.name not in self.filters:
                 self.filters.append(F.name)
                 self.Filters.append(F)

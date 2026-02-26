@@ -61,7 +61,6 @@ class ShockCoolingModel(AnalyticalModel):
         # vt = sqrt(((n-5)(5-delta)/((n-3)(3-delta))) * 2*Ee/Me)
         vel_coeff = (n - 5.0) * (5.0 - delta) / ((n - 3.0) * (3.0 - delta))
         log10_vt = 0.5 * (jnp.log10(vel_coeff * 2.0) + log10_Ee - log10_Me)
-        vt = jnp.power(10.0, log10_vt)  # moderate: ~1e9
 
         # td = sqrt(3*kappa*K*Me / ((n-1)*vt*c))
         log10_td = 0.5 * (jnp.log10(3.0 * kappa * K) + log10_Me
@@ -146,6 +145,8 @@ class ShockedCocoonModel(AnalyticalModel):
         cos_theta = x["cos_theta_cocoon"]
         log10_kappa = x["log10_kappa"]
 
+        f_sh = jnp.maximum(f_sh, 1e-12)
+        cos_theta = jnp.clip(cos_theta, -1.0 + 1e-6, 1.0 - 1e-6)
         theta = jnp.arccos(cos_theta)
         # log10 of CGS quantities
         log10_vej_cms = log10_vej + _LOG10_CCGS        # cm/s

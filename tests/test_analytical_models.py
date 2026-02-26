@@ -73,7 +73,7 @@ class TestShockCooling:
 
     def test_finite(self):
         model, params = self._make_model_and_params()
-        times, mags = model.predict(params)
+        _, mags = model.predict(params)
         for filt in FILTERS:
             assert jnp.all(jnp.isfinite(mags[filt])), f"Non-finite in {filt}"
 
