@@ -22,7 +22,7 @@ n_training = 40_000
 n_val = 7500
 image_size = np.array([42, 57])
 
-name = "afgpy_tophat"
+name = "afgpy_tophat_CVAE"
 outdir = f"./model/"
 file = "../_training_data/afterglowpy_tophat_raw_data.h5"
 

@@ -21,7 +21,7 @@ n_training = 91670
 n_val = 7676
 n_pca = 50
 
-name = "pbag_gaussian"
+name = "pbag_gaussian_MLP"
 outdir = f"./model/"
 file = "../_training_data/pyblastafterglow_gaussian_raw_data.h5"
 

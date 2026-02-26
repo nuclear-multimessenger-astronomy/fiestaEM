@@ -21,7 +21,7 @@ n_training = 91670
 n_val = 7676
 image_size = np.array([42, 57])
 
-name = "pbag_gaussian"
+name = "pbag_gaussian_CVAE"
 outdir = f"./model/"
 file = "../_training_data/pyblastafterglow_gaussian_raw_data.h5"
 

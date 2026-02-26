@@ -54,7 +54,6 @@ def test_train_MLP():
     trainer = PCATrainer(name,
                          outdir,
                          data_manager_args = data_manager_args,
-                         plots_dir=f"./benchmarks/",
                          n_pca=20,
                          save_preprocessed_data=False
                          )
@@ -62,7 +61,6 @@ def test_train_MLP():
     trainer.fit(config=config)
     trainer.save()
 
-    shutil.rmtree("./benchmarks")
     shutil.rmtree("./model")
 
 
@@ -81,7 +79,6 @@ def test_train_CVAE():
     trainer = CVAETrainer(name,
                           outdir,
                           data_manager_args = data_manager_args,
-                          plots_dir=f"./benchmarks/",
                           image_size=image_size,
                           save_preprocessed_data=False
                           )
@@ -89,5 +86,4 @@ def test_train_CVAE():
     trainer.fit(config=config)
     trainer.save()
 
-    shutil.rmtree("./benchmarks")
     shutil.rmtree("./model")

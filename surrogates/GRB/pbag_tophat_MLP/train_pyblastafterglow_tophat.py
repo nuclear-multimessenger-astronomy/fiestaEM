@@ -21,7 +21,7 @@ n_training = 56_930
 n_val = 8750
 n_pca = 50
 
-name = "pbag_tophat"
+name = "pbag_tophat_MLP"
 outdir = f"./model/"
 file = "../_training_data/pyblastafterglow_tophat_raw_data.h5"
 
