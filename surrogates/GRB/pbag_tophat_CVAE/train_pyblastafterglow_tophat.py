@@ -21,7 +21,7 @@ n_training = 56930
 n_val = 8750
 image_size = np.array([42, 57])
 
-name = "pbag_tophat"
+name = "pbag_tophat_CVAE"
 outdir = f"./model/"
 file = "../_training_data/pyblastafterglow_tophat_raw_data.h5"
 

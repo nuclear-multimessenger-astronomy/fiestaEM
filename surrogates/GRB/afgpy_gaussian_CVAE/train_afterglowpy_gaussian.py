@@ -22,7 +22,7 @@ n_training = 80_000
 n_val = 7500
 image_size = np.array([42, 57])
 
-name = "afgpy_gaussian"
+name = "afgpy_gaussian_CVAE"
 outdir = f"./model/"
 file = "../_training_data/afterglowpy_gaussian_raw_data.h5"
 
