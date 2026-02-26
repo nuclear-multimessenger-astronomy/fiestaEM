@@ -365,7 +365,11 @@ class CSMInteractionModel(AnalyticalModel):
 
         # --- Geometry in log10 space to avoid float32 overflow ---
         log10_qq = log10_rho + eta * log10_r0
-        kappa = jnp.power(10.0, log10_kappa)
+
+        # Nudge eta away from singularities at 1 and 3 to avoid division by zero
+        eps = 1e-4
+        eta = jnp.where(jnp.abs(eta - 1.0) < eps, 1.0 + eps, eta)
+        eta = jnp.where(jnp.abs(eta - 3.0) < eps, 3.0 - eps, eta)
 
         # radius_csm = ((3-eta)/(4*pi*qq)*csm + r0^(3-eta))^(1/(3-eta))
         # Compute each term in log10, then combine
@@ -391,7 +395,6 @@ class CSMInteractionModel(AnalyticalModel):
         log10_rph_inner = log10_b + jnp.log10(1.0 - ratio)
         log10_r_ph = log10_rph_inner / (1.0 - eta)
 
-        r_photosphere = jnp.power(10.0, log10_r_ph)
 
         # Optically thick CSM mass:
         # mcst = |4*pi*qq/(3-eta) * (r_ph^(3-eta) - r0^(3-eta))|

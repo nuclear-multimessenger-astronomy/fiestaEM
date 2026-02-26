@@ -55,7 +55,6 @@ class MetzgerModel(AnalyticalModel):
 
         # Use the output time grid directly (matching NMMA's approach)
         t_sec = t_days * days_to_seconds
-        n_t = t_sec.shape[0]
 
         # Variable time steps (matches NMMA's geomspace dt)
         dt_arr = jnp.diff(t_sec)
