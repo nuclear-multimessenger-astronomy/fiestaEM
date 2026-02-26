@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import pickle
 import time
 
 import numpy as np
@@ -124,6 +125,13 @@ class Fiesta(object):
         return log_posterior
 
     def sample(self, key: PRNGKeyArray, initial_guess: Array = jnp.array([])):
+        """
+        Starts the sampling algorithm to obtain the posterior. After running, the posterior samples are stored as ``.posterior_samples`` attribute.
+
+        Args:
+            key (PRNGKeyArray): Random seed to start sampling.
+            initial_guess (Array, optional): Initial posisions of the chains. If empty, will get initial position as random samples from the prior.
+        """
         if initial_guess.size == 0:
             initial_guess_named = self.prior.sample(key, self.Sampler.n_chains)
             initial_guess = jnp.stack([initial_guess_named[key] for key in self.prior.naming]).T
@@ -141,9 +149,7 @@ class Fiesta(object):
         samples = samples.reshape(-1, self.prior.n_dim).T
         self.posterior_samples = self.prior.add_name(samples)
         self.posterior_samples["log_prob"] = log_prob.reshape(-1,)
-        
-        # TODO: memory issues cause crash here
-        #self.posterior["log_likelihood"] = self.likelihood.v_evaluate(self.posterior)
+        self.posterior_samples["log_likelihood"] = self.posterior_samples["log_prob"] - self.prior.log_prob(self.posterior_samples)
 
     
     def _get_summary_statistics(self,):
@@ -222,31 +228,58 @@ class Fiesta(object):
         )
         print("=" * 10)
     
-    def save_results(self):
+    def save_results(self, bestfit_params: bool =True, training_samples: bool=False):
+        """
+        Saves the poster samples to .npz files in ``outdir``.
+
+        Args:
+            bestfit_params (bool): Whether to print an extra file with the best fit parameters and light curves. Defaults to True.
+            training_samples (bool): Whether to save the training samples from the normalizing flow training with the acceptance ratios. Defaults to False.
+        """
+        
 
         self._get_summary_statistics()
         
-        # - training phase
-        name = os.path.join(self.outdir, f'results_training.npz')
-        logger.info(f"Saving training samples to {name}.")
+        if training_samples:
+            # - training phase
+            name = os.path.join(self.outdir, f'results_training.npz')
+            logger.info(f"Saving training samples to {name}.")
+    
+            jnp.savez(name, log_prob=self.training_log_prob,
+                            chains = self.training_chain,
+                            local_accs=jnp.mean(self.training_local_acceptance, axis=0),
+                            global_accs=jnp.mean(self.training_global_acceptance, axis=0), 
+                            loss_vals=self.training_loss)
+            
+            #  - production phase
+            name = os.path.join(self.outdir, f'results_production.npz')
+            logger.info(f"Saving production samples to {name}")
+            
+            jnp.savez(name, chains=self.production_chain, 
+                            log_prob=self.production_log_prob,
+                            local_accs=jnp.mean(self.production_local_acceptance, axis=0),
+                            global_accs=jnp.mean(self.production_global_acceptance, axis=0)
+            )
+        
+        if bestfit_params:
+            # - best fit params
+            name = os.path.join(self.outdir, f'bestfit_params.pkl')
+            logger.info(f"Saving best fit params to {name}.")
 
-        jnp.savez(name, log_prob=self.training_log_prob,
-                        chains = self.training_chain,
-                        local_accs=jnp.mean(self.training_local_acceptance, axis=0),
-                        global_accs=jnp.mean(self.training_global_acceptance, axis=0), 
-                        loss_vals=self.training_loss)
-        
-        #  - production phase
-        name = os.path.join(self.outdir, f'results_production.npz')
-        logger.info(f"Saving production samples to {name}")
-        
-        jnp.savez(name, chains=self.production_chain, 
-                        log_prob=self.production_log_prob,
-                        local_accs=jnp.mean(self.production_local_acceptance, axis=0),
-                        global_accs=jnp.mean(self.production_global_acceptance, axis=0)
-        )
-        
-        jnp.savez(os.path.join(self.outdir, f"posterior.npz"), **self.posterior_samples)
+            lc_plotter = LightcurvePlotter(self.posterior_samples,
+                                           self.likelihood)
+            lc_plotter._get_best_fit_lc()
+            chisq_dict = lc_plotter.get_chisquared(per_dof=True)
+
+            with open(name, "wb") as f:
+                pickle.dump({"bestfit_params": lc_plotter.best_fit_params,
+                             "light_curves": {"times": lc_plotter.t_best_fit, **lc_plotter.best_fit_lc},
+                             "chisq": chisq_dict}, f)
+
+
+        name = os.path.join(self.outdir, f"posterior.npz")
+        logger.info(f"Saving posterior samples to {name}.")
+        jnp.savez(name, **self.posterior_samples)
 
     
     def save_hyperparameters(self):

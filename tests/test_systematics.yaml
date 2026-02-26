@@ -1,0 +1,7 @@
+individual:
+    time_nodes: 4
+    time_range: linear 0.3 10
+    prior: Uniform
+    params:
+        xmin: 0.3
+        xmax: 2.

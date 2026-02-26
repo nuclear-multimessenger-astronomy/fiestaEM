@@ -20,7 +20,7 @@ numax = 2e15
 
 image_size= np.array([64, 40])
 
-name = "Bu2026"
+name = "Bu2026_CVAE"
 outdir = f"./model/"
 file = "../_training_data/Bu2026_raw_data.h5"
 
