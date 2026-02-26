@@ -150,12 +150,12 @@ class EMLikelihood:
 
         # freely sampled sys. uncertainty, but same for all filters and times
         def _sigma(theta):
-            sys_err = theta["sys_err"]
+            sys_err = theta["em_syserr"]
             sigma = jax.tree.map(lambda mag_err: jnp.sqrt(mag_err**2 + sys_err**2), self.mag_err)
             return sigma
         
         def _nondet_sigma(theta):
-            sigma = jax.tree.map(lambda mag_nondet: theta["sys_err"], self.mag_nondet)
+            sigma = jax.tree.map(lambda mag_nondet: theta["em_syserr"], self.mag_nondet)
             return sigma
         
         self.get_sigma = _sigma
