@@ -115,9 +115,10 @@ def _barnes16_thermalisation_coefficients(mej_solar, vej_c):
 
 def _barnes16_e_th(t_days, av, bv, dv):
     """Barnes+16 thermalisation efficiency (Eq 25 Metzger 2017), matching Redback."""
-    return 0.36 * (jnp.exp(jnp.clip(-av * t_days, -80.0, 0.0))
-                   + jnp.log1p(2.0 * bv * t_days ** dv)
-                   / (2.0 * bv * t_days ** dv))
+    t_safe = jnp.maximum(t_days, 1e-12)
+    denom = 2.0 * bv * t_safe ** dv
+    return 0.36 * (jnp.exp(jnp.clip(-av * t_safe, -80.0, 0.0))
+                   + jnp.log1p(denom) / jnp.maximum(denom, 1e-30))
 
 
 # Tanaka+19 kappa-to-Ye table (matching Redback electron_fraction_from_kappa)
@@ -398,6 +399,7 @@ class AnalyticalModel:
         self.filters = []
         self.Filters = []
         self._nus = None
+        self.times = None
         self.temperature_floor = temperature_floor
         self.add_filter(filters)
 
