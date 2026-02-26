@@ -21,13 +21,23 @@ from fiesta.inference.analytical_models.base import (
 
 
 def _validate_times(times):
-    """Raise if times has fewer than 2 samples (needed for jnp.diff)."""
-    arr = jnp.asarray(times)
+    """Validate time array for kilonova ODE/recurrence models.
+
+    Requires at least 2 finite, positive, strictly increasing samples
+    (needed for jnp.diff in the time-stepping logic).
+    """
+    import numpy as np
+    arr = np.asarray(times)
     if arr.ndim == 0 or arr.shape[0] < 2:
         raise ValueError(
             f"Kilonova models require at least 2 time samples, got shape {arr.shape}"
         )
-    return arr
+    if not np.all(np.isfinite(arr)):
+        raise ValueError("times array contains non-finite values")
+    if not np.all(arr > 0):
+        raise ValueError("times array must be strictly positive")
+    if not np.all(np.diff(arr) > 0):
+        raise ValueError("times array must be strictly increasing")
 
 
 class MetzgerModel(AnalyticalModel):

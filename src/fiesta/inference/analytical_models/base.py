@@ -446,6 +446,11 @@ class AnalyticalModel:
 
     @partial(jax.jit, static_argnums=(0,))
     def predict(self, x: dict[str, Array]) -> tuple[Array, dict[str, Array]]:
+        if self.times is None:
+            raise ValueError(
+                "times must be set before calling predict(). "
+                "Pass times= to the constructor or set model.times directly."
+            )
         t_days = self.times
 
         log10_L, log10_R = self.compute_log10_lbol_rphot(x, t_days)

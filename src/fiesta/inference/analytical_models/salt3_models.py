@@ -44,16 +44,31 @@ class SALT3Model:
     def __init__(self, filters: list[str], times: Array = None,
                  redshift: float = 0.0):
         # Lazy import to avoid jax_enable_x64 side effect at module level
-        from jax_supernovae.salt3 import (
-            optimized_salt3_multiband_flux,
-            precompute_bandflux_bridge,
-        )
-        from jax_supernovae.bandpasses import get_bandpass, register_all_bandpasses
+        try:
+            from jax_supernovae.salt3 import (
+                optimized_salt3_multiband_flux,
+                precompute_bandflux_bridge,
+            )
+            from jax_supernovae.bandpasses import get_bandpass, register_all_bandpasses
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "SALT3Model requires the 'jax-bandflux' package. "
+                "Install it with: pip install jax-bandflux"
+            ) from exc
 
         register_all_bandpasses()
 
+        if isinstance(filters, str):
+            filters = [filters]
+        if not filters:
+            raise ValueError("At least one filter must be provided")
         self.filters = list(filters)
-        self.times = jnp.asarray(times) if times is not None else None
+
+        if times is None:
+            raise ValueError(
+                "times must be provided (observer-frame days array)"
+            )
+        self.times = jnp.asarray(times)
         self.redshift = redshift
         self.parameter_names = ["log10_x0", "x1", "c", "t0"]
 
