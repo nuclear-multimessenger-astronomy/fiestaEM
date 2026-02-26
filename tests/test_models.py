@@ -1,6 +1,8 @@
 from os.path import dirname, join
 from pathlib import Path
-from fiesta.inference.lightcurve_model import built_in_surrogates, FluxModel, BullaLightcurveModel
+
+from fiesta.surrogates import built_in_surrogates
+from fiesta.inference.lightcurve_model import FluxModel, BullaLightcurveModel
 
 working_dir = Path(dirname(__file__))
 
