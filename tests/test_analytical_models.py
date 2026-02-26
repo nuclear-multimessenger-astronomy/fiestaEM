@@ -1,5 +1,7 @@
 """Tests for analytical light-curve models."""
 
+import importlib.util
+
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -1023,11 +1025,7 @@ class TestAfterglow:
 
 SALT3_FILTERS = ["ztfg", "ztfr"]
 
-_has_jax_bandflux = True
-try:
-    import jax_supernovae  # noqa: F401
-except ModuleNotFoundError:
-    _has_jax_bandflux = False
+_has_jax_bandflux = importlib.util.find_spec("jax_supernovae") is not None
 
 
 @pytest.mark.skipif(not _has_jax_bandflux,
