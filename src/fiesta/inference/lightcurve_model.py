@@ -21,33 +21,7 @@ from fiesta.conversions import mag_app_from_mag_abs, apply_redshift
 from fiesta import filters as fiesta_filters
 from fiesta.logging import logger
 
-
-###########################
-### BUILT-IN SURROGATES ###
-###########################
-
-
-def built_in_surrogates():
-    current_dir = Path(__file__).resolve().parent
-    surrogate_dir = current_dir.parent / "surrogates"
-
-    for transient_dir in sorted(surrogate_dir.iterdir()):
-        if not transient_dir.is_dir():
-            continue
-        transient_type = transient_dir.name
-
-        for model_dir in sorted(transient_dir.iterdir()):
-            if not transient_dir.is_dir():
-                continue
-            model_name = model_dir.name
-
-            if not model_name.startswith("_"):
-                yield model_name, model_dir, transient_type
-
-def print_built_in_surrogates():
-    logger.info(f"Available built-in surrogates in fiesta are:")
-    for model_name, _, transient_type in built_in_surrogates():
-        logger.info(f"\t {model_name} ({transient_type})")
+from fiesta.surrogates import built_in_surrogates, download_surrogate
 
 
 def get_default_directory(name):
@@ -57,7 +31,13 @@ def get_default_directory(name):
             if not os.path.exists(surrogate_dir / "model"):
                 raise OSError(f"Could not find model directory for name {name} in {surrogate_dir}. Please change the name or provide a path manually.")
             return surrogate_dir / "model"
-    raise ValueError(f"No model directory provided, but could not find built-in surrogate for {name}.")
+    
+    logger.info(f"Could not find {name} in built-in surrogates. Attempting download.")
+    download_ok, surrogate_dir = download_surrogate(name)
+    if download_ok:
+        return surrogate_dir / "model"
+    else:
+        raise ValueError(f"No model directory provided, but could not find built-in surrogate {name} or download it.")
 
 
 ########################
