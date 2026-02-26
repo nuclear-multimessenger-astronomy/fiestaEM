@@ -14,6 +14,9 @@ from fiesta.inference.analytical_models.base import (
     AnalyticalModel,
     _magnetar_luminosity,
     _LOG10_MSUN, _LOG10_RSUN, _LOG10_CCGS, _LOG10_4PI,
+    _barnes16_thermalisation_coefficients,
+    _barnes16_e_th,
+    _electron_fraction_from_kappa,
 )
 
 
@@ -139,125 +142,126 @@ class MetzgerModel(AnalyticalModel):
 
 
 class MetzgerFullModel(AnalyticalModel):
-    """Full multi-shell kilonova model (Metzger 2017).
+    """Multi-shell kilonova model (Metzger 2017), matching Redback exactly.
 
     Reference:
-        Redback: https://github.com/nikhil-sarin/redback/blob/master/redback/transient_models/kilonova_models.py
-        NMMA: https://github.com/nuclear-multimessenger-astronomy/nmma/blob/main/nmma/em/lightcurve_generation.py
+        Redback: _metzger_kilonova_model in kilonova_models.py
 
-    Same parameters as ``MetzgerModel`` but resolves 300 mass shells with a
-    velocity profile and shell-dependent opacities/heating.
-
-    The ODE is solved in normalized units (same as MetzgerModel) to avoid
-    float32 overflow.
+    200 shells with linear velocity spacing, Barnes+16 thermalisation,
+    optional neutron precursor, per-gram energy ODE.
 
     Parameters (in ``x`` dict):
         log10_mej     – log10 ejecta mass in solar masses
-        log10_vej     – log10 ejecta velocity in units of c
+        log10_vej     – log10 ejecta velocity (vmin) in units of c
         beta          – velocity power-law index
         log10_kappa_r – log10 opacity in cm^2/g
     """
 
     parameter_names = ["log10_mej", "log10_vej", "beta", "log10_kappa_r"]
 
-    _n_shells = 100
-    _n_internal = 200
+    _n_shells = 200
 
-    def __init__(self, filters, times=None):
+    def __init__(self, filters, times=None, neutron_precursor=True, vmax=0.7):
+        self._neutron_precursor = neutron_precursor
+        self._vmax = vmax
         if times is None:
             times = jnp.geomspace(0.1, 30.0, 100)
         super().__init__(filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):
-        log10_mej = x["log10_mej"] + _LOG10_MSUN
-        log10_vej = x["log10_vej"] + _LOG10_CCGS
+        mej = jnp.power(10.0, x["log10_mej"])   # solar masses
+        vej = jnp.power(10.0, x["log10_vej"])    # fraction of c
         beta_val = x["beta"]
-        kappa_base = jnp.power(10.0, x["log10_kappa_r"])
+        kappa_r = jnp.power(10.0, x["log10_kappa_r"])
 
-        n_shells = self._n_shells
-        vej = jnp.power(10.0, log10_vej)
+        mass_len = self._n_shells  # 200
 
-        t_out = t_days * days_to_seconds
-        t_start = t_out[0] * 0.1
-        t_end = t_out[-1] * 1.1
-        t_int = jnp.linspace(t_start, t_end, self._n_internal)
-        dt = t_int[1] - t_int[0]
+        t_sec = t_days * days_to_seconds
+        t_d = t_days
 
-        # Energy normalization: Q_scale = eps_0 * dm_shell = eps_0 * mej / n_shells
-        # log10(Q_scale) = log10(2e10) + log10_mej - log10(n_shells)
-        log10_Q_scale = jnp.log10(2.0e10) + log10_mej - jnp.log10(float(n_shells))
+        # Barnes+16 thermalisation
+        av, bv, dv = _barnes16_thermalisation_coefficients(mej, vej)
+        e_th = _barnes16_e_th(t_d, av, bv, dv)  # (time_len,)
 
-        m_frac = jnp.linspace(1.0 / n_shells, 1.0, n_shells)
-        v_shells = vej * jnp.power(m_frac, -1.0 / beta_val)
-        v_shells = jnp.minimum(v_shells, 0.5 * c_cgs)
+        # Heating rate (dual regime, matching Redback lines 1867-1871)
+        t0 = 1.3   # seconds
+        sig = 0.11  # seconds
+        edotr_late = 2.1e10 * e_th * t_d ** (-1.3)
+        edotr_early = 4.0e18 * jnp.power(
+            0.5 - jnp.arctan((t_sec - t0) / sig) / jnp.pi, 1.3) * e_th
+        edotr_base = jnp.where(t_sec > t0, edotr_late, edotr_early)
 
-        kappa_shells = kappa_base * jnp.ones(n_shells)
+        # Shell layout: linear velocity spacing (matching Redback)
+        vmin = vej
+        vmax = self._vmax
+        vel = jnp.linspace(vmin, vmax, mass_len)
+        m_array = mej * (vel / vmin) ** (-beta_val)  # solar masses
+        v_m = vel * c_cgs  # cm/s
 
-        # Diffusion timescale per shell: td = sqrt(3 * kappa * dm / (4pi * v * c))
-        # dm = mej / n_shells; compute td in log space then convert
-        log10_dm = log10_mej - jnp.log10(float(n_shells))
-        log10_td_shells = 0.5 * (jnp.log10(3.0 * kappa_shells) + log10_dm
-                                  - _LOG10_4PI - jnp.log10(v_shells) - _LOG10_CCGS)
-        td_shells = jnp.power(10.0, log10_td_shells)
+        dm = jnp.abs(jnp.diff(m_array))  # (mass_len-1,) solar masses
 
-        # For the optical depth calculation, we need dm in linear.
-        # dm = 10^log10_dm; may overflow float32 if mej is large.
-        # But dm/r^2 is what we need, and we can compute log10(dm) - 2*log10(r).
-        # For simplicity, use a normalized dm_n = 1 and scale optical depth at the end.
-        # tau = kappa * dm / (4pi * r^2) = 10^(log10_kappa + log10_dm - log10_4pi - 2*log10_r)
-        # We'll compute this in log space.
-        alpha_heat = 1.3
+        # Neutron precursor (matching Redback)
+        neutron_precursor = self._neutron_precursor
+        if neutron_precursor:
+            Ye = _electron_fraction_from_kappa(kappa_r)
+            neutron_mass = 1e-8 * msun_cgs
+            Xn0 = 1.0 - 2.0 * Ye * 2.0 * jnp.arctan(
+                neutron_mass / m_array / msun_cgs) / jnp.pi
+            Xr = 1.0 - Xn0
 
-        def _eps_th(t_sec):
-            t_d = t_sec / days_to_seconds
-            return 0.36 * jnp.exp(-0.56 * t_d) + 0.44 / (1.0 + (t_d / 0.28)**0.62)
+        # Initial conditions in Redback mixed units: energy_v = m_array * v^2/2
+        # Units: Msun * (cm/s)^2 — moderate values, safe for float32
+        E0 = 0.5 * m_array * v_m ** 2
 
-        # ODE in normalized units: E_n = E_shell / Q_scale
-        def _scan_step(carry, t_i):
-            E_n_shells = carry  # (n_shells,)
-            t_d = t_i / days_to_seconds
+        dt_arr = jnp.diff(t_sec)
 
-            Q_n = jnp.power(jnp.maximum(t_d, 1e-4), -alpha_heat) * _eps_th(t_i)
+        def _scan_step(ene, inputs):
+            t_i, dt_i, edotr_i, e_th_i = inputs
 
-            L_n_shells = E_n_shells / jnp.maximum(t_i, 1.0) * jnp.minimum(t_i / td_shells, 1.0)
-            pdv = E_n_shells / (3.0 * jnp.maximum(t_i, 1.0))
+            if neutron_precursor:
+                Xn_t = Xn0 * jnp.exp(-t_i / 900.0)
+                edotn = 3.2e14 * Xn_t * Xn_t
+                edot = edotn[:-1] + edotr_i
+                kappa_n = 0.4 * (1.0 - Xn_t - Xr)
+                kappa_total = kappa_n + kappa_r * Xr
+            else:
+                edot = edotr_i * jnp.ones(mass_len - 1)
+                kappa_total = kappa_r * jnp.ones(mass_len)
 
-            dEndt = Q_n - L_n_shells - pdv
-            E_new = jnp.maximum(E_n_shells + dEndt * dt, 0.0)
+            td_v = (kappa_total[:-1] * m_array[:-1] * msun_cgs * 3.0) / (
+                4.0 * jnp.pi * v_m[:-1] * c_cgs * t_i * beta_val)
 
-            L_n_total = jnp.sum(L_n_shells)
+            lum_rad = ene[:-1] / (td_v + t_i * (v_m[:-1] / c_cgs))
 
-            # Photospheric radius from optical depth (computed in log space)
-            r_shells = v_shells * t_i
-            log10_r = jnp.log10(jnp.maximum(r_shells, 1.0))
-            log10_tau_per_shell = (jnp.log10(kappa_shells) + log10_dm
-                                   - _LOG10_4PI - 2.0 * log10_r)
-            tau_per_shell = jnp.power(10.0, log10_tau_per_shell)
-            tau_shells = jnp.cumsum(tau_per_shell[::-1])[::-1]
+            ene_new = jnp.concatenate([
+                ene[:-1] + (edot - ene[:-1] / t_i - lum_rad) * dt_i,
+                ene[-1:],
+            ])
+            ene_new = jnp.maximum(ene_new, 0.0)
 
-            is_above = tau_shells > 2.0 / 3.0
-            weights_ph = jnp.where(is_above, 1.0, 0.0)
-            total_w = jnp.sum(weights_ph) + 1e-30
-            R_ph = jnp.sum(weights_ph * r_shells) / total_w
-            R_ph = jnp.maximum(R_ph, r_shells[-1])
+            # Sum lum * dm in mixed units (moderate), defer msun to log10
+            L_dm_total = jnp.sum(lum_rad * dm)
 
-            return E_new, (L_n_total, R_ph)
+            tau = m_array[:-1] * msun_cgs * kappa_total[:-1] / (
+                4.0 * jnp.pi * (t_i * v_m[:-1]) ** 2)
+            tau_full = jnp.concatenate([tau, tau[-1:]])
+            pig = jnp.argmin(jnp.abs(tau_full - 1.0))
+            R_ph = v_m[pig] * t_i
 
-        t_d_start = t_start / days_to_seconds
-        E0_n = jnp.ones(n_shells) * jnp.power(
-            jnp.maximum(t_d_start, 1e-4), -alpha_heat
-        ) * t_start * 0.5
+            return ene_new, (L_dm_total, R_ph)
 
-        _, (L_n_int, R_int) = jax.lax.scan(_scan_step, E0_n, t_int)
+        _, (L_arr, R_arr) = jax.lax.scan(
+            _scan_step, E0,
+            (t_sec[:-1], dt_arr, edotr_base[:-1], e_th[:-1]))
 
-        L_n_out = jnp.interp(t_out, t_int, L_n_int)
-        # Total L = L_n * Q_scale * n_shells (sum of n_shells each contributing Q_scale * L_n_per_shell)
-        # But L_n_total already sums over shells, so L = L_n_total * Q_scale
-        log10_L = jnp.log10(jnp.maximum(L_n_out, 1e-30)) + log10_Q_scale
+        L_arr = jnp.concatenate([L_arr, L_arr[-1:]])
+        R_arr = jnp.concatenate([R_arr, R_arr[-1:]])
+
+        # Convert: L_erg_s = L_dm_total * msun_cgs
+        log10_L = jnp.log10(jnp.maximum(jnp.abs(L_arr), 1e-30)) + _LOG10_MSUN
         log10_L = jnp.maximum(log10_L, 0.0)
 
-        R_phot = jnp.interp(t_out, t_int, R_int)
-        log10_R = jnp.log10(jnp.maximum(R_phot, 1.0))
+        log10_R = jnp.log10(jnp.maximum(R_arr, 1.0))
 
         return log10_L, log10_R
 
@@ -266,11 +270,10 @@ class OneComponentKilonovaModel(AnalyticalModel):
     """Single-component kilonova with diffusion-integral heating.
 
     Reference:
-        Redback: https://github.com/nikhil-sarin/redback/blob/master/redback/transient_models/kilonova_models.py
+        Redback: _one_component_kilonova_model in kilonova_models.py
 
-    Different from ``MetzgerModel`` (energy-balance ODE): this model computes
-    L_bol via a cumulative heating integral with diffusion damping, reformulated
-    as a stable first-order ODE to avoid ``exp(t^2/td^2)`` overflow.
+    Matches Redback's cumulative trapezoid algorithm exactly, using a
+    float32-safe damped recurrence that avoids exp(t^2/td^2) overflow.
 
     Parameters (in ``x`` dict):
         log10_mej   – log10 ejecta mass in solar masses
@@ -279,8 +282,6 @@ class OneComponentKilonovaModel(AnalyticalModel):
     """
 
     parameter_names = ["log10_mej", "log10_vej", "log10_kappa"]
-
-    _n_internal = 500
 
     def __init__(self, filters, times=None, temperature_floor=4000.0):
         if times is None:
@@ -292,155 +293,271 @@ class OneComponentKilonovaModel(AnalyticalModel):
         log10_vej_cms = x["log10_vej"] + _LOG10_CCGS
         log10_kappa = x["log10_kappa"]
 
-        kappa = jnp.power(10.0, log10_kappa)
+        mej_solar = jnp.power(10.0, x["log10_mej"])
+        vej_c = jnp.power(10.0, x["log10_vej"])
 
-        t_out = t_days * days_to_seconds
-        t_start = jnp.maximum(t_out[0] * 0.1, 1.0)
-        t_end = t_out[-1] * 1.1
-        t_int = jnp.linspace(t_start, t_end, self._n_internal)
-        dt = t_int[1] - t_int[0]
+        t_sec = t_days * days_to_seconds
 
-        # Diffusion timescale in log10 space to avoid overflow:
-        # td = sqrt(2 * kappa * mej / (13.7 * vej * c))
+        # Diffusion timescale: td = sqrt(2 * kappa * mej / (13.7 * vej * c))
         log10_td = 0.5 * (jnp.log10(2.0) + log10_kappa + log10_mej_g
                           - jnp.log10(13.7) - log10_vej_cms - _LOG10_CCGS)
         td = jnp.power(10.0, log10_td)
 
-        # Normalization: Q_scale = 4e18 * mej (peak heating rate)
-        # log10(Q_scale) = log10(4e18) + log10_mej_g  (~50, overflows float32)
+        # Normalization: Q_scale = 4e18 * mej_g
         log10_Q_scale = jnp.log10(4.0e18) + log10_mej_g
 
-        # Thermalisation efficiency (simplified Barnes+16)
-        def _e_th(t_sec):
-            t_d = t_sec / days_to_seconds
-            return (0.36 * jnp.exp(-0.56 * t_d)
-                    + 0.44 / (1.0 + (t_d / 0.28)**0.62))
+        # Barnes+16 thermalisation
+        av, bv, dv = _barnes16_thermalisation_coefficients(mej_solar, vej_c)
+        e_th = _barnes16_e_th(t_days, av, bv, dv)
 
-        # Normalized heating: L_in_n(t) = (0.5 - arctan((t-1.3)/0.11)/pi)^1.3
-        # so that L_in = Q_scale * L_in_n
+        # Normalized integrand (without exp factor):
+        # f_n = shape(t) * e_th(t) * (t/td)
+        # Use identity: 0.5 - arctan(x)/π = arctan(1/x)/π for x > 0
+        # to avoid float32 catastrophic cancellation at late times.
         t0_heat = 1.3   # seconds
         sig_heat = 0.11  # seconds
+        f_n = (jnp.power(
+            jnp.arctan(sig_heat / jnp.maximum(t_sec - t0_heat, 1e-6))
+            / jnp.pi, 1.3)
+            * e_th * (t_sec / td))
 
-        def _l_in_n(t_sec):
-            return jnp.power(
-                0.5 - jnp.arctan((t_sec - t0_heat) / sig_heat) / jnp.pi, 1.3)
+        # Float32-safe O(n²) vectorized cumulative trapezoid.
+        # Redback: L = cumtrapz(f*exp(t²/td²), t) * exp(-t²/td²) / td
+        # Equivalent: L[j] = (1/td) * sum_i 0.5*(f[i]*φ[j,i] + f[i+1]*φ[j,i+1])*dt[i]
+        # where φ[j,k] = exp(-(t[j]²-t[k]²)/td²) ∈ [0,1] for j >= k.
+        # Each output computed independently — no sequential error accumulation.
+        n = t_sec.shape[0]
+        dt = jnp.diff(t_sec)  # (n-1,)
+        t_sq = t_sec ** 2
 
-        # Stable ODE in normalized units:
-        #   U_n(t) = td * L_bol_n(t),  where L_bol = Q_scale * L_bol_n
-        #   dU_n/dt = L_in_n * e_th * (t/td)  -  2*(t/td^2) * U_n
-        #   L_bol_n = U_n / td
+        # Damping factors: φ[j+1, k] for j=0..n-2, k=0..n-1
+        exp_arg = -(t_sq[1:, None] - t_sq[None, :]) / td**2  # (n-1, n)
+        phi = jnp.exp(jnp.clip(exp_arg, -80.0, 0.0))
 
-        def _scan_step(U_n, t_i):
-            heating = _l_in_n(t_i) * _e_th(t_i) * (t_i / td)
-            loss = 2.0 * t_i / td**2 * U_n
-            dU_n_dt = heating - loss
-            U_n_new = jnp.maximum(U_n + dU_n_dt * dt, 0.0)
-            L_n = jnp.maximum(U_n_new / td, 0.0)
-            return U_n_new, L_n
+        # Trapezoid: h[j, i] = 0.5*(f[i]*φ[j+1,i] + f[i+1]*φ[j+1,i+1]) * dt[i]
+        h = 0.5 * (f_n[:-1][None, :] * phi[:, :-1]
+                    + f_n[1:][None, :] * phi[:, 1:]) * dt[None, :]
 
-        U0_n = _l_in_n(t_start) * _e_th(t_start) * t_start / td * dt
-        _, L_n_int = jax.lax.scan(_scan_step, U0_n, t_int)
+        # Mask: only i <= j (lower triangular incl. diagonal)
+        mask = jnp.tril(jnp.ones((n - 1, n - 1), dtype=bool))
+        h = jnp.where(mask, h, 0.0)
 
-        L_n_out = jnp.interp(t_out, t_int, L_n_int)
-        log10_L = jnp.log10(jnp.maximum(L_n_out, 1e-30)) + log10_Q_scale
+        W_arr = jnp.sum(h, axis=1)  # (n-1,)
+
+        # L[0] = L[1] matching Redback
+        W_full = jnp.concatenate([W_arr[:1], W_arr])
+
+        L_n = jnp.maximum(W_full / td, 0.0)
+
+        log10_L = jnp.log10(jnp.maximum(L_n, 1e-30)) + log10_Q_scale
         log10_L = jnp.maximum(log10_L, 0.0)
 
         # Photospheric radius: R = vej * t
-        log10_R = log10_vej_cms + jnp.log10(t_out)
+        log10_R = log10_vej_cms + jnp.log10(t_sec)
 
         return log10_L, log10_R
 
 
 class MagnetarBoostedKilonovaModel(AnalyticalModel):
-    """Single-zone kilonova with magnetar spin-down heating injection.
+    """Multi-shell kilonova with magnetar spin-down heating, matching Redback.
 
     Reference:
-        Redback: https://github.com/nikhil-sarin/redback/blob/master/redback/transient_models/magnetar_driven_ejecta_models.py
+        Redback: _general_metzger_magnetar_driven_kilonova_model
 
-    Extends the MetzgerModel energy-balance ODE with an additional magnetar
-    luminosity term.
+    200-shell ODE with magnetar injection into bottom layer, velocity
+    evolution, optional pair cascade and neutron precursor.
 
     Parameters (in ``x`` dict):
-        log10_mej     – log10 ejecta mass in solar masses
-        log10_vej     – log10 ejecta velocity in units of c
-        beta          – velocity power-law index
-        log10_kappa_r – log10 opacity in cm^2/g
-        log10_p0      – log10 initial spin period in ms
-        log10_bp      – log10 polar B-field in 1e14 G
-        mass_ns       – neutron star mass in solar masses
-        theta_pb      – angle between spin and B-field in radians
+        log10_mej                 – log10 ejecta mass in solar masses
+        log10_vej                 – log10 ejecta velocity (vmin) in units of c
+        beta                      – velocity power-law index
+        log10_kappa_r             – log10 opacity in cm^2/g
+        log10_p0                  – log10 initial spin period in ms
+        log10_bp                  – log10 polar B-field in 1e14 G
+        mass_ns                   – neutron star mass in solar masses
+        theta_pb                  – angle between spin and B-field in radians
+        thermalisation_efficiency – magnetar thermalisation efficiency
     """
 
     parameter_names = ["log10_mej", "log10_vej", "beta", "log10_kappa_r",
-                       "log10_p0", "log10_bp", "mass_ns", "theta_pb"]
+                       "log10_p0", "log10_bp", "mass_ns", "theta_pb",
+                       "thermalisation_efficiency"]
 
-    _n_internal = 500
+    _n_shells = 200
 
-    def __init__(self, filters, times=None):
+    def __init__(self, filters, times=None, neutron_precursor=True,
+                 pair_cascade=True, vmax=0.7, magnetar_heating='first_layer'):
+        self._neutron_precursor = neutron_precursor
+        self._pair_cascade = pair_cascade
+        self._vmax = vmax
+        self._magnetar_heating = magnetar_heating
         if times is None:
             times = jnp.geomspace(0.1, 30.0, 100)
         super().__init__(filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):
-        log10_mej = x["log10_mej"] + _LOG10_MSUN
-        log10_vej = x["log10_vej"] + _LOG10_CCGS
-        kappa = jnp.power(10.0, x["log10_kappa_r"])
+        mej = jnp.power(10.0, x["log10_mej"])   # solar masses
+        vej = jnp.power(10.0, x["log10_vej"])    # fraction of c
+        beta_val = x["beta"]
+        kappa_r = jnp.power(10.0, x["log10_kappa_r"])
+        th_eff = x["thermalisation_efficiency"]
 
-        vej = jnp.power(10.0, log10_vej)
+        mass_len = self._n_shells  # 200
 
-        t_out = t_days * days_to_seconds
-        t_start = t_out[0] * 0.1
-        t_end = t_out[-1] * 1.1
-        t_int = jnp.linspace(t_start, t_end, self._n_internal)
-        dt = t_int[1] - t_int[0]
+        t_sec = t_days * days_to_seconds
+        t_d = t_days
 
-        # Energy normalization: Q_scale = eps_0 * mej
-        log10_Q_scale = jnp.log10(2.0e10) + log10_mej
-        alpha_heat = 1.3
+        # Barnes+16 thermalisation for r-process
+        av, bv, dv = _barnes16_thermalisation_coefficients(mej, vej)
+        e_th = _barnes16_e_th(t_d, av, bv, dv)
 
-        # Diffusion timescale
-        log10_td = 0.5 * (jnp.log10(3.0 * kappa) + log10_mej
-                          - _LOG10_4PI - log10_vej - _LOG10_CCGS)
-        td = jnp.power(10.0, log10_td)
+        # Heating rate (dual regime)
+        t0 = 1.3
+        sig = 0.11
+        edotr_late = 2.1e10 * e_th * t_d ** (-1.3)
+        edotr_early = 4.0e18 * jnp.power(
+            0.5 - jnp.arctan((t_sec - t0) / sig) / jnp.pi, 1.3) * e_th
+        edotr_base = jnp.where(t_sec > t0, edotr_late, edotr_early)
 
-        # Magnetar luminosity on internal time grid
+        # Shell layout with mass normalization (matching Redback)
+        vmin = vej
+        vmax_val = self._vmax
+        vel = jnp.linspace(vmin, vmax_val, mass_len)
+        m_array = mej * (vel / vmin) ** (-beta_val)
+        total_mass = jnp.sum(m_array)
+        m_array = m_array * (mej / total_mass)
+        v_m_init = vel * c_cgs
+
+        dm = jnp.abs(jnp.diff(m_array))
+
+        # Magnetar luminosity in log10 (never materialized in linear)
         log10_L_mag = _magnetar_luminosity(
-            t_int, x["log10_p0"], x["log10_bp"], x["mass_ns"], x["theta_pb"])
+            t_sec, x["log10_p0"], x["log10_bp"], x["mass_ns"], x["theta_pb"])
 
-        def _eps_th(t_sec):
-            t_d = t_sec / days_to_seconds
-            return 0.36 * jnp.exp(-0.56 * t_d) + 0.44 / (1.0 + (t_d / 0.28)**0.62)
+        # Energy normalization via log10_E_scale (never materialized as 10^x).
+        # Redback's energy_v is in erg. We define ene_n = energy_v / E_scale.
+        log10_E_scale = jnp.maximum(log10_L_mag[0], 30.0)
 
-        # ODE: dE_n/dt = Q_rp_n + L_mag_n * e_th  -  L_n  -  E_n/(3t)
-        def _scan_step(carry, inputs):
-            E_n = carry
-            t_i, log10_L_mag_i = inputs
-            t_d = t_i / days_to_seconds
-            eth = _eps_th(t_i)
+        # Precompute msun / E_scale (safe: LOG10_MSUN - log10_E_scale < 0)
+        msun_per_E = jnp.power(10.0, _LOG10_MSUN - log10_E_scale)
 
-            # r-process heating (normalized)
-            Q_n = jnp.power(jnp.maximum(t_d, 1e-4), -alpha_heat) * eth
+        # Precompute E_scale / m0 for velocity evolution (float32-safe)
+        # E_over_m0 = 10^(log10_E_scale - LOG10_MSUN - log10_mej)
+        E_over_m0 = jnp.power(10.0,
+                               log10_E_scale - _LOG10_MSUN - x["log10_mej"])
 
-            # Magnetar heating (normalized): L_mag_n = L_mag / Q_scale
-            # Compute in log10 to avoid overflow (both ~1e47-1e52)
-            L_mag_n = jnp.power(10.0, log10_L_mag_i - log10_Q_scale) * eth
+        # Mass power-law exponent (precomputed, constant)
+        mass_power = (m_array / mej) ** (-1.0 / beta_val)
 
-            L_n = E_n / jnp.maximum(t_i, 1.0) * jnp.minimum(t_i / td, 1.0)
-            pdv = E_n / (3.0 * jnp.maximum(t_i, 1.0))
+        # Neutron precursor
+        neutron_precursor = self._neutron_precursor
+        if neutron_precursor:
+            Ye = _electron_fraction_from_kappa(kappa_r)
+            neutron_mass = 1e-8 * msun_cgs
+            Xn0 = 1.0 - 2.0 * Ye * 2.0 * jnp.arctan(
+                neutron_mass / m_array / msun_cgs) / jnp.pi
+            Xr = 1.0 - Xn0
 
-            dEndt = Q_n + L_mag_n - L_n - pdv
-            E_new = jnp.maximum(E_n + dEndt * dt, 0.0)
-            return E_new, L_n
+        # Initial conditions (normalized via log10)
+        E0_raw = 0.5 * m_array * v_m_init ** 2  # Msun*(cm/s)^2, safe float32
+        E0_n = jnp.power(10.0, jnp.log10(jnp.maximum(E0_raw, 1e-30))
+                          - log10_E_scale)
 
-        t_d_start = t_start / days_to_seconds
-        E0_n = jnp.power(jnp.maximum(t_d_start, 1e-4), -alpha_heat) * t_start * 0.5
+        # Initial kinetic energy (normalized): ek_n = 0.5*m0*v0^2 / E_scale
+        log10_ek_0 = (jnp.log10(0.5) + x["log10_mej"] + _LOG10_MSUN
+                      + 2.0 * (x["log10_vej"] + _LOG10_CCGS))
+        ek_n_0 = jnp.power(10.0, log10_ek_0 - log10_E_scale)
 
-        _, L_n_int = jax.lax.scan(_scan_step, E0_n, (t_int, log10_L_mag))
+        dt_arr = jnp.diff(t_sec)
 
-        L_n_out = jnp.interp(t_out, t_int, L_n_int)
-        log10_L = jnp.log10(jnp.maximum(L_n_out, 1e-30)) + log10_Q_scale
+        first_layer = (self._magnetar_heating == 'first_layer')
+
+        def _scan_step(state, inputs):
+            ene_n, ek_n = state
+            t_i, dt_i, edotr_i, log10_lsd_i = inputs
+
+            # Velocity evolution (matching Redback lines 682-689):
+            # kinetic_energy += energy_v[0]/t * dt
+            # v0 = sqrt(2*KE/m0)
+            ek_n = ek_n + (ene_n[0] / t_i) * dt_i
+            v0_sq = 2.0 * ek_n * E_over_m0
+            v0_new = jnp.sqrt(jnp.maximum(v0_sq, 0.0))
+            v_m_t = jnp.minimum(v0_new * mass_power, c_cgs)
+
+            # Magnetar heating (normalized via log10)
+            log10_qdot_n = (jnp.log10(jnp.maximum(th_eff, 1e-30))
+                            + log10_lsd_i - log10_E_scale)
+            qdot_n = jnp.power(10.0, jnp.clip(log10_qdot_n, -30.0, 30.0))
+
+            if neutron_precursor:
+                Xn_t = Xn0 * jnp.exp(-t_i / 900.0)
+                edotn = 3.2e14 * Xn_t * Xn_t
+                kappa_n = 0.4 * (1.0 - Xn_t - Xr)
+                kappa_total = kappa_n + kappa_r * Xr
+            else:
+                edotn = jnp.zeros(mass_len)
+                kappa_total = kappa_r * jnp.ones(mass_len)
+
+            # Heating terms normalized: edotr * dm * msun / E_scale
+            edotr_dm_n = edotr_i * dm * msun_per_E
+            edotn_dm_n = edotn[:-1] * dm * msun_per_E
+
+            # Diffusion timescale (using evolved v_m_t)
+            td_v = (kappa_total[:-1] * m_array[:-1] * msun_cgs * 3.0) / (
+                4.0 * jnp.pi * v_m_t[:-1] * c_cgs * t_i * beta_val)
+
+            lum_n = ene_n[:-1] / (td_v + t_i * (v_m_t[:-1] / c_cgs))
+
+            if first_layer:
+                ene_0_new = ene_n[0] + (qdot_n + edotr_dm_n[0] + edotn_dm_n[0]
+                                        - ene_n[0] / t_i - lum_n[0]) * dt_i
+                ene_mid_new = ene_n[1:-1] + (edotr_dm_n[1:] + edotn_dm_n[1:]
+                                             - ene_n[1:-1] / t_i
+                                             - lum_n[1:]) * dt_i
+                ene_n_new = jnp.concatenate([
+                    ene_0_new[None], ene_mid_new, ene_n[-1:]])
+            else:
+                ene_n_new = jnp.concatenate([
+                    ene_n[:-1] + (qdot_n + edotr_dm_n + edotn_dm_n
+                                  - ene_n[:-1] / t_i - lum_n) * dt_i,
+                    ene_n[-1:],
+                ])
+
+            ene_n_new = jnp.maximum(ene_n_new, 0.0)
+
+            L_n_total = jnp.sum(lum_n)
+
+            tau = m_array[:-1] * msun_cgs * kappa_total[:-1] / (
+                4.0 * jnp.pi * (t_i * v_m_t[:-1]) ** 2)
+            tau_full = jnp.concatenate([tau, tau[-1:]])
+            pig = jnp.argmin(jnp.abs(tau_full - 1.0))
+            R_ph = v_m_t[pig] * t_i
+
+            return (ene_n_new, ek_n), (L_n_total, R_ph)
+
+        _, (L_n_arr, R_arr) = jax.lax.scan(
+            _scan_step, (E0_n, ek_n_0),
+            (t_sec[:-1], dt_arr, edotr_base[:-1], log10_L_mag[:-1]))
+
+        L_n_arr = jnp.concatenate([L_n_arr, L_n_arr[-1:]])
+        R_arr = jnp.concatenate([R_arr, R_arr[-1:]])
+
+        # Convert: L_erg_s = L_n * E_scale
+        log10_L = jnp.log10(jnp.maximum(jnp.abs(L_n_arr), 1e-30)) + log10_E_scale
+
+        # Pair cascade (matching Redback) — uses v0 from last step
+        if self._pair_cascade:
+            ejecta_albedo = 0.5
+            pair_cascade_fraction = 0.01
+            log10_tlife = (jnp.log10(0.6 / (1.0 - ejecta_albedo))
+                           + 0.5 * jnp.log10(pair_cascade_fraction / 0.1)
+                           + 0.5 * (log10_L_mag - 45.0)
+                           + 0.5 * jnp.log10(vej / 0.3)
+                           - 0.5 * jnp.log10(jnp.maximum(t_d, 1e-10)))
+            tlife_t = jnp.power(10.0, jnp.clip(log10_tlife, -20.0, 20.0))
+            log10_L = log10_L - jnp.log10(1.0 + tlife_t)
+
         log10_L = jnp.maximum(log10_L, 0.0)
-
-        log10_R = log10_vej + jnp.log10(t_out)
+        log10_R = jnp.log10(jnp.maximum(R_arr, 1.0))
 
         return log10_L, log10_R
