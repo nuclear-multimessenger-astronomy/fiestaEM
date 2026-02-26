@@ -22,7 +22,7 @@ n_val = 2237
 
 image_size= np.array([64, 40])
 
-name = "Bu2025"
+name = "Bu2025_CVAE"
 outdir = f"./model/"
 file = "../_training_data/Bu2025_raw_data.h5"
 

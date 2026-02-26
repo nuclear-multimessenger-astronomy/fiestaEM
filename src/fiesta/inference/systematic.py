@@ -20,7 +20,7 @@ ALL_PRIORS = dict(inspect.getmembers(fiesta_prior, inspect.isclass))
 def setup_systematics_basic(likelihood, prior: ConstrainedPrior, error_budget: float = 0.3):
 
     # enable one variable sys. uncertainty parameter
-    if "sys_err" in prior.naming:
+    if "em_syserr" in prior.naming:
         likelihood._setup_sys_uncertainty_free()
         logger.info(f"Likelihood is using a collective freely sampled systematic uncertainty as specified in the prior.")
     # fix systematic uncertainty to set value
@@ -44,9 +44,9 @@ def setup_systematic_from_file(likelihood, prior: ConstrainedPrior, systematics_
     if not isinstance(prior, ConstrainedPrior):
         prior = ConstrainedPrior(prior.priors)
     prior_list = prior.priors
-    if "sys_err" in prior.naming:
-        logger.warning(f"When providing a systematics_file, 'sys_err' should not be listed in the prior. Removing 'sys_err' from prior list.")
-        index = [ind for ind, p in enumerate(prior_list) if 'sys_err' in p.naming]
+    if "em_syserr" in prior.naming:
+        logger.warning(f"When providing a systematics_file, 'em_syserr' should not be listed in the prior. Removing 'em_syserr' from prior list.")
+        index = [ind for ind, p in enumerate(prior_list) if 'em_syserr' in p.naming]
         prior_list.pop(index[0])
     prior_list.extend(prior.constraints)
     prior_list.extend(additional_priors)

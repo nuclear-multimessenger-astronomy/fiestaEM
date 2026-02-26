@@ -21,55 +21,23 @@ from fiesta.conversions import mag_app_from_mag_abs, apply_redshift
 from fiesta import filters as fiesta_filters
 from fiesta.logging import logger
 
-
-###########################
-### BUILT-IN SURROGATES ###
-###########################
-
-
-def list_built_in_surrogates():
-    current_dir = Path(__file__).resolve().parent
-    surrogate_dir = current_dir.parent / "surrogates"
-    
-    logger.info(f"Available built-in surrogates in fiesta are:")
-
-    for transient_dir in surrogate_dir.iterdir():
-        transient_type = transient_dir.name
-
-        for model_dir in transient_dir.iterdir():
-            model_name = model_dir.name
-
-            if not model_name.startswith("_"):
-                logger.info(f"\t {model_name} ({transient_type})")
+from fiesta.surrogates import built_in_surrogates, download_surrogate
 
 
 def get_default_directory(name):
-    current_dir = Path(__file__).resolve().parent
-    surrogate_dir = current_dir.parent / "surrogates"
     
-    if name.startswith("afgpy") or name.startswith("pbag") or name.startswith("jetsimpy"):
-        if not name.endswith("_CVAE") and not name.endswith("_MLP"):
-             name = "_".join((name, "CVAE")) # default for now is to load the CVAE
-
-        surrogate_dir = surrogate_dir / "GRB" / name / "model"
-
+    for model_name, surrogate_dir, _ in built_in_surrogates():
+        if name==model_name:
+            if not os.path.exists(surrogate_dir / "model"):
+                raise OSError(f"Could not find model directory for name {name} in {surrogate_dir}. Please change the name or provide a path manually.")
+            return surrogate_dir / "model"
     
-    elif name.startswith("Bu"):
-        if name.endswith("_CVAE") or name.endswith("_MLP") or name.endswith("_lc"):
-            surrogate_dir = surrogate_dir / "KN" / name / "model"
-
-        else:
-             name = "_".join((name, "lc")) # default for now is to load the lightcurve model
-             surrogate_dir = surrogate_dir / "KN" / name / "model"
-    
+    logger.info(f"Could not find {name} in built-in surrogates. Attempting download.")
+    download_ok, surrogate_dir = download_surrogate(name)
+    if download_ok:
+        return surrogate_dir / "model"
     else:
-        raise ValueError("If no model directory is provided, the name for the default models must either start with 'afgpy', 'pbag', 'jetsimpy', or 'Bu'.")
-    
-    surrogate_dir = str(surrogate_dir)
-    if not os.path.exists(surrogate_dir):
-        raise OSError(f"Could not find model directory for name {name} in {surrogate_dir}. Please change the name or provide a path manually.")
-    
-    return surrogate_dir
+        raise ValueError(f"No model directory provided, but could not find built-in surrogate {name} or download it.")
 
 
 ########################
@@ -518,7 +486,7 @@ class CombinedSurrogate(SurrogateModel):
                                   Can reach beyond the time range of the individual surrogates, in which case their magnitudes will be extrapolated as their first or last value.
         """
         self.models = models
-        self.sample_times = sample_times
+        self.times = sample_times
         self._load_filters()
     
     def _load_filters(self,):
@@ -533,18 +501,17 @@ class CombinedSurrogate(SurrogateModel):
     def predict(self, x: dict[str, Array]):
         def predict_per_model(model):
             times, mags = model.predict(x)
-            mag_interp = jax.tree.map(lambda mag: jnp.interp(self.sample_times, times, mag) , mags)
+            mag_interp = jax.tree.map(lambda mag: jnp.interp(self.times, times, mag) , mags)
             return mag_interp
         
         mag_dicts = jax.tree.map(predict_per_model, self.models)
         
         def add_magnitudes(filt):
-            #_, mag_filt = jax.lax.scan(lambda carry, _dic: (0., _dic.get(filt, jnp.ones_like(self.sample_times)*jnp.inf)), 0., mag_dicts) 
-            filt_mags = jnp.array([_dic.get(filt, jnp.ones_like(self.sample_times)*jnp.inf) for _dic in mag_dicts])
+            filt_mags = jnp.array([_dic.get(filt, jnp.ones_like(self.times)*jnp.inf) for _dic in mag_dicts])
             total_mag = -2.5 /jnp.log(10) * logsumexp(-.4*jnp.log(10)*filt_mags, axis=0)
             return total_mag
         mags = jax.tree.map(add_magnitudes, self.filters)
-        return self.sample_times, dict(zip(self.filters, mags))
+        return self.times, dict(zip(self.filters, mags))
     
     def add_filter(self, filters: list[str] | str | fiesta_filters.Filter):
         super().add_filter(filters)

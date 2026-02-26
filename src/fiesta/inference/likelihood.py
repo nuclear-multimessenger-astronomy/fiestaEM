@@ -44,7 +44,7 @@ class EMLikelihood:
                  detection_limit: Float = None):
         
         # Save as attributes
-        self.model = model
+        self.model = copy.deepcopy(model)
         self.conversion = conversion_function
                 
         self.trigger_time = trigger_time
@@ -116,18 +116,18 @@ class EMLikelihood:
                     logger.warning(f"Filter {filt} from likelihood argument not in data. Ignoring for inference.")
                     continue
         
-        for filt in self.model.filters:
-            if filt not in data:
-                logger.warning(f'Filter {filt} from likelihood.model not in data. Removing from model for inference.')
-                self.model.filters.remove(filt)
+        missing = [filt for filt in self.model.filters if filt not in data]
+        for filt in missing:
+            logger.warning(f'Filter {filt} from likelihood.model not in data. Removing from model for inference.')
+            self.model.filters.remove(filt)
         
         processed_data = copy.deepcopy(data)
         for filt in data.keys():
             if filt not in self.filters:
-                logger.warning(f"Filter {filt} from data not found in likelihood.filters. Removing for inference.")
+                logger.warning(f"Filter {filt} from data not found in likelihood.filters. Removing from data for inference.")
                 del processed_data[filt]
             elif filt not in self.model.filters:
-                logger.warning(f"Filter {filt} from data not found in likelihood.model.filters. Removing for inference.")
+                logger.warning(f"Filter {filt} from data not found in likelihood.model.filters. Removing from data for inference.")
                 del processed_data[filt]
 
         return processed_data
@@ -150,12 +150,12 @@ class EMLikelihood:
 
         # freely sampled sys. uncertainty, but same for all filters and times
         def _sigma(theta):
-            sys_err = theta["sys_err"]
+            sys_err = theta["em_syserr"]
             sigma = jax.tree.map(lambda mag_err: jnp.sqrt(mag_err**2 + sys_err**2), self.mag_err)
             return sigma
         
         def _nondet_sigma(theta):
-            sigma = jax.tree.map(lambda mag_nondet: theta["sys_err"], self.mag_nondet)
+            sigma = jax.tree.map(lambda mag_nondet: theta["em_syserr"], self.mag_nondet)
             return sigma
         
         self.get_sigma = _sigma
@@ -314,8 +314,11 @@ class EMLikelihood:
                     )
         return jnp.sum(gausslogsf)
     
-    def v_evaluate(self, theta: dict[str, Array]):
+    def vectorized_evaluate(self, theta: dict[str, Array]):
 
-        def _evaluate_single(_theta):
-            return self(_theta)
-        return jax.vmap(_evaluate_single)(theta)
+        def body(carry, single_theta):
+            y = self(single_theta)
+            return carry, y
+    
+        _, ys = jax.lax.scan(body, None, theta)
+        return ys
