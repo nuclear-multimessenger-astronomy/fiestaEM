@@ -20,6 +20,16 @@ from fiesta.inference.analytical_models.base import (
 )
 
 
+def _validate_times(times):
+    """Raise if times has fewer than 2 samples (needed for jnp.diff)."""
+    arr = jnp.asarray(times)
+    if arr.ndim == 0 or arr.shape[0] < 2:
+        raise ValueError(
+            f"Kilonova models require at least 2 time samples, got shape {arr.shape}"
+        )
+    return arr
+
+
 class MetzgerModel(AnalyticalModel):
     """300-shell kilonova model matching NMMA ``eff_metzger_lc``.
 
@@ -46,6 +56,7 @@ class MetzgerModel(AnalyticalModel):
     def __init__(self, filters, times=None):
         if times is None:
             times = jnp.geomspace(0.1, 30.0, 100)
+        _validate_times(times)
         super().__init__(filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):
@@ -166,6 +177,7 @@ class MetzgerFullModel(AnalyticalModel):
         self._vmax = vmax
         if times is None:
             times = jnp.geomspace(0.1, 30.0, 100)
+        _validate_times(times)
         super().__init__(filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):
@@ -286,6 +298,7 @@ class OneComponentKilonovaModel(AnalyticalModel):
     def __init__(self, filters, times=None, temperature_floor=4000.0):
         if times is None:
             times = jnp.geomspace(0.1, 30.0, 100)
+        _validate_times(times)
         super().__init__(filters, times, temperature_floor=temperature_floor)
 
     def compute_log10_lbol_rphot(self, x, t_days):
@@ -393,6 +406,7 @@ class MagnetarBoostedKilonovaModel(AnalyticalModel):
         self._magnetar_heating = magnetar_heating
         if times is None:
             times = jnp.geomspace(0.1, 30.0, 100)
+        _validate_times(times)
         super().__init__(filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):

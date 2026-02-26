@@ -37,6 +37,7 @@ from fiesta.inference.analytical_models.phenomenological_models import (
     PhenomenologicalModel, EvolvingBlackbodyModel,
     BazinModel, VillarModel, PhenomenologicalTDEModel, AfterglowModel,
 )
+from fiesta.inference.analytical_models.salt3_models import SALT3Model
 
 __all__ = [
     "AfterglowModel",
@@ -53,6 +54,7 @@ __all__ = [
     "OneComponentKilonovaModel",
     "PhenomenologicalModel",
     "PhenomenologicalTDEModel",
+    "SALT3Model",
     "ShockCoolingModel",
     "ShockedCocoonModel",
     "TDEAnalyticalModel",

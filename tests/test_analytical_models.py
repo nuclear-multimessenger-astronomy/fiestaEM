@@ -24,6 +24,7 @@ from fiesta.inference.analytical_models import (
     VillarModel,
     PhenomenologicalTDEModel,
     AfterglowModel,
+    SALT3Model,
 )
 from fiesta.inference.lightcurve_model import CombinedSurrogate
 from fiesta.inference.likelihood import EMLikelihood
@@ -1014,3 +1015,84 @@ class TestAfterglow:
         for filt in FILTERS:
             assert not jnp.allclose(mags_lo[filt], mags_hi[filt]), \
                 f"{filt}: t_break should change the light curve"
+
+
+# ---------------------------------------------------------------------------
+# SALT3Model
+# ---------------------------------------------------------------------------
+
+SALT3_FILTERS = ["ztfg", "ztfr"]
+
+
+class TestSALT3:
+    def _make_model_and_params(self):
+        model = SALT3Model(
+            filters=SALT3_FILTERS,
+            times=jnp.linspace(0, 50, 100),
+            redshift=0.05,
+        )
+        params = {
+            "log10_x0": jnp.array(-4.5),
+            "x1": jnp.array(0.0),
+            "c": jnp.array(0.0),
+            "t0": jnp.array(10.0),
+        }
+        return model, params
+
+    def test_shape(self):
+        model, params = self._make_model_and_params()
+        times, mags = model.predict(params)
+        assert times.shape == (100,)
+        for filt in SALT3_FILTERS:
+            assert mags[filt].shape == (100,), f"Wrong shape for {filt}"
+
+    def test_finite(self):
+        model, params = self._make_model_and_params()
+        _, mags = model.predict(params)
+        for filt in SALT3_FILTERS:
+            assert jnp.all(jnp.isfinite(mags[filt])), f"Non-finite in {filt}"
+
+    def test_jit_consistent(self):
+        model, params = self._make_model_and_params()
+        _, m1 = model.predict(params)
+        _, m2 = model.predict(params)
+        for filt in SALT3_FILTERS:
+            np.testing.assert_allclose(m1[filt], m2[filt])
+
+    def test_differentiable(self):
+        model, params = self._make_model_and_params()
+
+        def _loss(p):
+            _, mags = model.predict(p)
+            return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in SALT3_FILTERS]))
+
+        grads = jax.grad(_loss)(params)
+        all_finite = all(jnp.all(jnp.isfinite(v))
+                         for v in jax.tree_util.tree_leaves(grads))
+        any_nonzero = any(jnp.any(jnp.abs(v) > 0)
+                          for v in jax.tree_util.tree_leaves(grads))
+        assert all_finite, "Gradients contain non-finite values"
+        assert any_nonzero, "All gradients are zero"
+
+    def test_log10_x0_gradient(self):
+        """Gradient through log10_x0 should be finite and non-zero."""
+        model, params = self._make_model_and_params()
+
+        def _loss(log10_x0):
+            p = {**params, "log10_x0": log10_x0}
+            _, mags = model.predict(p)
+            return jnp.sum(mags[SALT3_FILTERS[0]])
+
+        grad_val = jax.grad(_loss)(params["log10_x0"])
+        assert jnp.isfinite(grad_val), f"log10_x0 gradient non-finite: {grad_val}"
+        assert jnp.abs(grad_val) > 0, "log10_x0 gradient is zero"
+
+    def test_magnitude_range(self):
+        """AB magnitudes should be in a physically reasonable range."""
+        model, params = self._make_model_and_params()
+        _, mags = model.predict(params)
+        for filt in SALT3_FILTERS:
+            mag_min = float(jnp.min(mags[filt]))
+            mag_max = float(jnp.max(mags[filt]))
+            assert 10.0 < mag_min < 40.0, f"{filt}: min mag {mag_min} out of range"
+            assert 10.0 < mag_max < 80.0, f"{filt}: max mag {mag_max} out of range"
