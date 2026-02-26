@@ -35,7 +35,7 @@ dependencies = [
     "sncosmo",
     "flowMC",
     "h5py",
-    "corner"
+    "corner",
     "requests"
 ]
 
@@ -58,10 +58,8 @@ packages = { find = { where = ["src"] } }
 
 [tool.setuptools.package-data]
 "fiesta.surrogates.GRB.afgpy_gaussian_CVAE" = ["**.pkl"]
-"fiesta.surrogates.GRB.afgpy_tophat_CVAE" = ["**.pkl"]
 "fiesta.surrogates.GRB.pbag_gaussian_CVAE" = ["**.pkl"]
-"fiesta.surrogates.GRB.pbag_tophat_CVAE" = ["**.pkl"]
-"fiesta.surrogates.KN.Bu2025_MLP" = ["**.pkl"]
+"fiesta.surrogates.KN.Bu2026_MLP" = ["**.pkl"]
 
 
 [project.urls]
