@@ -8,7 +8,7 @@ reportIncompatibleMethodOverride = "warning"
 [project]
 name = "fiestaEM"
 description = "Fast inference of electromagnetic signals with JAX"
-version = "0.1.0"
+version = "0.2.0"
 readme = "README.md"
 authors = [{ name = "Hauke Koehn", email = "hauke.koehn@uni-potsdam.de"}, { name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"}]
 license = "MIT"
@@ -35,7 +35,8 @@ dependencies = [
     "sncosmo",
     "flowMC",
     "h5py",
-    "corner"
+    "corner",
+    "requests"
 ]
 
 [project.optional-dependencies]
@@ -57,12 +58,9 @@ packages = { find = { where = ["src"] } }
 
 [tool.setuptools.package-data]
 "fiesta.surrogates.GRB.afgpy_gaussian_CVAE" = ["**.pkl"]
-"fiesta.surrogates.GRB.afgpy_tophat_CVAE" = ["**.pkl"]
 "fiesta.surrogates.GRB.pbag_gaussian_CVAE" = ["**.pkl"]
-"fiesta.surrogates.GRB.pbag_tophat_CVAE" = ["**.pkl"]
-"fiesta.surrogates.KN.Bu2025_MLP" = ["**.pkl"]
+"fiesta.surrogates.KN.Bu2026_MLP" = ["**.pkl"]
 "fiesta.inference.tables" = ["csm_table.txt"]
-
 
 [project.urls]
 Homepage = "https://github.com/nuclear-multimessenger-astronomy/fiestaEM"

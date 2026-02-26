@@ -4,6 +4,9 @@ import os
 import re
 import tqdm
 
+import warnings
+warnings.filterwarnings("ignore", module="erfa")
+
 import numpy as np
 import pandas as pd
 import h5py
