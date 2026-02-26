@@ -1,45 +1,61 @@
 from os.path import dirname, join
+from pathlib import Path
+from fiesta.inference.lightcurve_model import built_in_surrogates, FluxModel, BullaLightcurveModel
 
-from fiesta.inference.lightcurve_model import AfterglowFlux, BullaLightcurveModel
+working_dir = Path(dirname(__file__))
 
 
-##############
-# Flux model #
-##############
+def test_builtins():
 
-working_dir = dirname(__file__)
-surrogates_dir = join(dirname(working_dir), "surrogates")
-FILTERS = ["radio-6GHz", "bessellv", "X-ray-1keV"]
+    for model_name, model_dir, model_type in built_in_surrogates():
+        if model_type=="KN":
+            model = FluxModel(model_name, filters=["besselli", "bessellv"])
+        elif model_type=="GRB":
+            model = FluxModel(model_name, filters=["radio-3GHz", "bessellv", "X-ray-1keV"])
+        
+        params = {p: 0.5*(val[0] + val[1]) for p, val in model.parameter_distributions.items()}
+        params["luminosity_distance"] = 40.0
+        params["redshift"] = 0.0
 
-def test_MLP():
+        times, mag = model.predict(params)
 
-    model = AfterglowFlux(name="pbag_gaussian_MLP", 
-                          filters=FILTERS)
-    
-    X = [3.141/30, 54., 0.05, 2., -1., 2.5, -2., -4., 500]
-    params = dict(zip(model.parameter_names, X))
-    params["luminosity_distance"] = 40.0
-    params["redshift"] = 0.0
-    mag = model.predict(params)
-
-def test_CVAE():
-
-    model = AfterglowFlux(name="pbag_gaussian_CVAE", 
-                          filters=FILTERS)
-    
-    X = [3.141/30, 54., 0.05, 2., -1., 2.5, -2., -4., 500]
-    params = dict(zip(model.parameter_names, X))
-    params["luminosity_distance"] = 40.0
-    params["redshift"] = 0.0
-    mag = model.predict(params)
-
-def test_LC():
+def test_lc_surrogates():
 
     model = BullaLightcurveModel(name="Bu2025",
-                                 filters=["besselli", "bessellg", "bessellr"])
+                                 filters=["besselli", "bessellv"],
+                                 directory=working_dir.parent / "surrogates" / "KN" / "Bu2025_lc" / "model")
     
-    X = [120, -2, 0.2, 0.3, -1.5, 0.4, 0.3, 0.1]
-    params = dict(zip(model.parameter_names, X))
+    
+    params = {p: 0.5*(val[0] + val[1]) for p, val in model.parameter_distributions.items()}
     params["luminosity_distance"] = 40.0
     params["redshift"] = 0.0
-    mag = model.predict(params)
+
+    times, mag = model.predict(params)
+
+
+def test_CVAE_surrogates():
+
+    model = FluxModel(name="afgpy_gaussian_CVAE",
+                      filters=["radio-3GHz", "bessellv", "X-ray-1keV"],
+                      directory=working_dir.parent / "surrogates" / "GRB" / "afgpy_gaussian_CVAE" / "model")
+    
+    
+    params = {p: 0.5*(val[0] + val[1]) for p, val in model.parameter_distributions.items()}
+    params["luminosity_distance"] = 40.0
+    params["redshift"] = 0.0
+
+    times, mag = model.predict(params)
+
+
+def test_MLP_surrogates():
+
+    model = FluxModel(name="Bu2026_MLP",
+                      filters=["besselli", "bessellv"],
+                      directory=working_dir.parent / "surrogates" / "KN" / "Bu2026_MLP" / "model")
+    
+    
+    params = {p: 0.5*(val[0] + val[1]) for p, val in model.parameter_distributions.items()}
+    params["luminosity_distance"] = 40.0
+    params["redshift"] = 0.0
+
+    times, mag = model.predict(params)
