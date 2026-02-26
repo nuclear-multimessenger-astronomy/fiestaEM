@@ -16,6 +16,8 @@ from fiesta.inference.analytical_models.base import (
     _magnetar_luminosity,
     _compute_diffusion_constants,
     _arnett_diffusion_ode,
+    _arnett_diffusion_integral,
+    _csm_diffusion_integral,
     _LOG10E, _LOG10_MSUN, _LOG10_CCGS, _LOG10_4PI, _LOG10_PI,
     _LOG10_KM_CGS, _LOG10_AU_CGS, _LOG10_DAYS2SEC,
 )
@@ -152,10 +154,10 @@ class NickelCobaltModel(AnalyticalModel):
         # are luminosity per solar mass of Ni56
         log10_mni_solar = jnp.log10(jnp.maximum(f_nickel, 1e-10)) + x["log10_mej"]
 
-        # Dense internal time grid
+        # Dense internal time grid (log-spaced for better early-time resolution)
         t_start = jnp.maximum(t_days[0] * 0.1, 0.01)
         t_end = t_days[-1] * 1.1
-        t_int = jnp.linspace(t_start, t_end, self._n_internal)
+        t_int = jnp.geomspace(t_start, t_end, self._n_internal)
 
         # Engine luminosity via log-sum-exp for float32 safety:
         # L(t) = M_ni * (6.45e43 * exp(-t/8.8) + 1.45e43 * exp(-t/111.3))
@@ -174,8 +176,8 @@ class NickelCobaltModel(AnalyticalModel):
 
         log10_L_scale = jnp.maximum(jnp.max(log10_L_engine), 30.0)
 
-        # Solve diffusion ODE
-        log10_L_int = _arnett_diffusion_ode(
+        # Solve diffusion via trapezoidal integral (Redback-matched)
+        log10_L_int = _arnett_diffusion_integral(
             log10_L_engine, t_int, log10_td, log10_A_trap, log10_L_scale)
 
         # Interpolate to output times
@@ -226,10 +228,10 @@ class MagnetarPoweredSNModel(AnalyticalModel):
         log10_kappa = x["log10_kappa"]
         log10_kappa_gamma = x["log10_kappa_gamma"]
 
-        # Dense internal time grid
+        # Dense internal time grid (log-spaced for better early-time resolution)
         t_start = jnp.maximum(t_days[0] * 0.1, 0.01)
         t_end = t_days[-1] * 1.1
-        t_int = jnp.linspace(t_start, t_end, self._n_internal)
+        t_int = jnp.geomspace(t_start, t_end, self._n_internal)
         t_int_sec = t_int * days_to_seconds
 
         # Engine: magnetar spin-down luminosity (already in log10 erg/s)
@@ -243,8 +245,8 @@ class MagnetarPoweredSNModel(AnalyticalModel):
 
         log10_L_scale = jnp.maximum(jnp.max(log10_L_engine), 30.0)
 
-        # Solve diffusion ODE
-        log10_L_int = _arnett_diffusion_ode(
+        # Solve diffusion via trapezoidal integral (Redback-matched)
+        log10_L_int = _arnett_diffusion_integral(
             log10_L_engine, t_int, log10_td, log10_A_trap, log10_L_scale)
 
         # Interpolate to output times
@@ -483,28 +485,20 @@ class CSMInteractionModel(AnalyticalModel):
         log10_lbol = (jnp.log10(eff) + log10_max
                       + jnp.log10(jnp.maximum(lbol_sum, 1e-30)))
 
-        # --- CSM diffusion kernel ---
+        # --- CSM diffusion kernel (trapezoidal integral, Redback-matched) ---
         log10_beta_csm = jnp.log10(4.0 * jnp.pi**3 / 9.0)
         log10_t0_csm_sec = (log10_kappa + log10_mcst
                             - log10_beta_csm - _LOG10_CCGS - log10_r_ph)
         t0_csm_days = jnp.maximum(
             jnp.power(10.0, log10_t0_csm_sec - _LOG10_DAYS2SEC), 1e-6)
 
-        dt_int = t_int[1] - t_int[0]
         log10_L_scale = jnp.maximum(jnp.max(log10_lbol), 30.0)
-        L_n = jnp.power(10.0, log10_lbol - log10_L_scale)
 
-        def _csm_diff_step(W_n, inputs):
-            L_n_i, t_i = inputs
-            dW = (L_n_i - W_n / t0_csm_days) * dt_int
-            W_new = jnp.maximum(W_n + dW, 0.0)
-            L_out = W_new / t0_csm_days
-            return W_new, L_out
-
-        W0 = L_n[0] * dt_int
-        _, L_diff_n = jax.lax.scan(_csm_diff_step, W0, (L_n, t_int))
+        log10_L_diff = _csm_diffusion_integral(
+            log10_lbol, t_int, t0_csm_days, log10_L_scale)
 
         # Interpolate to output times
+        L_diff_n = jnp.power(10.0, log10_L_diff - log10_L_scale)
         L_diff_out = jnp.interp(t_days, t_int, L_diff_n)
         log10_L = jnp.log10(jnp.maximum(L_diff_out, 1e-30)) + log10_L_scale
         log10_L = jnp.maximum(log10_L, 0.0)

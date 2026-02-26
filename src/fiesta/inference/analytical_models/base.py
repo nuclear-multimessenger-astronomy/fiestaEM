@@ -15,6 +15,7 @@ All internal physics computations use log10 space to avoid float32 overflow
 
 from functools import partial
 
+import numpy as np
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
@@ -197,6 +198,99 @@ def _arnett_diffusion_ode(log10_L_engine, t_days_grid,
 
     log10_L_obs = jnp.log10(jnp.maximum(L_obs_n, 1e-30)) + log10_L_scale
     return log10_L_obs
+
+
+def _build_log_mirror_quad(n_half=50, minimum_log_spacing=-3):
+    """Build log-spaced quadrature nodes mirrored around 0.5, on [0, 1].
+
+    Matches Redback's ``Diffusion.convert_input_luminosity`` node layout:
+    logspace from a small value to 1, concatenated with (1 - logspace), unique-sorted.
+    Returns a 1-D JAX array.
+    """
+    lsp = np.logspace(minimum_log_spacing, 0, n_half)
+    xm = np.unique(np.concatenate((lsp, 1.0 - lsp)))
+    return jnp.array(xm)
+
+
+# Pre-computed quadrature nodes (module-level, outside JIT)
+_ARNETT_QUAD_NODES = _build_log_mirror_quad(n_half=50)
+_CSM_QUAD_NODES = _build_log_mirror_quad(n_half=1500)
+
+
+def _arnett_diffusion_integral(log10_L_engine, t_days_grid,
+                                log10_td_days, log10_A_trap_days2,
+                                log10_L_scale, xm_quad=_ARNETT_QUAD_NODES):
+    """Arnett (1982) diffusion via trapezoidal integral (Redback-matched).
+
+    For each evaluation time t_e, computes:
+        L_obs(t_e) = (2/td^2) * (1 - exp(-A_trap/t_e^2))
+                     * integral_0^{t_e} L(t)*t*exp((t^2-t_e^2)/td^2) dt
+
+    using ``jnp.trapezoid`` on log-mirrored quadrature nodes.
+
+    Parameters
+    ----------
+    log10_L_engine : 1-D array – log10 of engine luminosity (erg/s)
+    t_days_grid : 1-D array – time grid in days
+    log10_td_days : scalar – log10 of diffusion timescale in days
+    log10_A_trap_days2 : scalar – log10 of trapping coefficient in days^2
+    log10_L_scale : scalar – normalization scale (log10 erg/s)
+    xm_quad : 1-D array – quadrature nodes on [0, 1]
+
+    Returns
+    -------
+    log10_L_obs : 1-D array – log10 of observed luminosity (erg/s)
+    """
+    td = jnp.power(10.0, log10_td_days)
+    A_trap = jnp.power(10.0, log10_A_trap_days2)
+
+    # Normalized engine luminosity
+    L_engine_n = jnp.power(10.0, log10_L_engine - log10_L_scale)
+
+    def _integrate_one(t_e):
+        int_t = t_e * xm_quad                          # (N_quad,)
+        L_at_t = jnp.interp(int_t, t_days_grid, L_engine_n)
+        exponent = jnp.clip((int_t**2 - t_e**2) / td**2, -80.0, 0.0)
+        integrand = L_at_t * int_t * jnp.exp(exponent)
+        integral = jnp.trapezoid(integrand, int_t)
+        trap_factor = -jnp.expm1(-A_trap / jnp.maximum(t_e**2, 1e-30))
+        return jnp.maximum(2.0 / td**2 * integral * trap_factor, 0.0)
+
+    L_obs_n = jax.vmap(_integrate_one)(t_days_grid)
+    return jnp.log10(jnp.maximum(L_obs_n, 1e-30)) + log10_L_scale
+
+
+def _csm_diffusion_integral(log10_L_input, t_days_grid,
+                             t0_csm_days, log10_L_scale,
+                             xm_quad=_CSM_QUAD_NODES):
+    """CSM diffusion kernel via trapezoidal integral (Redback-matched).
+
+    For each evaluation time t_e, computes:
+        L_obs(t_e) = (1/t0) * integral_0^{t_e} L(t)*exp((t-t_e)/t0) dt
+
+    Parameters
+    ----------
+    log10_L_input : 1-D array – log10 of input luminosity (erg/s)
+    t_days_grid : 1-D array – time grid in days
+    t0_csm_days : scalar – CSM diffusion timescale in days
+    log10_L_scale : scalar – normalization scale (log10 erg/s)
+    xm_quad : 1-D array – quadrature nodes on [0, 1]
+
+    Returns
+    -------
+    log10_L_obs : 1-D array – log10 of observed luminosity (erg/s)
+    """
+    L_n = jnp.power(10.0, log10_L_input - log10_L_scale)
+
+    def _csm_integrate_one(t_e):
+        int_t = t_e * xm_quad
+        L_at_t = jnp.interp(int_t, t_days_grid, L_n)
+        # Combined exponent (t - t_e)/t0 is always <= 0
+        integrand = L_at_t * jnp.exp((int_t - t_e) / t0_csm_days)
+        return jnp.maximum(jnp.trapezoid(integrand, int_t) / t0_csm_days, 0.0)
+
+    L_diff_n = jax.vmap(_csm_integrate_one)(t_days_grid)
+    return jnp.log10(jnp.maximum(L_diff_n, 1e-30)) + log10_L_scale
 
 
 # ---------------------------------------------------------------------------

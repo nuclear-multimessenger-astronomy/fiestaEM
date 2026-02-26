@@ -11,7 +11,7 @@ from fiesta.constants import days_to_seconds
 from fiesta.inference.analytical_models.base import (
     AnalyticalModel,
     _compute_diffusion_constants,
-    _arnett_diffusion_ode,
+    _arnett_diffusion_integral,
     _LOG10_MSUN, _LOG10_KM_CGS, _LOG10_DAYS2SEC,
 )
 
@@ -49,10 +49,10 @@ class TDEAnalyticalModel(AnalyticalModel):
         log10_kappa = x["log10_kappa"]
         log10_kappa_gamma = x["log10_kappa_gamma"]
 
-        # Dense internal time grid in days
+        # Dense internal time grid in days (log-spaced for better early-time resolution)
         t_start = jnp.maximum(t_days[0] * 0.1, 0.01)
         t_end = t_days[-1] * 1.1
-        t_int = jnp.linspace(t_start, t_end, self._n_internal)
+        t_int = jnp.geomspace(t_start, t_end, self._n_internal)
 
         # Engine: L(t) = l0 / (max(t, t0_turn) * 86400)^{5/3}
         t_eff = jnp.maximum(t_int, t_0_turn)
@@ -66,8 +66,8 @@ class TDEAnalyticalModel(AnalyticalModel):
         # Scale for normalization
         log10_L_scale = jnp.maximum(jnp.max(log10_L_engine), 30.0)
 
-        # Solve diffusion ODE
-        log10_L_int = _arnett_diffusion_ode(
+        # Solve diffusion via trapezoidal integral (Redback-matched)
+        log10_L_int = _arnett_diffusion_integral(
             log10_L_engine, t_int, log10_td, log10_A_trap, log10_L_scale)
 
         # Interpolate to output times

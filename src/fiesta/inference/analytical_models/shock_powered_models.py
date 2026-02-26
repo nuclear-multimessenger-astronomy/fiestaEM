@@ -5,9 +5,10 @@ Reference:
     NMMA: https://github.com/nuclear-multimessenger-astronomy/nmma/blob/main/nmma/em/lightcurve_generation.py
 """
 
+import jax
 import jax.numpy as jnp
 
-from fiesta.constants import c_cgs, days_to_seconds
+from fiesta.constants import c_cgs, msun_cgs, Rsun_cgs, days_to_seconds
 
 from fiesta.inference.analytical_models.base import (
     AnalyticalModel,
@@ -39,45 +40,72 @@ class ShockCoolingModel(AnalyticalModel):
         super().__init__(filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):
-        # All heavy computation in log10 space
-        log10_Me = x["log10_Menv"] + _LOG10_MSUN
-        log10_Re = x["log10_Renv"] + _LOG10_RSUN
-        log10_Ee = x["log10_Ee"]
-        log10_kappa = jnp.log10(self._kappa)
+        """Full Piro (2021) shock cooling with n=10, delta=1.1.
 
-        # Velocity: ve = sqrt(2 Ee / Me)
-        log10_ve = 0.5 * (jnp.log10(2.0) + log10_Ee - log10_Me)
+        Matches NMMA ``sc_bol_lc`` exactly. All overflow-prone quantities
+        are computed in log10 space to stay within float32 range.
+        """
+        n = 10.0
+        delta = 1.1
+        kappa = self._kappa  # 0.2 cm^2/g
+        log10_kappa = jnp.log10(kappa)
 
-        # Diffusion time: td = sqrt(kappa * Me / (ve * c))
-        log10_td = 0.5 * (log10_kappa + log10_Me - log10_ve - _LOG10_CCGS)
+        # Physical parameters in log10-CGS
+        log10_Me = x["log10_Menv"] + _LOG10_MSUN     # log10(grams)
+        log10_Re = x["log10_Renv"] + _LOG10_RSUN     # log10(cm)
+        log10_Ee = x["log10_Ee"]                      # log10(erg)
 
-        # Convert td and ve to linear (they're moderate: ~1e5 s and ~1e9 cm/s)
-        td = jnp.power(10.0, log10_td)
-        ve = jnp.power(10.0, log10_ve)
+        # Piro (2021) constants
+        K = (n - 3.0) * (3.0 - delta) / (4.0 * jnp.pi * (n - delta))
 
+        # vt = sqrt(((n-5)(5-delta)/((n-3)(3-delta))) * 2*Ee/Me)
+        vel_coeff = (n - 5.0) * (5.0 - delta) / ((n - 3.0) * (3.0 - delta))
+        log10_vt = 0.5 * (jnp.log10(vel_coeff * 2.0) + log10_Ee - log10_Me)
+        vt = jnp.power(10.0, log10_vt)  # moderate: ~1e9
+
+        # td = sqrt(3*kappa*K*Me / ((n-1)*vt*c))
+        log10_td = 0.5 * (jnp.log10(3.0 * kappa * K) + log10_Me
+                          - jnp.log10(n - 1.0) - log10_vt - _LOG10_CCGS)
+        td = jnp.power(10.0, log10_td)  # moderate: ~1e4-1e5
+
+        # Time in seconds
         t = t_days * days_to_seconds
         t = jnp.maximum(t, 1.0)
-
-        # Exponential decay factor: exp(-t*(t + 2*td) / (2*td^2))
-        exp_arg = -t * (t + 2.0 * td) / (2.0 * td**2)
-        log10_exp = exp_arg * _LOG10E
-
-        # L_early = Ee * Re / (ve * td^2) * exp_factor
-        # log10(L_early) = log10_Ee + log10_Re - log10_ve - 2*log10_td + log10_exp
-        log10_L_early = log10_Ee + log10_Re - log10_ve - 2.0 * log10_td + log10_exp
-
-        # L_late = Ee * Re / (ve * t^2) * exp_factor
         log10_t = jnp.log10(t)
-        log10_L_late = log10_Ee + log10_Re - log10_ve - 2.0 * log10_t + log10_exp
+
+        # prefactor = pi*(n-1)/(3*(n-5)) * c * Re * vt^2 / kappa
+        # This can exceed float32 max (~3.4e38), so compute in log10
+        log10_prefactor = (jnp.log10(jnp.pi * (n - 1.0) / (3.0 * (n - 5.0)))
+                           + _LOG10_CCGS + log10_Re + 2.0 * log10_vt
+                           - log10_kappa)
+
+        # L_early = prefactor * (td/t)^(4/(n-2))
+        log10_L_early = log10_prefactor + 4.0 / (n - 2.0) * (log10_td - log10_t)
+
+        # L_late = prefactor * exp(-0.5*(t^2/td^2 - 1))
+        exp_arg = -0.5 * (t**2 / td**2 - 1.0)
+        log10_L_late = log10_prefactor + exp_arg * _LOG10E
 
         log10_L = jnp.where(t < td, log10_L_early, log10_L_late)
         log10_L = jnp.maximum(log10_L, 0.0)  # floor at 1 erg/s
 
-        # Photospheric radius: R = Re + ve * min(t, td)
-        # Both Re and ve*t are moderate, safe in linear
-        Re = jnp.power(10.0, log10_Re)
-        R_phot = Re + ve * jnp.minimum(t, td)
-        log10_R = jnp.log10(jnp.maximum(R_phot, 1.0))
+        # Photospheric radius
+        # tph = sqrt(3*kappa*K*Me / (2*(n-1)*vt^2))
+        log10_tph = 0.5 * (jnp.log10(3.0 * kappa * K) + log10_Me
+                           - jnp.log10(2.0 * (n - 1.0)) - 2.0 * log10_vt)
+        tph = jnp.power(10.0, log10_tph)  # moderate: ~1e4
+
+        # R_early = (tph/t)^(2/(n-1)) * vt * t
+        log10_R_early = (2.0 / (n - 1.0) * (log10_tph - log10_t)
+                         + log10_vt + log10_t)
+
+        # R_late = (1 + (delta-1)/(n-1)*((t/tph)^2-1))^(-1/(delta-1)) * vt*t
+        inner = 1.0 + (delta - 1.0) / (n - 1.0) * ((t / tph)**2 - 1.0)
+        inner = jnp.maximum(inner, 1e-10)
+        log10_R_late = (-1.0 / (delta - 1.0) * jnp.log10(inner)
+                        + log10_vt + log10_t)
+
+        log10_R = jnp.where(t < tph, log10_R_early, log10_R_late)
 
         return log10_L, log10_R
 

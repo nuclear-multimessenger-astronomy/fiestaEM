@@ -8,7 +8,7 @@ Reference:
 import jax
 import jax.numpy as jnp
 
-from fiesta.constants import c_cgs, days_to_seconds
+from fiesta.constants import c_cgs, msun_cgs, days_to_seconds
 
 from fiesta.inference.analytical_models.base import (
     AnalyticalModel,
@@ -18,7 +18,7 @@ from fiesta.inference.analytical_models.base import (
 
 
 class MetzgerModel(AnalyticalModel):
-    """Efficient single-zone kilonova model (Metzger 2017).
+    """300-shell kilonova model matching NMMA ``eff_metzger_lc``.
 
     Reference:
         Redback: https://github.com/nikhil-sarin/redback/blob/master/redback/transient_models/kilonova_models.py
@@ -30,12 +30,14 @@ class MetzgerModel(AnalyticalModel):
         beta          – velocity power-law index
         log10_kappa_r – log10 opacity in cm^2/g
 
-    The ODE is solved in normalized units to avoid float32 overflow.
-    Energy scale: Q_scale = eps_0 * mej (heating rate at 1 day).
+    The ODE is solved per-shell in normalized units to avoid float32 overflow.
+    Uses 300 mass shells with velocity profile, neutron fractions, and
+    shell-dependent opacities matching the NMMA implementation.
     """
 
     parameter_names = ["log10_mej", "log10_vej", "beta", "log10_kappa_r"]
 
+    _n_shells = 300
     _n_internal = 500
 
     def __init__(self, filters, times=None):
@@ -44,56 +46,95 @@ class MetzgerModel(AnalyticalModel):
         super().__init__(filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):
-        log10_mej = x["log10_mej"] + _LOG10_MSUN
-        log10_vej = x["log10_vej"] + _LOG10_CCGS
-        kappa = jnp.power(10.0, x["log10_kappa_r"])
+        M0 = jnp.power(10.0, x["log10_mej"]) * msun_cgs    # total ejecta mass (g)
+        v0 = jnp.power(10.0, x["log10_vej"]) * c_cgs        # minimum escape velocity (cm/s)
+        beta_val = x["beta"]
+        kappa_r = jnp.power(10.0, x["log10_kappa_r"])
 
-        vej = jnp.power(10.0, log10_vej)
+        n_shells = self._n_shells  # 300
 
-        t_out = t_days * days_to_seconds
-        t_start = t_out[0] * 0.1
-        t_end = t_out[-1] * 1.1
-        t_int = jnp.linspace(t_start, t_end, self._n_internal)
-        dt = t_int[1] - t_int[0]
+        # Use the output time grid directly (matching NMMA's approach)
+        t_sec = t_days * days_to_seconds
+        n_t = t_sec.shape[0]
 
-        # Energy normalization: Q_scale = eps_0 * mej
-        # log10(Q_scale) = log10(2e10) + log10_mej
-        log10_Q_scale = jnp.log10(2.0e10) + log10_mej
-        alpha_heat = 1.3
+        # Variable time steps (matches NMMA's geomspace dt)
+        dt_arr = jnp.diff(t_sec)
+        # Pad with the first dt so arrays match (first step is approximate)
+        dt_padded = jnp.concatenate([dt_arr[:1], dt_arr])
 
-        # Diffusion timescale: td = sqrt(3 * kappa * mej / (4 pi * vej * c))
-        # Compute in log: log10_td = 0.5 * (log10(3*kappa) + log10_mej - log10(4pi) - log10_vej - log10_c)
-        log10_td = 0.5 * (jnp.log10(3.0 * kappa) + log10_mej
-                          - _LOG10_4PI - log10_vej - _LOG10_CCGS)
-        td = jnp.power(10.0, log10_td)
+        # Thermalization efficiency pre-computed at output times (matching NMMA)
+        def _eth(t_day):
+            timescale_factor = 2.0 * 0.17 * jnp.power(jnp.maximum(t_day, 1e-6), 0.74)
+            return 0.36 * (jnp.exp(-0.56 * t_day)
+                           + jnp.log(1.0 + timescale_factor) / timescale_factor)
 
-        def _eps_th(t_sec):
-            t_d = t_sec / days_to_seconds
-            return 0.36 * jnp.exp(-0.56 * t_d) + 0.44 / (1.0 + (t_d / 0.28)**0.62)
+        eth_arr = _eth(t_days)  # (n_t,)
 
-        # ODE in normalized units: E_n = E / Q_scale, L_n = L / Q_scale
-        # dE_n/dt = t_d^{-alpha} * eps_th  -  E_n/t * min(t/td, 1)  -  E_n/(3t)
-        def _scan_step(carry, t_i):
-            E_n = carry
-            t_d = t_i / days_to_seconds
-            Q_n = jnp.power(jnp.maximum(t_d, 1e-4), -alpha_heat) * _eps_th(t_i)
+        # Mass shells: geometric spacing (solar masses) matching NMMA
+        m = jnp.geomspace(1e-8, jnp.power(10.0, x["log10_mej"]), n_shells)  # Msun
+        dm = jnp.diff(m)  # (n_shells-1,) in Msun
 
-            L_n = E_n / jnp.maximum(t_i, 1.0) * jnp.minimum(t_i / td, 1.0)
+        # Velocity profile: v = v0 * (m*msun/M0)^(-1/beta), capped at c
+        vm = v0 * jnp.power(m * msun_cgs / M0, -1.0 / beta_val)
+        vm = jnp.minimum(vm, c_cgs)
 
-            dEndt = Q_n - L_n - E_n / (3.0 * jnp.maximum(t_i, 1.0))
-            E_new = jnp.maximum(E_n + dEndt * dt, 0.0)
-            return E_new, L_n
+        # Neutron fractions (NMMA: Mn=1e-8, Ye=0.1, Xn0max=0.8)
+        Mn = 1e-8
+        Xn0 = 0.8 * 2.0 / jnp.pi * jnp.arctan(Mn / m)  # (n_shells,)
+        Xr = 1.0 - Xn0  # r-process fraction
 
-        t_d_start = t_start / days_to_seconds
-        E0_n = jnp.power(jnp.maximum(t_d_start, 1e-4), -alpha_heat) * t_start * 0.5
-        _, L_n_int = jax.lax.scan(_scan_step, E0_n, t_int)
+        # Pre-compute time-dependent arrays: Xn(t), edot(t), kappa(t)
+        # Shape: (n_t, n_shells) or (n_t, n_shells-1)
+        Xn_t = Xn0[:-1][None, :] * jnp.exp(-t_sec[:, None] / 900.0)  # (n_t, ns-1)
+        edotn = 3.2e14 * Xn_t  # (n_t, ns-1)
+        edotr = (2.1e10 * eth_arr[:, None]
+                 * jnp.power(jnp.maximum(t_days, 1e-6), -1.3)[:, None])  # (n_t, ns-1)
+        edot_all = edotn + edotr  # (n_t, ns-1)
 
-        L_n_out = jnp.interp(t_out, t_int, L_n_int)
-        # log10(L) = log10(L_n) + log10(Q_scale)
-        log10_L = jnp.log10(jnp.maximum(L_n_out, 1e-30)) + log10_Q_scale
+        kappan = 0.4 * (1.0 - Xn_t - Xr[:-1][None, :])
+        kappa_all = kappan + kappa_r * Xr[:-1][None, :]  # (n_t, ns-1)
+
+        # The ODE uses per-gram quantities (ene in erg/g), which are moderate
+        # (~1e10 to 1e18) and safe for float32.
+
+        def _scan_step(ene, inputs):
+            # ene: (n_shells-1,) energy per gram in erg/g
+            t_i, dt_i, edot_i, kappa_i = inputs
+            t_safe = jnp.maximum(t_i, 1.0)
+
+            # Diffusion timescale per shell (NMMA formula)
+            tdiff = 0.08 * kappa_i * m[:-1] * msun_cgs * 3.0 / (
+                vm[:-1] * c_cgs * t_safe * beta_val)
+
+            # Luminosity per unit mass (erg/s/g)
+            lum_j = ene / (tdiff + t_i * vm[:-1] / c_cgs)
+
+            # Total luminosity: sum(lum_j * dm) in Msun*erg/s/g (moderate)
+            L_dm_total = jnp.sum(lum_j * dm)
+
+            # Optical depth for photosphere
+            tau_shells = m[:-1] * msun_cgs * kappa_i / (
+                4.0 * jnp.pi * (t_safe * vm[:-1])**2)
+            pig = jnp.argmin(jnp.abs(tau_shells - 1.0))
+            R_ph = vm[pig] * t_i
+
+            # Energy ODE (NMMA: ene += dt*(edot - ene/t - lum_j))
+            dene = dt_i * (edot_i - ene / t_safe - lum_j)
+            ene_new = jnp.maximum(ene + dene, 0.0)
+
+            return ene_new, (L_dm_total, R_ph)
+
+        # Initial energy per shell: zero (NMMA starts from zero)
+        E0 = jnp.zeros(n_shells - 1)
+        _, (L_dm_arr, R_arr) = jax.lax.scan(
+            _scan_step, E0, (t_sec, dt_padded, edot_all, kappa_all))
+
+        # Convert total luminosity to log10:
+        # L_total = L_dm_total * msun_cgs
+        log10_L = jnp.log10(jnp.maximum(jnp.abs(L_dm_arr), 1e-30)) + _LOG10_MSUN
         log10_L = jnp.maximum(log10_L, 0.0)
 
-        log10_R = log10_vej + jnp.log10(t_out)
+        log10_R = jnp.log10(jnp.maximum(R_arr, 1.0))
 
         return log10_L, log10_R
 
