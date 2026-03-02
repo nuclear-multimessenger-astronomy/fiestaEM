@@ -76,7 +76,7 @@ trainer.plot_example_lc(lc_model)
 for metric_name in ["L2", "Linf"]:
     benchmarker = Benchmarker(
                     model = lc_model,
-                    data_file = "../_training_data/Bu2026_raw_data.h5",
+                    data_file = "../_training_data/Bu2025_raw_data.h5",
                     metric_name = metric_name
                     )
     benchmarker.benchmark()
