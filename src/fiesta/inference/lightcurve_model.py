@@ -501,7 +501,7 @@ class CombinedSurrogate(SurrogateModel):
     def predict(self, x: dict[str, Array]):
         def predict_per_model(model):
             times, mags = model.predict(x)
-            mag_interp = jax.tree.map(lambda mag: jnp.interp(self.times, times, mag) , mags)
+            mag_interp = jax.tree.map(lambda mag: jnp.interp(self.times, times, mag, right=jnp.inf) , mags)
             return mag_interp
         
         mag_dicts = jax.tree.map(predict_per_model, self.models)
