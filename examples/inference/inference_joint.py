@@ -28,7 +28,7 @@ FILTERS = list(data.keys())
 model1 = AfterglowFlux(name="afgpy_gaussian_CVAE",
                        filters = FILTERS)
 
-model2 = BullaFlux(name="Bu2025_MLP",
+model2 = BullaFlux(name="Bu2026_MLP",
                               filters = FILTERS)
 
 model = CombinedSurrogate(models=[model1, model2],
@@ -53,10 +53,10 @@ GRB_prior = [
 ]
 
 KN_prior = [
-            Uniform(xmin=-3.0, xmax=-1.3, naming=["log10_mej_dyn"]),
-            Uniform(xmin=0.12, xmax=0.28, naming=["v_ej_dyn"]),
+            Uniform(xmin=-4.0, xmax=-1.3, naming=["log10_mej_dyn"]),
+            Uniform(xmin=0.12, xmax=0.35, naming=["v_ej_dyn"]),
             Uniform(xmin=0.15, xmax=0.35, naming=["Ye_dyn"]),
-            Uniform(xmin=-2., xmax=-0.886, naming=["log10_mej_wind"]),
+            Uniform(xmin=-4., xmax=-0.56, naming=["log10_mej_wind"]),
             Uniform(xmin=0.05, xmax=0.15, naming=["v_ej_wind"]),
             Uniform(xmin=0.2, xmax=0.4, naming=["Ye_wind"])
 ]
@@ -99,6 +99,20 @@ fiesta = Fiesta(likelihood,
                 n_chains=225,
                 chain_batch_size=75, # if chain_batch_size is too large, this can cause memory issues
                 outdir = outdir)
+
+
+fiesta = Fiesta(likelihood,
+                prior,
+                systematics_file="./systematics_file_joint.yaml",
+                n_chains=500,
+                n_loop_training=7,
+                n_loop_production=3,
+                num_layers = 4,
+                hidden_size=[64,64],
+                n_epochs = 20,
+                n_local_steps = 50,
+                n_global_steps = 200,
+                outdir=outdir)
 
 if __name__ == "__main__":
     fiesta.sample(jax.random.PRNGKey(42))
