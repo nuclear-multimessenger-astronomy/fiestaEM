@@ -13,6 +13,6 @@
 #SBATCH --time=24:00:00
 
 eval "$(conda shell.bash hook)"  # Initialize Conda in the script
-conda activate fiesta
+conda activate nmma_x_fiesta
 
 python train_Bu2026.py

@@ -483,7 +483,7 @@ class CombinedSurrogate(SurrogateModel):
         Args:
             models (list[SurrogateModel]): A list of the surrogates that should be combined.
             sample_times (Array): (jax)-numpy array for the source frame time at which the joint emission should be computed.
-                                  Can reach beyond the time range of the individual surrogates, in which case their magnitudes will be extrapolated as their first or last value.
+                                  Can reach beyond the time range of the individual surrogates, in which case the light curve will be extrapolated as the first value or jnp.inf.
         """
         self.models = models
         self.times = sample_times
@@ -501,7 +501,7 @@ class CombinedSurrogate(SurrogateModel):
     def predict(self, x: dict[str, Array]):
         def predict_per_model(model):
             times, mags = model.predict(x)
-            mag_interp = jax.tree.map(lambda mag: jnp.interp(self.times, times, mag) , mags)
+            mag_interp = jax.tree.map(lambda mag: jnp.interp(self.times, times, mag, right=jnp.inf) , mags)
             return mag_interp
         
         mag_dicts = jax.tree.map(predict_per_model, self.models)

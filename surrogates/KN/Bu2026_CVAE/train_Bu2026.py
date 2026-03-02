@@ -64,7 +64,7 @@ trainer.save()
 
 print("Producing example lightcurve . . .")
 
-FILTERS = ["ps1::y", "besselli", "bessellv", "bessellux"]
+FILTERS = ["2massj", "besselli", "bessellv", "bessellux"]
 lc_model = FluxModel(name,
                      directory=outdir, 
                      filters=FILTERS)
