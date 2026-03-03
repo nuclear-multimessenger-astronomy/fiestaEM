@@ -70,12 +70,19 @@ def download_surrogate(name):
         return download_ok, None
 
     model_path = f"{transient}/{name}/model/{name}.pkl"
-    hf_hub_download(
-        repo_id=HF_REPO_ID,
-        revision=HF_REVISION,
-        filename=model_path,
-        local_dir=working_dir,
-    )
+    try:
+        hf_hub_download(
+            repo_id=HF_REPO_ID,
+            revision=HF_REVISION,
+            filename=model_path,
+            local_dir=working_dir,
+        )
+    except EntryNotFoundError:
+        logger.warning(f"Model file not found on Hugging Face: {model_path}")
+        return False, None
+    except HfHubHTTPError:
+        logger.exception(f"Hugging Face model download failed for transient={transient}, model={name}.")
+        raise
 
     surrogate_dir = working_dir / transient / name
     logger.info(f"Download finished.")
