@@ -607,7 +607,7 @@ Arnett-style diffusion.
 **SALT3Model**
 
 Type Ia supernova spectral-template model using the SALT3 SED framework.
-Requires the ``jax-supernovae`` package (``pip install jax-supernovae``).
+Requires the ``jax-bandflux`` package (``pip install jax-bandflux``).
 
 .. list-table::
    :header-rows: 1
