@@ -38,12 +38,21 @@ on photometric lightcurve data from such events.
 
 .. grid:: 2
 
+   .. grid-item-card:: Analytical Models
+      :link: analytical_models
+      :link-type: doc
+
+      Physics-based, JIT-compilable light-curve models for kilonovae,
+      supernovae, afterglows, TDEs, and more.
+
    .. grid-item-card:: Systematic Errors
       :link: systematics
       :link-type: doc
 
       Configure fixed, free, or time-dependent systematic uncertainties in the
       likelihood.
+
+.. grid:: 2
 
    .. grid-item-card:: API Reference
       :link: api/fiesta
@@ -86,6 +95,7 @@ For GRB afterglow support:
 
    quickstart
    surrogates
+   analytical_models
    systematics
    filters
    training_data
