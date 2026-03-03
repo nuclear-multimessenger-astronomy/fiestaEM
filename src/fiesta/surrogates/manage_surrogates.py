@@ -4,8 +4,11 @@ from pathlib import Path
 from fiesta.logging import logger
 
 from huggingface_hub import hf_hub_download
+from huggingface_hub.errors import EntryNotFoundError
+from huggingface_hub.utils import HfHubHTTPError
 
 HF_REPO_ID = "nuclear-multimessenger-astronomy/fiesta-surrogates"
+HF_REVISION = "main"
 
 ###########################
 ### BUILT-IN SURROGATES ###
@@ -38,7 +41,7 @@ def print_built_in_surrogates():
 def download_surrogate(name):
 
     if name.endswith("_lc"):
-        raise ValueError(f"Light curve models are not supported for download at the moment. Please download manually from Hugging Face.")
+        raise ValueError("Light curve models are not supported for download at the moment. Please download manually from Hugging Face.")
 
     working_dir = Path(__file__).resolve().parent
 
@@ -50,14 +53,18 @@ def download_surrogate(name):
             metadata_path = f"{transient}/{name}/model/{name}_metadata.pkl"
             hf_hub_download(
                 repo_id=HF_REPO_ID,
+                revision=HF_REVISION,
                 filename=metadata_path,
                 local_dir=working_dir,
             )
             download_ok = True
             logger.info(f"Found {metadata_path}. Downloading model ...")
             break
-        except Exception:
+        except EntryNotFoundError:
             continue
+        except HfHubHTTPError:
+            logger.exception(f"Hugging Face lookup failed for transient={transient}, model={name}.")
+            raise
 
     if not download_ok:
         return download_ok, None
@@ -65,6 +72,7 @@ def download_surrogate(name):
     model_path = f"{transient}/{name}/model/{name}.pkl"
     hf_hub_download(
         repo_id=HF_REPO_ID,
+        revision=HF_REVISION,
         filename=model_path,
         local_dir=working_dir,
     )
