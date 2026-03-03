@@ -523,7 +523,7 @@ class RunPyblastafterglow:
 
 class JetsimpyData(AfterglowData):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, n_pool=None, **kwargs):
         self.chunk_size = 100
         super().__init__(*args, **kwargs)
 
