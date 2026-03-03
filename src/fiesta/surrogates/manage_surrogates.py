@@ -3,7 +3,9 @@ from pathlib import Path
 
 from fiesta.logging import logger
 
-import requests
+from huggingface_hub import hf_hub_download
+
+HF_REPO_ID = "nuclear-multimessenger-astronomy/fiesta-surrogates"
 
 ###########################
 ### BUILT-IN SURROGATES ###
@@ -36,40 +38,37 @@ def print_built_in_surrogates():
 def download_surrogate(name):
 
     if name.endswith("_lc"):
-        raise ValueError(f"Light curve models are not supported for download at the moment. Please download manually from github.")
+        raise ValueError(f"Light curve models are not supported for download at the moment. Please download manually from Hugging Face.")
 
     working_dir = Path(__file__).resolve().parent
-    base_url = "https://raw.githubusercontent.com/nuclear-multimessenger-astronomy/fiestaEM/main/surrogates/"
 
-    logger.info(f"Attempting to download {name} from {base_url}.")
+    logger.info(f"Attempting to download {name} from Hugging Face ({HF_REPO_ID}).")
 
     download_ok = False
     for transient in ["KN", "GRB"]:
-        url_metadata = f"{base_url}{transient}/{name}/model/{name}_metadata.pkl"
-        metadata = requests.get(url_metadata, timeout=10)
-    
-        if metadata.status_code == 200:
+        try:
+            metadata_path = f"{transient}/{name}/model/{name}_metadata.pkl"
+            hf_hub_download(
+                repo_id=HF_REPO_ID,
+                filename=metadata_path,
+                local_dir=working_dir,
+            )
             download_ok = True
-            logger.info(f"Found metadata in {url_metadata}. Downloading ...")
+            logger.info(f"Found {metadata_path}. Downloading model ...")
             break
-    
+        except Exception:
+            continue
+
     if not download_ok:
         return download_ok, None
-    
-    surrogate_dir = working_dir / transient / name / "model"
-    surrogate_dir.mkdir(parents=True, exist_ok=True)
-    
-    # save metadata
-    with open(surrogate_dir / f"{name}_metadata.pkl", "wb") as f:
-        f.write(metadata.content)
 
-    url_model = base_url + f"{transient}/{name}/model/{name}.pkl"
-    model_pkl = requests.get(url_model, stream=True)
-    model_pkl.raise_for_status()
-    
-    # save model
-    with open(surrogate_dir / f"{name}.pkl", "wb") as f:
-        f.write(model_pkl.content)
-    
+    model_path = f"{transient}/{name}/model/{name}.pkl"
+    hf_hub_download(
+        repo_id=HF_REPO_ID,
+        filename=model_path,
+        local_dir=working_dir,
+    )
+
+    surrogate_dir = working_dir / transient / name
     logger.info(f"Download finished.")
     return download_ok, surrogate_dir

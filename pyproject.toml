@@ -36,7 +36,7 @@ dependencies = [
     "flowMC",
     "h5py",
     "corner",
-    "requests"
+    "huggingface_hub"
 ]
 
 [project.optional-dependencies]
