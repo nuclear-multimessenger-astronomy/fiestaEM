@@ -590,11 +590,11 @@ class RunJetsimpy:
         Returns flux density in mJy as a 2D array (n_nu, n_times).
         """
         try:
-            import jetsimpy_rs as jetsimpy
+            import blastwave as jetsimpy
         except ImportError as err:
             raise ImportError(
-                "jetsimpy_rs is not installed. Install it from "
-                "https://github.com/nuclear-multimessenger-astronomy/jetsimpy-rs"
+                "blastwave is not installed. Install it from "
+                "https://github.com/nuclear-multimessenger-astronomy/blastwave"
             ) from err
 
         theta_c = params_dict["thetaCore"]
