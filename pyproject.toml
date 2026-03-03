@@ -20,8 +20,8 @@ keywords = ["sampling", "inference", "astrophysics", "kilonovae", "gamma-ray bur
 requires-python = ">=3.10"
 dependencies = [
     "dill",
-    "jax",
-    "jaxlib",
+    "jax>=0.4.14",
+    "jaxlib>=0.4.14",
     "flax",
     "numpy",
     "pandas",
@@ -60,7 +60,7 @@ packages = { find = { where = ["src"] } }
 "fiesta.surrogates.GRB.afgpy_gaussian_CVAE" = ["**.pkl"]
 "fiesta.surrogates.GRB.pbag_gaussian_CVAE" = ["**.pkl"]
 "fiesta.surrogates.KN.Bu2026_MLP" = ["**.pkl"]
-
+"fiesta.inference.tables" = ["csm_table.txt"]
 
 [project.urls]
 Homepage = "https://github.com/nuclear-multimessenger-astronomy/fiestaEM"
