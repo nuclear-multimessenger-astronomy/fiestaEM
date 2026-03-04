@@ -1,9 +1,10 @@
 import os
 from pathlib import Path
+from shutil import copy2, rmtree
 
 from fiesta.logging import logger
 
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, HfApi
 from huggingface_hub.errors import EntryNotFoundError
 from huggingface_hub.utils import HfHubHTTPError
 
@@ -20,6 +21,8 @@ def built_in_surrogates():
 
     for transient_dir in sorted(surrogate_dir.iterdir()):
         if not transient_dir.is_dir():
+            continue
+        if ".cache" in transient_dir.parts:
             continue
         transient_type = transient_dir.name
 
@@ -51,12 +54,16 @@ def download_surrogate(name):
     for transient in ["KN", "GRB"]:
         try:
             metadata_path = f"{transient}/{name}/model/{name}_metadata.pkl"
-            hf_hub_download(
-                repo_id=HF_REPO_ID,
-                revision=HF_REVISION,
-                filename=metadata_path,
-                local_dir=working_dir,
-            )
+            downloaded_file = hf_hub_download(
+                    repo_id=HF_REPO_ID,
+                    revision=HF_REVISION,
+                    filename=metadata_path,
+                )
+
+            Path(working_dir / f"{transient}/{name}/model").mkdir(parents=True, exist_ok=True)
+            if (working_dir / metadata_path).exists():
+                logger.warning(f"Surrogate metadata for {name} already present in {working_dir / metadata_path}. Will be overwritten through download.")
+            copy2(downloaded_file, working_dir / metadata_path)
             download_ok = True
             logger.info(f"Found {metadata_path}. Downloading model ...")
             break
@@ -86,4 +93,44 @@ def download_surrogate(name):
 
     surrogate_dir = working_dir / transient / name
     logger.info(f"Download finished.")
+    
+    rmtree(working_dir / ".cache")
+
+
     return download_ok, surrogate_dir
+
+def download_recommended_surrogates():
+
+    download_surrogate("Bu2026_MLP")
+    download_surrogate("afgpy_gaussian_CVAE")
+    download_surrogate("pbag_gaussian_CVAE")
+
+def print_downloadable_surrogates():
+
+    files = HfApi().list_repo_files(
+        repo_id=HF_REPO_ID,
+        revision=HF_REVISION,
+    )
+
+    available = {"KN": set(), "GRB": set()}
+
+    for path in files:
+        # Expected structure:
+        # {transient}/<name>/model/<name>_metadata.pkl
+        parts = path.split("/")
+        if len(parts) == 4 and parts[2] == "model" and parts[3].endswith("_metadata.pkl"):
+            transient = parts[0]
+            name = parts[1]
+            available[transient].add(name)
+
+    if not available:
+        print("No surrogate models found.")
+        return
+
+    logger.info(f"Downloadable surrogates for fiesta are:")
+    for transient, models in available.items():
+        logger.info(f"\t ==================== ")
+        logger.info(f"\t \t-{transient}-")
+        for name in models:
+            logger.info(f"\t {name}")
+        logger.info(f"\t ==================== \n \n")
