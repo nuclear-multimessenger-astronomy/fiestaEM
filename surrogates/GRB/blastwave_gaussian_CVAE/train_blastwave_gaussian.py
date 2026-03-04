@@ -21,9 +21,9 @@ n_training = 20_000
 n_val = 2_000
 image_size = np.array([32, 42])
 
-name = "jetsimpy_gaussian"
-outdir = "/fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/jetsimpy_gaussian_CVAE/model/"
-file = "/fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/_training_data/jetsimpy_gaussian_raw_data.h5"
+name = "blastwave_gaussian"
+outdir = "/fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/blastwave_gaussian_CVAE/model/"
+file = "/fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/_training_data/blastwave_gaussian_raw_data.h5"
 
 config = NeuralnetConfig(output_size=int(np.prod(image_size)),
                          nb_epochs=100_000,
@@ -49,7 +49,7 @@ data_manager_args = dict(file=file,
 trainer = CVAETrainer(name,
                      outdir,
                      data_manager_args=data_manager_args,
-                     plots_dir="/fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/jetsimpy_gaussian_CVAE/benchmarks/",
+                     plots_dir="/fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/blastwave_gaussian_CVAE/benchmarks/",
                      image_size=image_size,
                      conversion="thetaCore_inclination",
                      save_preprocessed_data=False
