@@ -10,6 +10,9 @@ import numpy as np
 from fiesta.train.AfterglowData import BlastwaveData
 
 if __name__ == '__main__':
+    if len(sys.argv) < 4:
+        print(f"Usage: {sys.argv[0]} <chunk_id> <n_samples> <n_pool>", file=sys.stderr)
+        sys.exit(1)
     chunk_id = int(sys.argv[1])
     n_samples = int(sys.argv[2])
     n_pool = int(sys.argv[3])

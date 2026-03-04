@@ -14,7 +14,7 @@ module load gcc/13.2.0 python/3.11.5
 source /fred/oz480/mcoughli/envs/fiesta_test/bin/activate
 
 # Work from /fred so no core dumps or temp files land in $HOME
-cd /fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/_training_data/
+cd /fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/_training_data/ || exit 1
 ulimit -c 0  # disable core dumps
 
 python /home/mcoughli/fiestaEM/surrogates/GRB/_create_data/create_data_blastwave_gaussian_chunk.py ${SLURM_ARRAY_TASK_ID} 1000 16

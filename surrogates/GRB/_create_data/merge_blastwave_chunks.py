@@ -21,6 +21,9 @@ outfile = f"{DATADIR}/blastwave_gaussian_raw_data.h5"
 chunk_files = sorted(glob.glob(chunk_pattern))
 print(f"Found {len(chunk_files)} chunk files")
 
+if not chunk_files:
+    raise RuntimeError(f"No chunk files found matching {chunk_pattern}")
+
 # Read all chunks
 all_X = []
 all_y = []
@@ -30,6 +33,9 @@ for f in chunk_files:
             all_X.append(hf["train"]["X"][:])
             all_y.append(hf["train"]["y"][:])
             print(f"  {f}: {hf['train']['X'].shape[0]} samples")
+
+if not all_X:
+    raise RuntimeError("No valid samples found in any chunk file")
 
 X = np.concatenate(all_X, axis=0)
 y = np.concatenate(all_y, axis=0)
@@ -43,7 +49,7 @@ y = y[idx]
 
 # Split
 n_total = len(X)
-assert n_total >= n_val + n_test, f"Not enough samples ({n_total}) for val ({n_val}) + test ({n_test})"
+assert n_total > n_val + n_test, f"Not enough samples ({n_total}) for val ({n_val}) + test ({n_test}) + training"
 
 X_test, y_test = X[:n_test], y[:n_test]
 X_val, y_val = X[n_test:n_test+n_val], y[n_test:n_test+n_val]

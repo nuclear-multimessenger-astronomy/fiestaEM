@@ -524,6 +524,9 @@ class RunPyblastafterglow:
 class BlastwaveData(AfterglowData):
 
     def __init__(self, *args, n_pool=None, **kwargs):
+        if n_pool is not None:
+            import warnings
+            warnings.warn("n_pool is ignored; blastwave uses rayon for parallelism", stacklevel=2)
         self.chunk_size = 100
         super().__init__(*args, **kwargs)
 
@@ -567,7 +570,8 @@ class BlastwaveData(AfterglowData):
             try:
                 i, out = runner(idx)
                 y[i] = out
-            except Exception:
+            except Exception as e:
+                print(f"[WARNING] Blastwave call failed for sample {idx}: {e}")
                 y[idx] = np.full((len(self.nus), len(self.times)), np.nan)
         return X, y
 
@@ -584,6 +588,8 @@ class RunBlastwave:
         self.parameter_names = list(parameter_names)
         self.fixed_parameters = dict(fixed_parameters)
         self.ncells = ncells
+        if spread_mode not in ("ode", "pde", "none"):
+            raise ValueError(f"Invalid spread_mode '{spread_mode}'. Must be 'ode', 'pde', or 'none'.")
         self.spread_mode = spread_mode
 
         # Pre-compute the meshgrid once
