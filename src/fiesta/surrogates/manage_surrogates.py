@@ -42,7 +42,7 @@ def print_built_in_surrogates():
 
 
 def download_surrogate(name):
-
+    
     if name.endswith("_lc"):
         raise ValueError("Light curve models are not supported for download at the moment. Please download manually from Hugging Face.")
 
