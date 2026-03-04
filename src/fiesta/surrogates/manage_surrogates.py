@@ -3,9 +3,13 @@ from pathlib import Path
 
 from fiesta.logging import logger
 
-from huggingface_hub import hf_hub_download
-from huggingface_hub.errors import EntryNotFoundError
-from huggingface_hub.utils import HfHubHTTPError
+try:
+    from huggingface_hub import hf_hub_download
+    from huggingface_hub.errors import EntryNotFoundError
+    from huggingface_hub.utils import HfHubHTTPError
+    _HAS_HF_HUB = True
+except ImportError:
+    _HAS_HF_HUB = False
 
 HF_REPO_ID = "nuclear-multimessenger-astronomy/fiesta-surrogates"
 HF_REVISION = "main"
@@ -39,6 +43,9 @@ def print_built_in_surrogates():
 
 
 def download_surrogate(name):
+
+    if not _HAS_HF_HUB:
+        raise ImportError("huggingface_hub is required for downloading surrogates. Install it with: pip install huggingface_hub")
 
     if name.endswith("_lc"):
         raise ValueError("Light curve models are not supported for download at the moment. Please download manually from Hugging Face.")
