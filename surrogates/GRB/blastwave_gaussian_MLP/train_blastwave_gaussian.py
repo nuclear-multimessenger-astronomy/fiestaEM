@@ -21,9 +21,9 @@ n_training = 20_000
 n_val = 2_000
 n_pca = 100
 
-name = "jetsimpy_gaussian"
-outdir = "/fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/jetsimpy_gaussian_MLP/model/"
-file = "/fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/_training_data/jetsimpy_gaussian_raw_data.h5"
+name = "blastwave_gaussian"
+outdir = "/fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/blastwave_gaussian_MLP/model/"
+file = "/fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/_training_data/blastwave_gaussian_raw_data.h5"
 
 config = NeuralnetConfig(output_size=n_pca,
                          nb_epochs=200_000,
@@ -46,7 +46,7 @@ data_manager_args = dict(file=file,
 trainer = PCATrainer(name,
                      outdir,
                      data_manager_args=data_manager_args,
-                     plots_dir="/fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/jetsimpy_gaussian_MLP/benchmarks/",
+                     plots_dir="/fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/blastwave_gaussian_MLP/benchmarks/",
                      n_pca=n_pca,
                      conversion="thetaCore_inclination",
                      save_preprocessed_data=False

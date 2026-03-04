@@ -35,6 +35,9 @@ def print_built_in_surrogates():
 
 def download_surrogate(name):
 
+    if not _HAS_HF_HUB:
+        raise ImportError("huggingface_hub is required for downloading surrogates. Install it with: pip install huggingface_hub")
+
     if name.endswith("_lc"):
         raise ValueError(f"Light curve models are not supported for download at the moment. Please download manually from github.")
 
