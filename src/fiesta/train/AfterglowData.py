@@ -597,8 +597,8 @@ class RunBlastwave:
             self._bw = _bw
         except ImportError as err:
             raise ImportError(
-                "jetsimpy_rs is not installed. Install it from "
-                "https://github.com/nuclear-multimessenger-astronomy/jetsimpy-rs"
+                "blastwave is not installed. Install it from "
+                "https://github.com/nuclear-multimessenger-astronomy/blastwave"
             ) from err
 
     def _call_blastwave(self, params_dict):
