@@ -29,6 +29,12 @@ pip install fiestaEM[gpu]
 ```
 or install `jax[cuda12]` as indicated on the [`jax` webpage](https://docs.jax.dev/en/latest/installation.html#installation) manually.
 
+To obtain a set of recommended built-in surrogates (see below), additionally run
+
+```
+python -c "from fiesta.surrogates import download_recommended_surrogates; download_recommended_surrogates()"
+```
+
 ## Loading surrogate models
 
 Surrogates can be loaded in the python shell as 
@@ -40,16 +46,21 @@ model = FluxModel(name=name, filters=filters, directory=directory)
 
 This means you have to explicitely provide the  `directory` argument that points to the `.pkl` files storing the neural network and surrogate metadata.
 However, if a surrogate is stored under `src/fiesta/surrogates/KN` or `src/fiesta/surrogates/GRB`, it can be loaded as a built-in surrogate without providing the directory argument explicitely.
-To see which surrogates are built-in and can simply loaded by providing the name (and filter) you can run
+To see which surrogates are built-in and can simply be loaded without providing `directory` explicitely, you can run
 ```
 python -c "from fiesta.surrogates import print_built_in_surrogates; print_built_in_surrogates()"
 ```
+Initially, there are no built-in surrogates, unless you run the command mentioned above.
 You can also download additional models from the github main branch. For instance,
 ```
 from fiesta.surrogates import download_surrogate
 download_surrogate("pbag_tophat_CVAE")
 ```
-will make the `pbag_tophat_CVAE` surrogate become available as a built-in.
+will download the `pbag_tophat_CVAE` surrogate.
+To print a list of surrogates available for download, run 
+```
+python -c "from fiesta.surrogates import print_downloadable_surrogates; print_downloadable_surrogates()"
+```
 
 ## Documentation
 
