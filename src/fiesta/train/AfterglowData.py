@@ -521,14 +521,14 @@ class RunPyblastafterglow:
         return  idx, np.log10(mJys)
 
 
-class JetsimpyData(AfterglowData):
+class BlastwaveData(AfterglowData):
 
     def __init__(self, *args, n_pool=None, **kwargs):
         self.chunk_size = 100
         super().__init__(*args, **kwargs)
 
     def create_raw_data(self, n: int, training: bool = True):
-        """Create draws X in the parameter space and run the jetsimpy model on it."""
+        """Create draws X in the parameter space and run the blastwave model on it."""
         X_raw = np.empty((n, len(self.parameter_names)))
 
         if training:
@@ -555,26 +555,26 @@ class JetsimpyData(AfterglowData):
         return X, y
 
     def run_afterglow_model(self, X):
-        """Run jetsimpy on the supplied parameters in X.
+        """Run blastwave model on the supplied parameters in X.
 
-        No multiprocessing.Pool needed — the Rust jetsimpy extension uses
-        rayon for automatic parallelism within each FluxDensity call (releases
-        the GIL via py.allow_threads). This avoids the fork+C-extension
-        deadlock that occurred with the old pybind11/C++ version on SLURM.
+        No multiprocessing.Pool needed — the Rust extension uses rayon for
+        automatic parallelism within each FluxDensity call (releases the GIL
+        via py.allow_threads).
         """
         y = np.empty((len(X), len(self.nus), len(self.times)))
-        jsim = RunJetsimpy(self.times, self.nus, X, self.parameter_names, self.fixed_parameters)
-        for idx in tqdm.tqdm(range(len(X)), desc=f"Computing {len(X)} jetsimpy calculations.", leave=False):
+        runner = RunBlastwave(self.times, self.nus, X, self.parameter_names, self.fixed_parameters)
+        for idx in tqdm.tqdm(range(len(X)), desc=f"Computing {len(X)} blastwave calculations.", leave=False):
             try:
-                i, out = jsim(idx)
+                i, out = runner(idx)
                 y[i] = out
             except Exception:
                 y[idx] = np.full((len(self.nus), len(self.times)), np.nan)
         return X, y
 
 
-class RunJetsimpy:
-    def __init__(self, times, nus, X, parameter_names, fixed_parameters=None):
+class RunBlastwave:
+    def __init__(self, times, nus, X, parameter_names, fixed_parameters=None,
+                 ncells=33, spread_mode="ode"):
         if fixed_parameters is None:
             fixed_parameters = {}
         self.times = np.array(times)
@@ -583,19 +583,31 @@ class RunJetsimpy:
         self.X = np.array(X)
         self.parameter_names = list(parameter_names)
         self.fixed_parameters = dict(fixed_parameters)
+        self.ncells = ncells
+        self.spread_mode = spread_mode
 
-    def _call_jetsimpy(self, params_dict):
-        """
-        Call jetsimpy to generate a single flux density output for a given set of parameters.
-        Returns flux density in mJy as a 2D array (n_nu, n_times).
-        """
+        # Pre-compute the meshgrid once
+        tt, nunu = np.meshgrid(self._times_seconds, self.nus)
+        self._tt_flat = tt.flatten()
+        self._nunu_flat = nunu.flatten()
+        self._tmax = float(np.max(self._times_seconds)) * 2
+
         try:
-            import jetsimpy_rs as jetsimpy
+            import blastwave as _bw
+            self._bw = _bw
         except ImportError as err:
             raise ImportError(
                 "jetsimpy_rs is not installed. Install it from "
                 "https://github.com/nuclear-multimessenger-astronomy/jetsimpy-rs"
             ) from err
+
+    def _call_blastwave(self, params_dict):
+        """
+        Call blastwave model to generate a single flux density output.
+        Uses the Jet API directly with tuned settings for data generation.
+        Returns flux density in mJy as a 2D array (n_nu, n_times).
+        """
+        bw = self._bw
 
         theta_c = params_dict["thetaCore"]
         Eiso = 10 ** params_dict["log10_E0"]
@@ -607,25 +619,39 @@ class RunJetsimpy:
         theta_v = params_dict["inclination_EM"]
 
         P = dict(
-            Eiso=Eiso,
-            lf=lf,
-            theta_c=theta_c,
-            n0=n0,
-            A=0,
-            eps_e=eps_e,
-            eps_b=eps_b,
-            p=p,
-            theta_v=theta_v,
-            d=9.99e-6,  # ~10 pc in Mpc
-            z=0.0,
+            Eiso=Eiso, lf=lf, theta_c=theta_c, n0=n0, A=0,
+            eps_e=eps_e, eps_b=eps_b, p=p, theta_v=theta_v,
+            d=9.99e-6, z=0.0,
         )
 
-        tmax = float(np.max(self._times_seconds)) * 2
+        # Solve dynamics with reduced cell count and ODE spreading
+        spread_kwargs = {}
+        if self.spread_mode == "ode":
+            spread_kwargs["spread_mode"] = "ode"
+        elif self.spread_mode == "pde":
+            spread_kwargs["spread"] = True
+        else:
+            spread_kwargs["spread"] = False
 
-        tt, nunu = np.meshgrid(self._times_seconds, self.nus)
-        mJys = jetsimpy.FluxDensity_gaussian(
-            tt.flatten(), nunu.flatten(), P,
-            tmax=tmax,
+        jet = bw.Jet(
+            bw.Gaussian(theta_c, Eiso, lf0=lf),
+            0.0, n0,
+            tmin=10.0,
+            tmax=self._tmax,
+            grid=bw.ForwardJetRes(theta_c, self.ncells),
+            tail=True,
+            cal_level=1,
+            rtol=1e-6,
+            eps_e=eps_e,
+            eps_b=eps_b,
+            p_fwd=p,
+            **spread_kwargs,
+        )
+
+        mJys = jet.FluxDensity(
+            self._tt_flat, self._nunu_flat, P,
+            force_return=True,
+            flux_method="forward",
         )
         mJys = mJys.reshape(len(self.nus), len(self._times_seconds))
         return mJys
@@ -633,6 +659,11 @@ class RunJetsimpy:
     def __call__(self, idx):
         param_dict = dict(zip(self.parameter_names, self.X[idx], strict=True))
         param_dict.update(self.fixed_parameters)
-        mJys = self._call_jetsimpy(param_dict)
+        mJys = self._call_blastwave(param_dict)
         mJys = np.clip(mJys, 1e-300, None)
         return idx, np.log10(mJys)
+
+
+# Backward-compatibility aliases
+JetsimpyData = BlastwaveData
+RunJetsimpy = RunBlastwave
