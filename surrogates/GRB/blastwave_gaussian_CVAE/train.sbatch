@@ -20,4 +20,5 @@ source /fred/oz480/mcoughli/envs/fiesta_test/bin/activate
 ulimit -c 0
 export LD_PRELOAD="$CUDA_HOME/targets/x86_64-linux/lib/libcusparse.so.12"
 
-python train_blastwave_gaussian.py
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python "${SCRIPT_DIR}/train_blastwave_gaussian.py"
