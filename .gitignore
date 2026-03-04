@@ -3,9 +3,13 @@ __pycache__
 *egg-info
 docs/_build/
 docs/api/_autosummary/
-**/benchmarks/*
-/surrogates/*/_training_data/*
+
+**/model/*
+/surrogates/*/_training_data/*.h5
 !surrogates/*/_training_data/README.md
+
+**/benchmarks/*
 *nohup.out
 **/log
 **/err
+**/.cache
