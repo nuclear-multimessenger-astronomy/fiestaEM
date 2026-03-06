@@ -674,10 +674,12 @@ class BlastwaveRSData(AfterglowData):
     """BlastwaveData variant with reverse shock enabled.
 
     Following Japelj+ 2014 (1402.3701), the RS microphysics are tied to
-    the FS values via a magnetization ratio RB:
+    the FS values via a magnetization ratio RB::
+
         eps_e_rs = eps_e_f
         eps_b_rs = RB * eps_b_f
         p_rs     = p_f
+
     Extra sampled parameter: log10_RB, log10_duration.
     sigma is kept fixed at 0.0 (unmagnetized ejecta).
     """
