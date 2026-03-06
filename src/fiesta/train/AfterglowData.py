@@ -530,8 +530,8 @@ class BlastwaveData(AfterglowData):
         self.chunk_size = 100
         super().__init__(*args, **kwargs)
 
-    def create_raw_data(self, n: int, training: bool = True):
-        """Create draws X in the parameter space and run the blastwave model on it."""
+    def _sample_parameters(self, n, training):
+        """Sample parameters and enforce the forward-shock energy constraint."""
         X_raw = np.empty((n, len(self.parameter_names)))
 
         if training:
@@ -554,6 +554,11 @@ class BlastwaveData(AfterglowData):
         X_raw[mask, epsilon_B_ind] += np.log10(0.99 / epsilon_tot[mask])
         X_raw[mask, epsilon_e_ind] += np.log10(0.99 / epsilon_tot[mask])
 
+        return X_raw
+
+    def create_raw_data(self, n: int, training: bool = True):
+        """Create draws X in the parameter space and run the blastwave model on it."""
+        X_raw = self._sample_parameters(n, training)
         X, y = self.run_afterglow_model(X_raw)
         return X, y
 
@@ -692,29 +697,12 @@ class BlastwaveRSData(AfterglowData):
         super().__init__(*args, **kwargs)
 
     def create_raw_data(self, n: int, training: bool = True):
-        X_raw = np.empty((n, len(self.parameter_names)))
-
-        if training:
-            for j, key in enumerate(self.parameter_names):
-                a, b, distribution = self.parameter_distributions[key]
-                if distribution == "uniform":
-                    X_raw[:, j] = np.random.uniform(a, b, size=n)
-                elif distribution == "loguniform":
-                    X_raw[:, j] = np.exp(np.random.uniform(np.log(a), np.log(b), size=n))
-        else:
-            for j, key in enumerate(self.parameter_distributions.keys()):
-                a, b, _ = self.parameter_distributions[key]
-                X_raw[:, j] = np.random.uniform(a, b, size=n)
-
-        # Ensure that epsilon_e + epsilon_B < 1 (forward shock)
-        epsilon_e_ind = self.parameter_names.index("log10_epsilon_e")
-        epsilon_B_ind = self.parameter_names.index("log10_epsilon_B")
-        epsilon_tot = (10**(X_raw[:, epsilon_e_ind]) + 10**(X_raw[:, epsilon_B_ind]))
-        mask = epsilon_tot >= 1
-        X_raw[mask, epsilon_B_ind] += np.log10(0.99 / epsilon_tot[mask])
-        X_raw[mask, epsilon_e_ind] += np.log10(0.99 / epsilon_tot[mask])
+        """Sample parameters, enforce FS and RS energy constraints, then run model."""
+        X_raw = self._sample_parameters(n, training)
 
         # Ensure that eps_b_rs = RB * eps_b_f < 1 and eps_e + eps_b_rs < 1 (reverse shock)
+        epsilon_e_ind = self.parameter_names.index("log10_epsilon_e")
+        epsilon_B_ind = self.parameter_names.index("log10_epsilon_B")
         RB_ind = self.parameter_names.index("log10_RB")
         eps_e = 10**(X_raw[:, epsilon_e_ind])
         eps_b_f = 10**(X_raw[:, epsilon_B_ind])
