@@ -49,7 +49,8 @@ y = y[idx]
 
 # Split
 n_total = len(X)
-assert n_total > n_val + n_test, f"Not enough samples ({n_total}) for val ({n_val}) + test ({n_test}) + training"
+if n_total <= n_val + n_test:
+    raise ValueError(f"Not enough samples ({n_total}) for val ({n_val}) + test ({n_test}) + training")
 
 X_test, y_test = X[:n_test], y[:n_test]
 X_val, y_val = X[n_test:n_test+n_val], y[n_test:n_test+n_val]

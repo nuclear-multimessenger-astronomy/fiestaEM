@@ -1,7 +1,4 @@
 import numpy as np
-import jax.numpy as jnp
-import matplotlib.pyplot as plt
-import h5py
 
 from fiesta.train.FluxTrainer import PCATrainer
 from fiesta.train.neuralnets import NeuralnetConfig

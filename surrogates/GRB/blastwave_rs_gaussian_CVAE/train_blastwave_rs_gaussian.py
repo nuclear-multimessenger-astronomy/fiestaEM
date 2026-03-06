@@ -1,8 +1,6 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import h5py
 
-from fiesta.train.FluxTrainer import CVAETrainer, DataManager
+from fiesta.train.FluxTrainer import CVAETrainer
 from fiesta.train.neuralnets import NeuralnetConfig
 
 #############
