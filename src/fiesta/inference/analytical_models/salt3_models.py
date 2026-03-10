@@ -5,9 +5,8 @@ differentiable SALT3 light-curve evaluation.  Unlike the physics-based models
 that compute L_bol + R_phot -> blackbody SED, SALT3 uses spectral templates
 (M0, M1, colour law) to compute per-band fluxes directly.
 
-The ``jax_supernovae.salt3`` module sets ``jax.config.update("jax_enable_x64",
-True)`` at import time, so we import lazily in ``__init__`` to avoid side
-effects for users who don't use SALT3.
+The ``jax_supernovae`` import is kept lazy to avoid loading heavy dependencies
+for users who don't use SALT3.
 """
 
 from functools import partial
@@ -43,7 +42,7 @@ class SALT3Model:
 
     def __init__(self, filters: list[str], times: Array = None,
                  redshift: float = 0.0):
-        # Lazy import to avoid jax_enable_x64 side effect at module level
+        # Lazy import to avoid loading heavy dependencies at module level
         try:
             from jax_supernovae.salt3 import (
                 optimized_salt3_multiband_flux,
