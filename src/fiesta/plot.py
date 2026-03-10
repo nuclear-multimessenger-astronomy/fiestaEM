@@ -255,9 +255,7 @@ class LightcurvePlotter:
             return
 
         best_ind = np.argmax(self.posterior["log_likelihood"])
-        self.best_fit_params = {}
-        for key in self.posterior.keys():
-            self.best_fit_params[key] = self.posterior[key][best_ind]
+        self.best_fit_params = self.posterior.iloc[best_ind].to_dict()
         
         self.best_fit_params.update(self.fixed_params)
         self.best_fit_params = self.likelihood.conversion(self.best_fit_params)
