@@ -675,7 +675,7 @@ class RunBlastwave:
         return idx, np.log10(mJys)
 
 
-class BlastwaveRSData(AfterglowData):
+class BlastwaveRSData(BlastwaveData):
     """BlastwaveData variant with reverse shock enabled.
 
     Following Japelj+ 2014 (1402.3701), the RS microphysics are tied to
@@ -688,13 +688,6 @@ class BlastwaveRSData(AfterglowData):
     Extra sampled parameter: log10_RB, log10_duration.
     sigma is kept fixed at 0.0 (unmagnetized ejecta).
     """
-
-    def __init__(self, *args, n_pool=None, **kwargs):
-        if n_pool is not None:
-            import warnings
-            warnings.warn("n_pool is ignored; blastwave uses rayon for parallelism", stacklevel=2)
-        self.chunk_size = 100
-        super().__init__(*args, **kwargs)
 
     def create_raw_data(self, n: int, training: bool = True):
         """Sample parameters, enforce FS and RS energy constraints, then run model."""

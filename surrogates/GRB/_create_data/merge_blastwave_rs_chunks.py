@@ -79,13 +79,21 @@ with h5py.File(outfile, "w") as hf:
                                 ("val", X_val, y_val),
                                 ("test", X_test, y_test)]:
         g = hf.create_group(group_name)
+        n_params = X.shape[1]
+        n_nus = y.shape[1]
+        n_times = y.shape[2]
         if len(gX) > 0:
             g.create_dataset("X", data=gX,
-                             maxshape=(None, gX.shape[1]),
-                             chunks=(min(chunk_size, len(gX)), gX.shape[1]))
+                             maxshape=(None, n_params),
+                             chunks=(min(chunk_size, len(gX)), n_params))
             g.create_dataset("y", data=gy,
-                             maxshape=(None, gy.shape[1], gy.shape[2]),
-                             chunks=(min(chunk_size, len(gy)), gy.shape[1], gy.shape[2]))
+                             maxshape=(None, n_nus, n_times),
+                             chunks=(min(chunk_size, len(gy)), n_nus, n_times))
+        else:
+            g.create_dataset("X", shape=(0, n_params),
+                             maxshape=(None, n_params), dtype="float64")
+            g.create_dataset("y", shape=(0, n_nus, n_times),
+                             maxshape=(None, n_nus, n_times), dtype="float64")
 
     hf.create_group("special_train")
 
