@@ -15,6 +15,9 @@ DATADIR = "/fred/oz480/mcoughli/fiestaEM_build/surrogates/GRB/_training_data"
 n_val = int(sys.argv[1]) if len(sys.argv) > 1 else 2000
 n_test = int(sys.argv[2]) if len(sys.argv) > 2 else 2000
 
+if n_val < 0 or n_test < 0:
+    raise ValueError(f"Split sizes must be non-negative (got n_val={n_val}, n_test={n_test})")
+
 chunk_pattern = f"{DATADIR}/blastwave_rs_gaussian_chunk_*.h5"
 outfile = f"{DATADIR}/blastwave_rs_gaussian_raw_data.h5"
 
@@ -27,12 +30,19 @@ if not chunk_files:
 # Read all chunks
 all_X = []
 all_y = []
+skipped = []
 for f in chunk_files:
     with h5py.File(f, "r") as hf:
         if "train" in hf and "X" in hf["train"]:
             all_X.append(hf["train"]["X"][:])
             all_y.append(hf["train"]["y"][:])
             print(f"  {f}: {hf['train']['X'].shape[0]} samples")
+        else:
+            skipped.append(f)
+            print(f"  WARNING: {f} has no train/X group, skipping")
+
+if skipped:
+    print(f"\nWARNING: {len(skipped)} of {len(chunk_files)} chunks were skipped")
 
 if not all_X:
     raise RuntimeError("No valid samples found in any chunk file")
