@@ -2,8 +2,7 @@ from jax.random import PRNGKey
 import numpy as np 
 
 from fiesta.train.AfterglowData import AfterglowpyData
-from fiesta.inference.prior_dict import ConstrainedPrior
-from fiesta.inference.prior import Uniform, Constraint
+from fiesta.inference.prior import Uniform, Constraint, ConstrainedPrior
 
 #############
 ### SETUP ###

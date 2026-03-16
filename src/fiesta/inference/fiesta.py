@@ -12,7 +12,7 @@ from jaxtyping import Float, Array, PRNGKeyArray
 
 from fiesta.conversions import mag_app_from_mag_abs
 from fiesta.inference.lightcurve_model import LightcurveModel
-from fiesta.inference.prior import Prior 
+from fiesta.inference.prior import Prior
 from fiesta.inference.likelihood import EMLikelihood
 from fiesta.logging import logger
 from fiesta.plot import corner_plot, LightcurvePlotter
@@ -44,7 +44,7 @@ default_bundle_hyperparameters = {
 
 class Fiesta(object):
     """
-    Master inference class for interfacing with flowMC.
+    Master inference class for interfacing with the sampler.
 
     Args:
         "likelihood": "(EMLikelihood) likelihood object used for the inference",

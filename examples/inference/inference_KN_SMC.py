@@ -21,8 +21,7 @@ import numpy as np
 import jax
 
 # ── fiesta imports ────────────────────────────────────────────────────────────
-from fiesta.inference.prior import Uniform
-from fiesta.inference.prior_dict import ConstrainedPrior
+from fiesta.inference.prior import Uniform, ConstrainedPrior
 from fiesta.inference.likelihood import EMLikelihood
 from fiesta.inference.lightcurve_model import BullaFlux
 from fiesta.inference.wrappers import FiestaJesterPrior, FiestaJesterLikelihood

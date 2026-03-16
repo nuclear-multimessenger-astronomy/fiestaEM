@@ -3,8 +3,7 @@ import jax
 import jax.numpy as jnp
 
 
-from fiesta.inference.prior import Uniform, Constraint
-from fiesta.inference.prior_dict import ConstrainedPrior
+from fiesta.inference.prior import Uniform, Constraint, ConstrainedPrior
 from fiesta.inference.fiesta import Fiesta
 from fiesta.inference.likelihood import EMLikelihood
 from fiesta.inference.lightcurve_model import AfterglowFlux, BullaFlux, CombinedSurrogate

@@ -70,10 +70,6 @@ Priors
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: fiesta.inference.prior_dict
-   :members:
-   :undoc-members:
-   :show-inheritance:
 
 Systematics
 -----------

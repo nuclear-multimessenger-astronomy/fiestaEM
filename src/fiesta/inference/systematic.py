@@ -7,9 +7,8 @@ import jax.numpy as jnp
 import yaml
 
 from fiesta.logging import logger
-from fiesta.inference.prior_dict import ConstrainedPrior
 import fiesta.inference.prior as fiesta_prior
-
+from fiesta.inference.prior import ConstrainedPrior
 
 ALL_PRIORS = dict(inspect.getmembers(fiesta_prior, inspect.isclass))
 

@@ -7,8 +7,7 @@ import jax
 import jax.numpy as jnp
 
 
-from fiesta.inference.prior import Uniform, Constraint, Normal, UniformSourceFrame
-from fiesta.inference.prior_dict import ConstrainedPrior
+from fiesta.inference.prior import Uniform, Constraint, Normal, UniformSourceFrame, ConstrainedPrior
 
 from fiesta.inference.lightcurve_model import FluxModel, CombinedSurrogate
 from fiesta.inference.injection import InjectionSurrogate
