@@ -43,9 +43,10 @@ class FlowMCSampler:
         self.likelihood = likelihood
 
         def log_posterior_fn(self, params: Float[Array, "n_dims"], data: dict[str, any]) -> Float:
-            prior_params = self.prior.add_name(params.T)
-            log_prior = self.prior.log_prob(prior_params)
-            log_posterior = self.likelihood.evaluate(self.prior.transform(prior_params), data) + log_prior
+            params_named = self.prior.add_name(params.T)
+            log_prior = self.prior.log_prob(params_named)
+            params_named = self.prior.tranform(params_named)
+            log_posterior = self.likelihood.evaluate(params_named) + log_prior
             return log_posterior
         
         from flowMC.Sampler import Sampler
@@ -215,17 +216,49 @@ class BlackJaxSMC:
     Uses sequential Monte Carlo algorithm, where initially only the prior is sampled and then gradually the inverse temperature is decreased to eventually sample the posterior distribution.
     Allows for calculation of the evidence. See e.g. https://arxiv.org/pdf/2506.18977 for details.
     Original code from https://github.com/blackjax-devs/blackjax.
+    This API is inspired by jester (https://github.com/nuclear-multimessenger-astronomy/jester/).
     """
 
     def __init__(self,
                  likelihood,
                  prior,
-                 rng_key: PRNGKey,):
+                 rng_key: PRNGKey,
+                 n_particles: int = 5000,
+                 target_ess: float = 0.9,
+                 num_mcmc_steps: int = 10):
         
         self.prior = prior
         self.likelihood = likelihood
 
+        self.n_particles = n_particles
+
+
+        def logprior_fn(x: Float[Array, "n_particles, ndims"]) -> Float:
+            x = jnp.atleast_1d(x)
+            x_dict = self.prior.add_name(x.T)
+            return self.prior.log_prob(x_dict)
+        
+        def loglikelihood_fn(x: Float[Array, "n_particles, ndims"]) -> Float:
+            x = jnp.atleast_1d(x)
+            x_dict = self.prior.add_name(x.T)
+            x_dict = self.prior.transform(x_dict)
+            return self.likelihood.evaluate(x_dict)
+        
+        def logposterior_fn(x: Float[Array, "n_particles, ndims"]) -> Float:
+            return logprior_fn(x) + loglikelihood_fn(x)
+
         from blackjax import inner_kernel_tuning, adaptive_tempered_smc
+        from blackjax.smc import extend_params
+        from blackjax.smc.resampling import systematic
+
+        initial_position_named = self.prior.sample(rng_key, self.n_particles)
+        initial_position = jnp.stack([initial_position_named[p] for p in self.prior.naming]).T
+
+        mcmc_step_fn, mcmc_init_fn, init_params, mcmc_parameter_update_fn = self._setup_mcmc_kernel(logprior_fn, 
+                                                                                                    loglikelihood_fn,
+                                                                                                    logposterior_fn,
+                                                                                                    initial_position
+                                                                                                   )
         
         self.smc_alg = inner_kernel_tuning(
             smc_algorithm=adaptive_tempered_smc,
@@ -237,17 +270,13 @@ class BlackJaxSMC:
             mcmc_parameter_update_fn=mcmc_parameter_update_fn,
             initial_parameter_value=extend_params(init_params),  # type: ignore[arg-type]
             target_ess=target_ess,
-            num_mcmc_steps=n_mcmc_steps,
+            num_mcmc_steps=num_mcmc_steps,
         )            
     
 
-    def sample(self, key: PRNGKey, initial_position: Array = jnp.array([])):
+    def sample(self, key: PRNGKey):
         
-        if initial_position.size == 0:
-            initial_position_named = self.prior.sample(key, self.Sampler.n_chains)
-            initial_position = jnp.stack([initial_position_named[p] for p in self.prior.naming]).T
 
-            
         # Initialize SMC state
         key, subkey = jax.random.split(key)
         state = self.smc_alg.init(initial_position, subkey)
@@ -267,6 +296,12 @@ class BlackJaxSMC:
                 f"Step {step:4d} | λ={tempering_param:.6f} | ESS={ess*100:5.1f}% | "
                 f"Accept={acceptance*100:5.1f}% | {bar}"
             )
+    
+    def _setup_mcmc_kernel(self,
+                           logprior_fn,
+                           loglikelihood_fn,
+                           **kwargs):
+        pass
         
 
     
