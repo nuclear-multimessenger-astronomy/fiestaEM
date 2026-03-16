@@ -17,30 +17,12 @@ from fiesta.inference.likelihood import EMLikelihood
 from fiesta.logging import logger
 from fiesta.plot import corner_plot, LightcurvePlotter
 from fiesta.inference.systematic import setup_systematics_basic, setup_systematic_from_file
+from fiesta.inference.samplers import FlowMCSampler, BlackJaxSMC, BlackJaxNestedSampling
 
-from flowMC.Sampler import Sampler
-from flowMC.resource_strategy_bundle.RQSpline_MALA import RQSpline_MALA_Bundle
 
-# see https://github.com/kazewong/flowMC/blob/main/src/flowMC/resource_strategy_bundle/RQSpline_MALA.py#L22
-# for all the other arguments that can be set to the strategy-resource bundle
-default_bundle_hyperparameters = {
-        "n_local_steps": 50,
-        "n_global_steps": 200,
-        "n_training_loops": 20,
-        "n_production_loops": 15,
-        "n_epochs": 100,
-        "rq_spline_n_layers": 4,
-        "rq_spline_hidden_units": [64, 64],
-        "rq_spline_n_bins": 8,
-        "mala_step_size": 2e-3,
-        "learning_rate": 4e-4,
-        "n_max_examples": 10_000,
-        "n_NFproposal_batch_size": 10_000,
-        "chain_batch_size": 100,
-        "batch_size": 10_000,
-        "verbose": True,
-        }
-
+sampler_registry = {'flowmc': FlowMCSampler, 
+                    'blackjax-smc': BlackJaxSMC, 
+                    'blackjax-nested-sampling': BlackJaxNestedSampling}
 
 class Fiesta(object):
     """
@@ -52,14 +34,8 @@ class Fiesta(object):
         "error_budget": "(float) fixed systematic error to use in the inference in mag. Defaults to 0.3 but is ignored when systematics file is provided.",
         "systematics_file": "(str) path to the .yaml file that provides the setup for the systematic uncertainty parameters. Will overwrite error_budget.",
         "seed": "(int) Value of the random seed used.",
-        "n_chains": "(int) Number of chains to be run in parallel by the flowMC sampler.",
-        "num_layers": "(int) Number of hidden layers of the NF",
-        "hidden_size": "List[int, int] Sizes of the hidden layers of the NF",
-        "num_bins": "(int) Number of bins used in MaskedCouplingRQSpline",
-        "local_sampler_arg": "(dict) Additional arguments to be used in the local sampler",
-        "n_walkers_maximize_likelihood": "(int) Number of walkers used in the maximization of the likelihood with the evolutionary optimizer",
-        "n_loops_maximize_likelihood": "(int) Number of loops to run the evolutionary optimizer in the maximization of the likelihood",
-        "which_local_sampler": "(str) Name of the local sampler to use",
+        "sampler": "(str) The sampler to use. If string, the sampler will be initialized with the likelihood and prior and can be 'flowmc', 'blackjax-smc', 'blackjax-nested-sampling'. Defaults to 'flowmc'.
+        **kwargs: Additional sampling parameters that are passed to the sampler.
     """
     
     likelihood: EMLikelihood
@@ -72,7 +48,7 @@ class Fiesta(object):
                  error_budget: float = 0.3,
                  systematics_file: str = None,
                  seed: int = 42,
-                 n_chains: int = 200,
+                 sampler: str = 'flowmc',
                  **kwargs):
         
         self.likelihood = likelihood
@@ -92,174 +68,53 @@ class Fiesta(object):
         else:
             self.likelihood, self.prior = setup_systematics_basic(self.likelihood, self.prior, error_budget)
 
-        # Set and override any given hyperparameters, and save as attribute
-        self.bundle_hyperparameters = default_bundle_hyperparameters
-
-        for key, value in kwargs.items():
-            if key in self.bundle_hyperparameters:
-                self.bundle_hyperparameters[key] = value
-
-
-        # TODO: what if we don't want to use MALA as local sampler?
-        rng_key, subkey = jax.random.split(rng_key)
-        bundle = RQSpline_MALA_Bundle(
-            rng_key=subkey,
-            n_chains=n_chains,
-            n_dims=self.prior.n_dim,
-            logpdf=self.log_posterior,
-            **self.bundle_hyperparameters)
+        # setup sampler
+        try:
+            sampler_cls = sampler_registry[sampler]
+        except KeyError:
+            raise ValueError(f"Implemented samplers are 'flowmc', 'blackjax-smc', 'blackjax-nested-sampling'.")
         
-        rng_key, subkey = jax.random.split(rng_key)
-        self.Sampler = Sampler(
-            self.prior.n_dim,
-            n_chains,
-            subkey,
-            resource_strategy_bundles=bundle,
-        )
+        self.sampler = sampler_cls(likelihood,
+                                   prior,
+                                   rng_key,
+                                   **kwargs)
+
         logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX... DONE")
 
-    def log_posterior(self, params: Float[Array, "n_dims"], data: dict[str, any]) -> Float:
-        prior_params = self.prior.add_name(params.T)
-        log_prior = self.prior.log_prob(prior_params)
-        log_posterior = self.likelihood.evaluate(self.prior.transform(prior_params), data) + log_prior
-        return log_posterior
-
-    def sample(self, key: PRNGKeyArray, initial_guess: Array = jnp.array([])):
+    def sample(self, key: PRNGKeyArray, **kwargs):
         """
-        Starts the sampling algorithm to obtain the posterior. After running, the posterior samples are stored as ``.posterior_samples`` attribute.
+        Starts the sampling algorithm from ``.sampler`` to obtain the posterior. 
+        After running, the posterior samples are stored as a ``.posterior_samples`` attribute.
 
         Args:
             key (PRNGKeyArray): Random seed to start sampling.
-            initial_guess (Array, optional): Initial posisions of the chains. If empty, will get initial position as random samples from the prior.
+            **kwargs: Additional arguments that are passed to the sample method of the ``.sampler``.
         """
-        if initial_guess.size == 0:
-            initial_guess_named = self.prior.sample(key, self.Sampler.n_chains)
-            initial_guess = jnp.stack([initial_guess_named[key] for key in self.prior.naming]).T
         
         logger.info(f"Starting sampling.")
         start_time = time.perf_counter()
-        self.Sampler.sample(initial_guess, data={"data": jnp.zeros(self.prior.n_dim)}) # the data argument is ignored because data is setup in the likelihood
+        self.posterior_samples = self.sampler.sample(key, **kwargs)
         end_time = time.perf_counter()
         logger.info(f"Sampling finished. Sampling took {end_time-start_time:.2f} seconds.")
 
-        # setup the production samples
-        samples = self.Sampler.resources["positions_production"].data
-        log_prob = self.Sampler.resources["log_prob_production"].data
-        
-        samples = samples.reshape(-1, self.prior.n_dim).T
-        self.posterior_samples = self.prior.add_name(samples)
-        self.posterior_samples["log_prob"] = log_prob.reshape(-1,)
-        self.posterior_samples["log_likelihood"] = self.posterior_samples["log_prob"] - self.prior.log_prob(self.posterior_samples)
 
+    def print_summary(self,):
+
+        self.sampler.print_summary()
+        for key, value in self.posterior_samples.items():
+            lower_lim, median, upper_lim = jnp.quantile(value, q=[0.16, 0.5, 0.84])
+            print(f"{key}: {median:.3f} + {upper_lim-median:.3f} - {median-lower_lim:.3f}")      
     
-    def _get_summary_statistics(self,):
-
-        resources = self.Sampler.resources
-
-        self.training_chain = resources["positions_training"].data.reshape(-1, self.prior.n_dim).T
-
-        self.training_log_prob = resources["log_prob_training"].data
-        training_local_acceptance = resources["local_accs_training"].data
-        self.training_local_acceptance = training_local_acceptance[~jnp.isneginf(training_local_acceptance)]
-        training_global_acceptance = resources["global_accs_training"].data
-        self.training_global_acceptance = training_global_acceptance[~jnp.isneginf(training_global_acceptance)]
-        self.training_loss = resources["loss_buffer"].data
-
-        self.production_chain = resources["positions_production"].data.reshape(-1, self.prior.n_dim).T
-        self.production_log_prob = resources["log_prob_production"].data
-        production_local_acceptance = resources["local_accs_production"].data
-        self.production_local_acceptance = production_local_acceptance[~jnp.isneginf(production_local_acceptance)]
-        production_global_acceptance = resources["global_accs_production"].data
-        self.production_global_acceptance = production_global_acceptance[~jnp.isneginf(production_global_acceptance)]
-
-
-
-    def print_summary(self, transform: bool = True):
+    def save_results(self, bestfit_params: bool =True, sampler_extra_output: bool=False):
         """
-        Generate summary of the run
-
-        """
-        self._get_summary_statistics()
-
-        print("Training summary")
-        print("=" * 10)
-        training_chain = self.prior.add_name(self.training_chain)
-        for key, value in training_chain.items():
-            print(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
-
-        print(
-            f"Log probability: {self.training_log_prob.mean():.3f} +/- {self.training_log_prob.std():.3f}"
-        )
-
-        training_local_acceptance = jnp.mean(self.training_local_acceptance, axis=0)
-        print(
-            f"Local acceptance: {training_local_acceptance.mean():.3f} +/- {training_local_acceptance.std():.3f}"
-        )
-        
-        training_global_acceptance = jnp.mean(self.training_global_acceptance, axis=0)
-        print(
-            f"Global acceptance: {training_global_acceptance.mean():.3f} +/- {training_global_acceptance.std():.3f}"
-        )
-
-        print(
-            f"Max loss: {self.training_loss.max():.3f}, Min loss: {self.training_loss.min():.3f}"
-        )
-        
-        print("\n \n")
-
-        print("Production summary")
-        print("=" * 10)
-        production_chain = self.prior.add_name(self.production_chain)
-        for key, value in production_chain.items():
-            print(f"{key}: {value.mean():.3f} +/- {value.std():.3f}")
-
-        print(
-            f"Log probability: {self.production_log_prob.mean():.3f} +/- {self.production_log_prob.std():.3f}"
-        )
-
-        production_local_acceptance = jnp.mean(self.production_local_acceptance, axis=0)
-        print(
-            f"Local acceptance: {production_local_acceptance.mean():.3f} +/- {production_local_acceptance.std():.3f}"
-        )
-
-        production_global_acceptance = jnp.mean(self.production_global_acceptance, axis=0)
-        print(
-            f"Global acceptance: {production_global_acceptance.mean():.3f} +/- {production_global_acceptance.std():.3f}"
-        )
-        print("=" * 10)
-    
-    def save_results(self, bestfit_params: bool =True, training_samples: bool=False):
-        """
-        Saves the poster samples to .npz files in ``outdir``.
+        Saves the posterior samples to .npz files in ``outdir``.
 
         Args:
             bestfit_params (bool): Whether to print an extra file with the best fit parameters and light curves. Defaults to True.
-            training_samples (bool): Whether to save the training samples from the normalizing flow training with the acceptance ratios. Defaults to False.
+            sampler_extra_output (bool): Whether to save additional sampler output to the outdir. Defaults to False.
         """
         
-
-        self._get_summary_statistics()
-        
-        if training_samples:
-            # - training phase
-            name = os.path.join(self.outdir, f'results_training.npz')
-            logger.info(f"Saving training samples to {name}.")
-    
-            jnp.savez(name, log_prob=self.training_log_prob,
-                            chains = self.training_chain,
-                            local_accs=jnp.mean(self.training_local_acceptance, axis=0),
-                            global_accs=jnp.mean(self.training_global_acceptance, axis=0), 
-                            loss_vals=self.training_loss)
-            
-            #  - production phase
-            name = os.path.join(self.outdir, f'results_production.npz')
-            logger.info(f"Saving production samples to {name}")
-            
-            jnp.savez(name, chains=self.production_chain, 
-                            log_prob=self.production_log_prob,
-                            local_accs=jnp.mean(self.production_local_acceptance, axis=0),
-                            global_accs=jnp.mean(self.production_global_acceptance, axis=0)
-            )
+        self.sampler.save(sampler_extra_output, self.outdir)
         
         if bestfit_params:
             # - best fit params
@@ -280,18 +135,6 @@ class Fiesta(object):
         name = os.path.join(self.outdir, f"posterior.npz")
         logger.info(f"Saving posterior samples to {name}.")
         jnp.savez(name, **self.posterior_samples)
-
-    
-    def save_hyperparameters(self):
-        
-        hyperparameters_dict = {"flowmc": self.Sampler.hyperparameters}
-        
-        try:
-            name = os.path.join(self.outdir, "hyperparams.json")
-            with open(name, 'w') as file:
-                json.dump(hyperparameters_dict, file)
-        except Exception as e:
-            logger.error(f"Error occurred saving jim hyperparameters, are all hyperparams JSON compatible?: {e}")
             
 
     def plot_lightcurves(self,):
