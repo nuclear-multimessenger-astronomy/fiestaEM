@@ -210,6 +210,25 @@ class VillarModel(PhenomenologicalModel):
         return sig_rise * jnp.maximum(
             (1.0 - w) * piece_left + w * piece_right, 1e-30)
 
+    def constraint_penalty(self, x):
+        """Physical validity penalty (de Soto et al. 2024).
+
+        Returns 0 for valid parameters, positive for invalid. Multiply by
+        a large negative factor and add to log-likelihood to enforce.
+        """
+        beta = x["beta_slope"]
+        gamma = jnp.power(10.0, x["log10_gamma"])
+        tau_rise = jnp.power(10.0, x["log10_tau_rise"])
+        tau_fall = jnp.power(10.0, x["log10_tau_fall"])
+        return (
+            jnp.maximum(gamma * beta - 1.0, 0.0)
+            + jnp.maximum(
+                jnp.exp(-gamma / tau_rise) * (tau_fall / tau_rise - 1.0) - 1.0,
+                0.0,
+            )
+            + jnp.maximum(beta * tau_fall - 1.0 + beta * gamma, 0.0)
+        )
+
 
 class PhenomenologicalTDEModel(PhenomenologicalModel):
     """Phenomenological TDE light-curve model.
