@@ -7,8 +7,9 @@ from jaxtyping import Float, Array, PRNGKeyArray
 
 from fiesta.logging import logger
 
-# see https://github.com/kazewong/flowMC/blob/main/src/flowMC/resource_strategy_bundle/RQSpline_MALA.py#L22
-# for all the other arguments that can be set to the strategy-resource bundle
+from flowMC.Sampler import Sampler
+from flowMC.resource_strategy_bundle.RQSpline_MALA import RQSpline_MALA_Bundle
+
 
 class FlowMCSampler:
     """
@@ -49,9 +50,6 @@ class FlowMCSampler:
             log_posterior = self.likelihood.evaluate(params_named) + log_prior
             return log_posterior
         
-        from flowMC.Sampler import Sampler
-        from flowMC.resource_strategy_bundle.RQSpline_MALA import RQSpline_MALA_Bundle
-
         # TODO: what if we don't want to use MALA as local sampler?
         rng_key, subkey = jax.random.split(rng_key)
         bundle = RQSpline_MALA_Bundle(
@@ -76,7 +74,6 @@ class FlowMCSampler:
                                       verbose=verbose,
                                     )
         
-
         rng_key, subkey = jax.random.split(rng_key)
         self.Sampler = Sampler(
             self.prior.n_dim,
@@ -84,6 +81,10 @@ class FlowMCSampler:
             subkey,
             resource_strategy_bundles=bundle,
         )
+
+        logger.info(f"Set up flowmc sampler with {n_chains} chains, "
+                    f"{n_training_loops} training loops "
+                    f"and {n_production_loops} production loops.")
 
     def sample(self, key: PRNGKey, initial_position: Array = jnp.array([])):
         """
@@ -133,7 +134,7 @@ class FlowMCSampler:
             production_global_acceptance = resources["global_accs_production"].data
             self.production_global_acceptance = production_global_acceptance[~jnp.isneginf(production_global_acceptance)]
     
-    def save(self, sampler_extra_output: bool, outdir: str):
+    def save(self, sampler_extra_output: bool, outdir: str) -> None:
 
         if sampler_extra_output:
 
@@ -162,8 +163,7 @@ class FlowMCSampler:
       
     def print_summary(self):
         """
-        Generate summary of the run
-
+        Print summary statement of the run
         """
         
         self.get_summary_statistics()
@@ -210,102 +210,3 @@ class FlowMCSampler:
         print("=" * 10)
 
 
-class BlackJaxSMC:
-    """
-    Sampler from the blackjax package.
-    Uses sequential Monte Carlo algorithm, where initially only the prior is sampled and then gradually the inverse temperature is decreased to eventually sample the posterior distribution.
-    Allows for calculation of the evidence. See e.g. https://arxiv.org/pdf/2506.18977 for details.
-    Original code from https://github.com/blackjax-devs/blackjax.
-    This API is inspired by jester (https://github.com/nuclear-multimessenger-astronomy/jester/).
-    """
-
-    def __init__(self,
-                 likelihood,
-                 prior,
-                 rng_key: PRNGKey,
-                 n_particles: int = 5000,
-                 target_ess: float = 0.9,
-                 num_mcmc_steps: int = 10):
-        
-        self.prior = prior
-        self.likelihood = likelihood
-
-        self.n_particles = n_particles
-
-
-        def logprior_fn(x: Float[Array, "n_particles, ndims"]) -> Float:
-            x = jnp.atleast_1d(x)
-            x_dict = self.prior.add_name(x.T)
-            return self.prior.log_prob(x_dict)
-        
-        def loglikelihood_fn(x: Float[Array, "n_particles, ndims"]) -> Float:
-            x = jnp.atleast_1d(x)
-            x_dict = self.prior.add_name(x.T)
-            x_dict = self.prior.transform(x_dict)
-            return self.likelihood.evaluate(x_dict)
-        
-        def logposterior_fn(x: Float[Array, "n_particles, ndims"]) -> Float:
-            return logprior_fn(x) + loglikelihood_fn(x)
-
-        from blackjax import inner_kernel_tuning, adaptive_tempered_smc
-        from blackjax.smc import extend_params
-        from blackjax.smc.resampling import systematic
-
-        initial_position_named = self.prior.sample(rng_key, self.n_particles)
-        initial_position = jnp.stack([initial_position_named[p] for p in self.prior.naming]).T
-
-        mcmc_step_fn, mcmc_init_fn, init_params, mcmc_parameter_update_fn = self._setup_mcmc_kernel(logprior_fn, 
-                                                                                                    loglikelihood_fn,
-                                                                                                    logposterior_fn,
-                                                                                                    initial_position
-                                                                                                   )
-        
-        self.smc_alg = inner_kernel_tuning(
-            smc_algorithm=adaptive_tempered_smc,
-            logprior_fn=logprior_fn,
-            loglikelihood_fn=loglikelihood_fn,
-            mcmc_step_fn=mcmc_step_fn,
-            mcmc_init_fn=mcmc_init_fn,
-            resampling_fn=systematic,
-            mcmc_parameter_update_fn=mcmc_parameter_update_fn,
-            initial_parameter_value=extend_params(init_params),  # type: ignore[arg-type]
-            target_ess=target_ess,
-            num_mcmc_steps=num_mcmc_steps,
-        )            
-    
-
-    def sample(self, key: PRNGKey):
-        
-
-        # Initialize SMC state
-        key, subkey = jax.random.split(key)
-        state = self.smc_alg.init(initial_position, subkey)
-
-        # Progress callback for live updates during sampling
-        def progress_callback(
-            step: int, tempering_param: float, ess: float, acceptance: float
-        ) -> None:
-            """Print progress update during sampling (called via io_callback)."""
-            # Create progress bar
-            bar_length = 30
-            filled = int(tempering_param * bar_length)
-            bar = "█" * filled + "░" * (bar_length - filled)
-
-            # Print update
-            logger.info(
-                f"Step {step:4d} | λ={tempering_param:.6f} | ESS={ess*100:5.1f}% | "
-                f"Accept={acceptance*100:5.1f}% | {bar}"
-            )
-    
-    def _setup_mcmc_kernel(self,
-                           logprior_fn,
-                           loglikelihood_fn,
-                           **kwargs):
-        pass
-        
-
-    
-
-
-class BlackJaxNestedSampling:
-    raise NotImplementedError(f"blackjax nested sampling still needs to be implemented.")

@@ -55,7 +55,7 @@ class SurrogateModel:
     
     def __init__(self, 
                  name: str,
-                 directory: str=None) -> None:
+                 directory: str | None =None) -> None:
         self.name = name
         if directory is None:
             self.directory = get_default_directory(name)

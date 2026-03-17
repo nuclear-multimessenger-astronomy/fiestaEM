@@ -17,12 +17,7 @@ from fiesta.inference.likelihood import EMLikelihood
 from fiesta.logging import logger
 from fiesta.plot import corner_plot, LightcurvePlotter
 from fiesta.inference.systematic import setup_systematics_basic, setup_systematic_from_file
-from fiesta.inference.samplers import FlowMCSampler, BlackJaxSMC, BlackJaxNestedSampling
 
-
-sampler_registry = {'flowmc': FlowMCSampler, 
-                    'blackjax-smc': BlackJaxSMC, 
-                    'blackjax-nested-sampling': BlackJaxNestedSampling}
 
 class Fiesta(object):
     """
@@ -46,7 +41,7 @@ class Fiesta(object):
                  prior: Prior,
                  outdir: str = "./outdir/",
                  error_budget: float = 0.3,
-                 systematics_file: str = None,
+                 systematics_file: str | None = None,
                  seed: int = 42,
                  sampler: str = 'flowmc',
                  **kwargs):
@@ -69,10 +64,19 @@ class Fiesta(object):
             self.likelihood, self.prior = setup_systematics_basic(self.likelihood, self.prior, error_budget)
 
         # setup sampler
-        try:
-            sampler_cls = sampler_registry[sampler]
-        except KeyError:
-            raise ValueError(f"Implemented samplers are 'flowmc', 'blackjax-smc', 'blackjax-nested-sampling'.")
+        match sampler:
+            case "flowmc":
+                from fiesta.inference.samplers.flowmc import FlowMCSampler
+                sampler_cls = FlowMCSampler
+            case "blackjax-smc":
+                from fiesta.inference.samplers.blackjax_smc import BlackJaxSMC
+                sampler_cls = BlackJaxSMC
+            case "blackjax-nested-sampling":
+                from fiesta.inference.samplers.blackjax_nested_sampling import BlackJaxNestedSampling
+                sampler_cls = BlackJaxNestedSampling
+            case _:
+                raise ValueError(f"Implemented samplers are 'flowmc', 'blackjax-smc', 'blackjax-nested-sampling'.")
+
         
         self.sampler = sampler_cls(likelihood,
                                    prior,
@@ -171,7 +175,7 @@ class Fiesta(object):
         # Save
         fig.savefig(os.path.join(self.outdir, "lightcurves.pdf"), bbox_inches = 'tight', dpi=250)
     
-    def plot_corner(self, truths: dict = None):
+    def plot_corner(self, truths: dict | None = None):
 
         fig, ax = corner_plot(self.posterior_samples,
                               self.prior.naming,
