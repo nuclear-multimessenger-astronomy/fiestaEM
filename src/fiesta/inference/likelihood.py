@@ -316,9 +316,10 @@ class EMLikelihood:
     
     def vectorized_evaluate(self, theta: dict[str, Array]):
 
-        def body(carry, single_theta):
-            y = self(single_theta)
-            return carry, y
-    
-        _, ys = jax.lax.scan(body, None, theta)
-        return ys
+        theta_arr = jnp.array([theta[name] for name in theta.keys()]).T
+
+        def evaluate_single(theta_single):
+            param_dict = dict(zip(theta.keys(), theta_single))
+            return self(param_dict)
+
+        return jax.lax.map(evaluate_single, theta_arr, batch_size=500)
