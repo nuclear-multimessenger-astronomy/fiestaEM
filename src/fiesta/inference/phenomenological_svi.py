@@ -95,13 +95,18 @@ N_PARAMS = 2 * N_BASE
 
 
 def _build_prior_arrays():
-    mn, mx, mu, sg, lg = [], [], [], [], []
-    for d in (_PRIOR_R, _PRIOR_G):
+    """Flatten the per-band prior dicts into parallel numpy arrays."""
+    mins, maxs, means, stds, is_logged = [], [], [], [], []
+    for prior_dict in (_PRIOR_R, _PRIOR_G):
         for name in _BASE_NAMES:
-            a, b, m, s, l = d[name]
-            mn.append(a); mx.append(b); mu.append(m); sg.append(s); lg.append(l)
-    return (np.array(mn), np.array(mx), np.array(mu),
-            np.array(sg), np.array(lg, dtype=bool))
+            lo, hi, mean, std, logged = prior_dict[name]
+            mins.append(lo)
+            maxs.append(hi)
+            means.append(mean)
+            stds.append(std)
+            is_logged.append(logged)
+    return (np.array(mins), np.array(maxs), np.array(means),
+            np.array(stds), np.array(is_logged, dtype=bool))
 
 
 MINS, MAXS, MEANS, STDS, LOGGED = _build_prior_arrays()
@@ -211,7 +216,7 @@ def _build_param_map(band):
 def _villar_flux(flat_params, t, param_map):
     cube = flat_params[param_map]
     amp, beta, gamma, t_0, tau_rise, tau_fall, extra_sigma = cube
-    gamma = jnp.clip(gamma, 0.0)
+    gamma = jnp.clip(gamma, a_min=0.0)
     phase = jnp.clip(t - t_0, a_min=-50.0 * tau_rise)
     f_const = amp / (1.0 + jnp.exp(-phase / tau_rise))
     flux = f_const * jnp.where(
@@ -359,7 +364,8 @@ def _prepare_data(data):
 
 
 def _run_svi(df_raw, prior_r, prior_g, flux_fn, constraint_fn, score_fn,
-             model_name, num_iter, step_size, n_samples, seed, outdir):
+             model_name, num_iter, step_size, n_samples, seed, outdir,
+             score_cutoff=1.2):
     """Core SVI runner shared by fit_villar_svi and fit_bazin_svi."""
     base_names = list(prior_r.keys())
     n_base = len(base_names)
@@ -430,7 +436,7 @@ def _run_svi(df_raw, prior_r, prior_g, flux_fn, constraint_fn, score_fn,
 
     scores = _score_samples(samples_df, t, flux, err, param_map, orig_size, score_fn, n_base, n_params)
 
-    score_cutoff = 1.2
+    # Filter samples by chi² cutoff (de Soto+ 2024, Section 3.1)
     valid_mask = scores <= score_cutoff if orig_size >= 6 else np.ones(len(scores), dtype=bool)
     if not np.any(valid_mask):
         valid_mask = np.ones(len(scores), dtype=bool)
@@ -463,8 +469,8 @@ def _run_svi(df_raw, prior_r, prior_g, flux_fn, constraint_fn, score_fn,
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
-def fit_villar_svi(data, trigger_time=None, num_iter=10_000, step_size=0.001,
-                   n_samples=1000, seed=42, outdir=None):
+def fit_villar_svi(data, num_iter=10_000, step_size=0.001,
+                   n_samples=1000, seed=42, outdir=None, score_cutoff=1.2):
     """Fit a Villar model to ZTF r+g photometry using numpyro SVI.
 
     Uses the exact same numerics as ``fit_jax_best.py``: flux-space
@@ -476,15 +482,16 @@ def fit_villar_svi(data, trigger_time=None, num_iter=10_000, step_size=0.001,
     df_raw = _prepare_data(data)
     result = _run_svi(df_raw, _VILLAR_PRIOR_R, _VILLAR_PRIOR_G,
                       _villar_flux, _villar_constraint, _score_villar,
-                      "Villar", num_iter, step_size, n_samples, seed, outdir)
+                      "Villar", num_iter, step_size, n_samples, seed, outdir,
+                      score_cutoff=score_cutoff)
     return result
 
 
-def fit_bazin_svi(data, trigger_time=None, num_iter=10_000, step_size=0.001,
-                  n_samples=1000, seed=42, outdir=None):
+def fit_bazin_svi(data, num_iter=10_000, step_size=0.001,
+                  n_samples=1000, seed=42, outdir=None, score_cutoff=1.2):
     """Fit a Bazin model to ZTF r+g photometry using numpyro SVI.
 
-    Same approach as ``fit_villar_svi`` but with the Bazin model (5 base
+    Same approach as ``fit_villar_svi`` but with the Bazin model (6 base
     params: A, B, t_0, tau_rise, tau_fall, extra_sigma) and corresponding
     priors derived from the superphot+ population.
 
@@ -493,5 +500,6 @@ def fit_bazin_svi(data, trigger_time=None, num_iter=10_000, step_size=0.001,
     df_raw = _prepare_data(data)
     result = _run_svi(df_raw, _BAZIN_PRIOR_R, _BAZIN_PRIOR_G,
                       _bazin_flux, _bazin_constraint, _score_bazin,
-                      "Bazin", num_iter, step_size, n_samples, seed, outdir)
+                      "Bazin", num_iter, step_size, n_samples, seed, outdir,
+                      score_cutoff=score_cutoff)
     return result

@@ -79,7 +79,7 @@ class Fiesta(object):
                  prior: Prior,
                  outdir: str = "./outdir/",
                  error_budget: float = 0.3,
-                 systematics_file: str = None,
+                 systematics_file: str | None = None,
                  seed: int = 42,
                  n_chains: int = 200,
                  sampler: str = "flowmc",
@@ -187,8 +187,8 @@ class Fiesta(object):
         n_dim = self.prior.n_dim
 
         # Extract parameter names and bounds from the prior
-        # CompositePrior has .priors list; bare Prior has .naming list of sub-priors
-        sub_priors = getattr(self.prior, 'priors', self.prior.naming)
+        # CompositePrior has .priors list; bare Prior wraps itself
+        sub_priors = getattr(self.prior, 'priors', [self.prior])
         param_names = []
         prior_mins = []
         prior_maxs = []
@@ -280,12 +280,19 @@ class Fiesta(object):
         samples = draws.T  # (n_dim, n_samples)
         self.posterior_samples = self.prior.add_name(samples)
 
-        # Also add string-keyed access for convenience
+        # Add string-keyed access for convenience: map each parameter name
+        # to its samples, regardless of whether the dict is keyed by Prior
+        # objects (CompositePrior) or strings.
         for sub_prior in sub_priors:
-            if sub_prior in self.posterior_samples:
-                val = self.posterior_samples[sub_prior]
-                for name in sub_prior.naming:
-                    self.posterior_samples[name] = val
+            for name in sub_prior.naming:
+                # Try Prior-object key first, then string key
+                if sub_prior in self.posterior_samples:
+                    self.posterior_samples[name] = self.posterior_samples[sub_prior]
+                elif name not in self.posterior_samples:
+                    # Parameter index in the flat draw array
+                    idx = param_names.index(name) if name in param_names else -1
+                    if idx >= 0:
+                        self.posterior_samples[name] = draws[:, idx]
 
         # Compute log_prob for each sample (vectorized)
         log_probs = jax.vmap(
