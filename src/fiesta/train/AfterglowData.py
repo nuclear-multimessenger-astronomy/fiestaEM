@@ -530,8 +530,8 @@ class BlastwaveData(AfterglowData):
         self.chunk_size = 100
         super().__init__(*args, **kwargs)
 
-    def create_raw_data(self, n: int, training: bool = True):
-        """Create draws X in the parameter space and run the blastwave model on it."""
+    def _sample_parameters(self, n, training):
+        """Sample parameters and enforce the forward-shock energy constraint."""
         X_raw = np.empty((n, len(self.parameter_names)))
 
         if training:
@@ -554,6 +554,11 @@ class BlastwaveData(AfterglowData):
         X_raw[mask, epsilon_B_ind] += np.log10(0.99 / epsilon_tot[mask])
         X_raw[mask, epsilon_e_ind] += np.log10(0.99 / epsilon_tot[mask])
 
+        return X_raw
+
+    def create_raw_data(self, n: int, training: bool = True):
+        """Create draws X in the parameter space and run the blastwave model on it."""
+        X_raw = self._sample_parameters(n, training)
         X, y = self.run_afterglow_model(X_raw)
         return X, y
 
@@ -658,6 +663,158 @@ class RunBlastwave:
             self._tt_flat, self._nunu_flat, P,
             force_return=True,
             flux_method="forward",
+        )
+        mJys = mJys.reshape(len(self.nus), len(self._times_seconds))
+        return mJys
+
+    def __call__(self, idx):
+        param_dict = dict(zip(self.parameter_names, self.X[idx], strict=True))
+        param_dict.update(self.fixed_parameters)
+        mJys = self._call_blastwave(param_dict)
+        mJys = np.clip(mJys, 1e-300, None)
+        return idx, np.log10(mJys)
+
+
+class BlastwaveRSData(BlastwaveData):
+    """BlastwaveData variant with reverse shock enabled.
+
+    Following Japelj+ 2014 (1402.3701), the RS microphysics are tied to
+    the FS values via a magnetization ratio RB::
+
+        eps_e_rs = eps_e_f
+        eps_b_rs = RB * eps_b_f
+        p_rs     = p_f
+
+    Extra sampled parameter: log10_RB, log10_duration.
+    sigma is kept fixed at 0.0 (unmagnetized ejecta).
+    """
+
+    def create_raw_data(self, n: int, training: bool = True):
+        """Sample parameters, enforce FS and RS energy constraints, then run model."""
+        X_raw = self._sample_parameters(n, training)
+
+        # Ensure that eps_b_rs = RB * eps_b_f < 1 and eps_e + eps_b_rs < 1 (reverse shock)
+        epsilon_e_ind = self.parameter_names.index("log10_epsilon_e")
+        epsilon_B_ind = self.parameter_names.index("log10_epsilon_B")
+        RB_ind = self.parameter_names.index("log10_RB")
+        eps_e = 10**(X_raw[:, epsilon_e_ind])
+        eps_b_f = 10**(X_raw[:, epsilon_B_ind])
+        # Cap RB so that RB * eps_b_f < min(1 - eps_e, 0.99)
+        RB_max = np.clip((0.99 - eps_e) / eps_b_f, 1.0, None)
+        log10_RB_max = np.log10(RB_max)
+        mask_rs = X_raw[:, RB_ind] > log10_RB_max
+        X_raw[mask_rs, RB_ind] = log10_RB_max[mask_rs]
+
+        X, y = self.run_afterglow_model(X_raw)
+        return X, y
+
+    def run_afterglow_model(self, X):
+        y = np.empty((len(X), len(self.nus), len(self.times)))
+        runner = RunBlastwaveRS(self.times, self.nus, X, self.parameter_names, self.fixed_parameters)
+        for idx in tqdm.tqdm(range(len(X)), desc=f"Computing {len(X)} blastwave+RS calculations.", leave=False):
+            try:
+                i, out = runner(idx)
+                y[i] = out
+            except Exception as e:
+                print(f"[WARNING] Blastwave+RS call failed for sample {idx}: {e}")
+                y[idx] = np.full((len(self.nus), len(self.times)), np.nan)
+        return X, y
+
+
+class RunBlastwaveRS:
+    """Like RunBlastwave but with reverse shock enabled.
+
+    Following Japelj+ 2014: RS microphysics derived from FS values via
+    magnetization ratio RB = eps_b_rs / eps_b_f, with eps_e_rs = eps_e_f
+    and p_rs = p_f.
+    """
+    def __init__(self, times, nus, X, parameter_names, fixed_parameters=None,
+                 ncells=33, spread_mode="ode"):
+        if fixed_parameters is None:
+            fixed_parameters = {}
+        self.times = np.array(times)
+        self._times_seconds = self.times * days_to_seconds
+        self.nus = np.array(nus)
+        self.X = np.array(X)
+        self.parameter_names = list(parameter_names)
+        self.fixed_parameters = dict(fixed_parameters)
+        self.ncells = ncells
+        if spread_mode not in ("ode", "pde", "none"):
+            raise ValueError(f"Invalid spread_mode '{spread_mode}'. Must be 'ode', 'pde', or 'none'.")
+        self.spread_mode = spread_mode
+
+        tt, nunu = np.meshgrid(self._times_seconds, self.nus)
+        self._tt_flat = tt.flatten()
+        self._nunu_flat = nunu.flatten()
+        self._tmax = float(np.max(self._times_seconds)) * 2
+
+        try:
+            import blastwave as _bw
+            self._bw = _bw
+        except ImportError as err:
+            raise ImportError(
+                "blastwave is not installed. Install it from "
+                "https://github.com/nuclear-multimessenger-astronomy/blastwave"
+            ) from err
+
+    def _call_blastwave(self, params_dict):
+        bw = self._bw
+
+        theta_c = params_dict["thetaCore"]
+        Eiso = 10 ** params_dict["log10_E0"]
+        lf = 10 ** params_dict["log10_lf"]
+        n0 = 10 ** params_dict["log10_n0"]
+        p = params_dict["p"]
+        eps_e = 10 ** params_dict["log10_epsilon_e"]
+        eps_b = 10 ** params_dict["log10_epsilon_B"]
+        theta_v = params_dict["inclination_EM"]
+
+        # Reverse shock parameters derived from FS (Japelj+ 2014)
+        RB = 10 ** params_dict["log10_RB"]
+        eps_e_rs = eps_e          # same as forward shock
+        eps_b_rs = RB * eps_b     # magnetization ratio
+        p_rs = p                  # same as forward shock
+        duration = 10 ** params_dict["log10_duration"]
+        sigma = params_dict.get("sigma", 0.0)
+
+        P = dict(
+            Eiso=Eiso, lf=lf, theta_c=theta_c, n0=n0, A=0,
+            eps_e=eps_e, eps_b=eps_b, p=p, theta_v=theta_v,
+            d=9.99e-6, z=0.0,
+        )
+
+        spread_kwargs = {}
+        if self.spread_mode == "ode":
+            spread_kwargs["spread_mode"] = "ode"
+        elif self.spread_mode == "pde":
+            spread_kwargs["spread"] = True
+        else:
+            spread_kwargs["spread"] = False
+
+        jet = bw.Jet(
+            bw.Gaussian(theta_c, Eiso, lf0=lf),
+            0.0, n0,
+            tmin=10.0,
+            tmax=self._tmax,
+            grid=bw.ForwardJetRes(theta_c, self.ncells),
+            tail=True,
+            cal_level=1,
+            rtol=1e-6,
+            eps_e=eps_e,
+            eps_b=eps_b,
+            p_fwd=p,
+            include_reverse_shock=True,
+            sigma=sigma,
+            eps_e_rs=eps_e_rs,
+            eps_b_rs=eps_b_rs,
+            p_rs=p_rs,
+            duration=duration,
+            **spread_kwargs,
+        )
+
+        mJys = jet.FluxDensity(
+            self._tt_flat, self._nunu_flat, P,
+            force_return=True,
         )
         mJys = mJys.reshape(len(self.nus), len(self._times_seconds))
         return mJys
