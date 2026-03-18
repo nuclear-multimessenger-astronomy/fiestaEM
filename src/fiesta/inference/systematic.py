@@ -86,10 +86,10 @@ def process_file(systematic_file, filters):
             raise ValueError(f"'individual' sys. uncertainty for each filter can only be specified if no other sys. uncertainty setup is given in {systematic_file}.")
         
         nodes, t_range, sys_prior_type, sys_prior_params = fetch_prior_params(yaml_dict["individual"])
-        
-        sys_parameters = []
 
         for filt in filters:
+
+            sys_parameters = []
 
             for j in range(1, nodes+1):
                 naming = f"syserr_{filt}_{j}"
