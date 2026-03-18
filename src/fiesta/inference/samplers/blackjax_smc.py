@@ -37,7 +37,7 @@ class BlackJaxSMC:
                  likelihood,
                  prior,
                  rng_key: PRNGKey,
-                 n_particles: int = 5000,
+                 n_particles: int = 8000,
                  target_ess: float = 0.9,
                  num_mcmc_steps: int = 10,
                  random_walk_sigma = 0.05,

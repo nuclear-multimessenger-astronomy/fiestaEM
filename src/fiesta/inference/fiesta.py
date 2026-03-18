@@ -27,7 +27,7 @@ class Fiesta(object):
         "likelihood": "(EMLikelihood) likelihood object used for the inference",
         "prior": "(Prior) prior object used for the inference. It has to contain the parameters needed to evaluate likelihood.evaluate().",
         "outdir": (str) directory to which the output should be saved.
-        "sampler": "(str) The sampler to use. If string, the sampler will be initialized with the likelihood and prior and can be 'flowmc', 'blackjax-smc', 'blackjax-nested-sampling'. Defaults to 'flowmc'.
+        "sampler": "(str) The sampler to use. Can be 'flowmc', 'blackjax-smc', or 'numpyro-svi'. Defaults to 'flowmc'.
         "error_budget": "(float) fixed systematic error to use in the inference in mag. Defaults to 0.3 but is ignored when systematics file is provided.",
         "systematics_file": "(str) path to the .yaml file that provides the setup for the systematic uncertainty parameters. Will overwrite error_budget.",
         "seed": "(int) Value of the random seed used.",
@@ -69,9 +69,9 @@ class Fiesta(object):
             case "blackjax-smc":
                 from fiesta.inference.samplers.blackjax_smc import BlackJaxSMC
                 sampler_cls = BlackJaxSMC
-            case "blackjax-nested-sampling":
-                from fiesta.inference.samplers.blackjax_nested_sampling import BlackJaxNestedSampling
-                sampler_cls = BlackJaxNestedSampling
+            case "numpyro-svi":
+                from fiesta.inference.samplers.numpyro_svi import SVISampler
+                sampler_cls = SVISampler
             case _:
                 raise ValueError(f"Implemented samplers are 'flowmc', 'blackjax-smc', 'blackjax-nested-sampling'.")
 
