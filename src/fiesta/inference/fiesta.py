@@ -26,10 +26,11 @@ class Fiesta(object):
     Args:
         "likelihood": "(EMLikelihood) likelihood object used for the inference",
         "prior": "(Prior) prior object used for the inference. It has to contain the parameters needed to evaluate likelihood.evaluate().",
+        "outdir": (str) directory to which the output should be saved.
+        "sampler": "(str) The sampler to use. If string, the sampler will be initialized with the likelihood and prior and can be 'flowmc', 'blackjax-smc', 'blackjax-nested-sampling'. Defaults to 'flowmc'.
         "error_budget": "(float) fixed systematic error to use in the inference in mag. Defaults to 0.3 but is ignored when systematics file is provided.",
         "systematics_file": "(str) path to the .yaml file that provides the setup for the systematic uncertainty parameters. Will overwrite error_budget.",
         "seed": "(int) Value of the random seed used.",
-        "sampler": "(str) The sampler to use. If string, the sampler will be initialized with the likelihood and prior and can be 'flowmc', 'blackjax-smc', 'blackjax-nested-sampling'. Defaults to 'flowmc'.
         **kwargs: Additional sampling parameters that are passed to the sampler.
     """
     
@@ -40,15 +41,12 @@ class Fiesta(object):
                  likelihood: EMLikelihood, 
                  prior: Prior,
                  outdir: str = "./outdir/",
+                 sampler: str = 'flowmc',
                  error_budget: float = 0.3,
                  systematics_file: str | None = None,
                  seed: int = 42,
-                 sampler: str = 'flowmc',
                  **kwargs):
-        
-        self.likelihood = likelihood
-        self.prior = prior
-        
+               
         self.outdir = outdir
         if not os.path.exists(self.outdir):
             os.mkdir(self.outdir)
@@ -59,9 +57,9 @@ class Fiesta(object):
 
         # setup the systematic uncertainty
         if systematics_file is not None:
-            self.likelihood, self.prior = setup_systematic_from_file(self.likelihood, self.prior, systematics_file)
+            self.likelihood, self.prior = setup_systematic_from_file(likelihood, prior, systematics_file)
         else:
-            self.likelihood, self.prior = setup_systematics_basic(self.likelihood, self.prior, error_budget)
+            self.likelihood, self.prior = setup_systematics_basic(likelihood, prior, error_budget)
 
         # setup sampler
         match sampler:
@@ -78,8 +76,8 @@ class Fiesta(object):
                 raise ValueError(f"Implemented samplers are 'flowmc', 'blackjax-smc', 'blackjax-nested-sampling'.")
 
         
-        self.sampler = sampler_cls(likelihood,
-                                   prior,
+        self.sampler = sampler_cls(self.likelihood,
+                                   self.prior,
                                    rng_key,
                                    **kwargs)
 
@@ -106,7 +104,9 @@ class Fiesta(object):
 
         self.sampler.print_summary()
         for key, value in self.posterior_samples.items():
-            lower_lim, median, upper_lim = jnp.quantile(value, q=[0.16, 0.5, 0.84])
+            if key in ["log_prob", "log_likelihood"]:
+                continue
+            lower_lim, median, upper_lim = jnp.quantile(value, q=jnp.array([0.16, 0.5, 0.84]))
             print(f"{key}: {median:.3f} + {upper_lim-median:.3f} - {median-lower_lim:.3f}")      
     
     def save_results(self, bestfit_params: bool =True, sampler_extra_output: bool=False):

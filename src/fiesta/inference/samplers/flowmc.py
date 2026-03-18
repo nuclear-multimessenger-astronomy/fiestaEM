@@ -43,10 +43,10 @@ class FlowMCSampler:
         self.prior = prior
         self.likelihood = likelihood
 
-        def log_posterior_fn(self, params: Float[Array, "n_dims"], data: dict[str, any]) -> Float:
+        def log_posterior_fn(params: Float[Array, "n_dims"], data: dict[str, any]) -> Float:
             params_named = self.prior.add_name(params.T)
             log_prior = self.prior.log_prob(params_named)
-            params_named = self.prior.tranform(params_named)
+            params_named = self.prior.transform(params_named)
             log_posterior = self.likelihood.evaluate(params_named) + log_prior
             return log_posterior
         
@@ -167,9 +167,10 @@ class FlowMCSampler:
         """
         
         self.get_summary_statistics()
-
+        print("\n")
+        print("=" * 20)
         print("Training summary")
-        print("=" * 10)
+        print("=" * 20)
 
         print(
             f"Log probability: {self.training_log_prob.mean():.3f} +/- {self.training_log_prob.std():.3f}"
@@ -188,11 +189,10 @@ class FlowMCSampler:
         print(
             f"Max loss: {self.training_loss.max():.3f}, Min loss: {self.training_loss.min():.3f}"
         )
-        
-        print("\n \n")
-
+        print("\n")
+        print("=" * 20)
         print("Production summary")
-        print("=" * 10)
+        print("=" * 20)
 
         print(
             f"Log probability: {self.production_log_prob.mean():.3f} +/- {self.production_log_prob.std():.3f}"
@@ -207,6 +207,6 @@ class FlowMCSampler:
         print(
             f"Global acceptance: {production_global_acceptance.mean():.3f} +/- {production_global_acceptance.std():.3f}"
         )
-        print("=" * 10)
+        print("\n")
 
 

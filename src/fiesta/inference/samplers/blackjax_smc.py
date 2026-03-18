@@ -53,18 +53,18 @@ class BlackJaxSMC:
         self.kernel = kernel
 
 
-        def logprior_fn(x: Float[Array, "n_particles, ndims"]) -> Float:
+        def logprior_fn(x: Float[Array, "n_particles ndims"]) -> Float:
             x = jnp.atleast_1d(x)
             x_dict = self.prior.add_name(x.T)
             return self.prior.log_prob(x_dict)
         
-        def loglikelihood_fn(x: Float[Array, "n_particles, ndims"]) -> Float:
+        def loglikelihood_fn(x: Float[Array, "n_particles ndims"]) -> Float:
             x = jnp.atleast_1d(x)
             x_dict = self.prior.add_name(x.T)
             x_dict = self.prior.transform(x_dict)
             return self.likelihood.evaluate(x_dict)
         
-        def logposterior_fn(x: Float[Array, "n_particles, ndims"]) -> Float:
+        def logposterior_fn(x: Float[Array, "n_particles ndims"]) -> Float:
             return logprior_fn(x) + loglikelihood_fn(x)
 
 
@@ -286,19 +286,19 @@ class BlackJaxSMC:
         Print summary statement of the run
         """
         print("\n \n")
-        print("=" * 10)
-        for key in ["kernel_type", 
-                    "n_particles", 
-                    "annealing_steps", 
-                    "final_ess", 
+        print("=" * 20)
+        print(f"kernel_type: {self.metadata['kernel_type']}")
+        print(f"n_particles: {self.metadata['n_particles']}")
+        print(f"n_steps: {self.metadata['annealing_steps']}")
+        for key in ["final_ess", 
                     "mean_ess", 
                     "min_ess", 
                     "mean_acceptance", 
                     "logZ"]:
-            
-            print(f"{key}: {self.metadata[key]:.3f} \n")
+            print(f"{key}: {self.metadata[key]:.3f}")
 
-        print("=" * 10)
+        print("=" * 20)
+        print("\n")
        
     def setup_mcmc_kernel(self,                       
                           logprior_fn: Callable, 
