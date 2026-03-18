@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 
 
-from fiesta.inference.prior import Uniform, Constraint, ConstrainedPrior
+from fiesta.inference.prior import Uniform, Constraint, ConstrainedPrior, Sine
 from fiesta.inference.fiesta import Fiesta
 from fiesta.inference.likelihood import EMLikelihood
 from fiesta.inference.lightcurve_model import AfterglowFlux, BullaFlux, CombinedSurrogate
@@ -39,7 +39,7 @@ model = CombinedSurrogate(models=[model1, model2],
 #########
 
 GRB_prior = [
-             Uniform(xmin=0.0, xmax=np.pi/4, naming=['inclination_EM']),
+             Sine(xmin=0.0, xmax=np.pi/4, naming=['inclination_EM']),
              Uniform(xmin=47.0, xmax=57.0, naming=['log10_E0']), 
              Uniform(xmin=0.01, xmax=np.pi/5, naming=['thetaCore']),
              Uniform(xmin = 0.2, xmax=3.5, naming= ["alphaWing"]),
