@@ -439,7 +439,7 @@ class FluxLikelihood:
     def __call__(self, theta):
         return self.evaluate(theta)
 
-    def evaluate(self, theta: dict[str, Array], data: dict = None) -> Float:
+    def evaluate(self, theta: dict[str, Array], data: dict | None = None) -> Float:
         """Evaluate log-likelihood in normalized flux space.
 
         The model's ``compute_shape`` is called to get the temporal shape

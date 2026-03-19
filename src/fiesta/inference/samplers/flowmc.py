@@ -30,7 +30,7 @@ class FlowMCSampler:
                  n_production_loops = 15,
                  n_epochs = 100,
                  rq_spline_n_layers =4,
-                 rq_spline_hidden_units =[64, 64],
+                 rq_spline_hidden_units=None,
                  rq_spline_n_bins = 8,
                  mala_step_size = 2e-3,
                  learning_rate = 4e-4,
@@ -42,6 +42,9 @@ class FlowMCSampler:
         
         self.prior = prior
         self.likelihood = likelihood
+
+        if rq_spline_hidden_units is None:
+            rq_spline_hidden_units = [64, 64]
 
         def log_posterior_fn(params: Float[Array, "n_dims"], data: dict[str, any]) -> Float:
             params_named = self.prior.add_name(params.T)
@@ -86,16 +89,16 @@ class FlowMCSampler:
                     f"{n_training_loops} training loops "
                     f"and {n_production_loops} production loops.")
 
-    def sample(self, key: PRNGKey, initial_position: Array = jnp.array([])):
+    def sample(self, key: PRNGKey, initial_position: Array | None = None):
         """
         Starts the flowmc sampling algorithm.
-         After running, the posterior samples are stored as ``.posterior_samples`` attribute.
+        After running, the posterior samples are stored as ``.posterior_samples`` attribute.
 
         Args:
             key (PRNGKey): Random seed to start sampling.
-            initial_guess (Array, optional): Initial posisions of the chains. If empty, will get initial position as random samples from the prior.
+            initial_position (Array, optional): Initial positions of the chains. If None, samples from the prior.
         """
-        if initial_position.size == 0:
+        if initial_position is None:
             initial_position_named = self.prior.sample(key, self.Sampler.n_chains)
             initial_position = jnp.stack([initial_position_named[p] for p in self.prior.naming]).T
         
@@ -141,7 +144,7 @@ class FlowMCSampler:
             self.get_summary_statistics()
 
             # - training phase
-            name = os.path.join(outdir, f'results_training.npz')
+            name = os.path.join(outdir, 'results_training.npz')
             logger.info(f"FlowMC sampler saving training samples to {name}.")
     
             jnp.savez(name, log_prob=self.training_log_prob,
@@ -152,7 +155,7 @@ class FlowMCSampler:
             )
             
             #  - production phase
-            name = os.path.join(outdir, f'results_production.npz')
+            name = os.path.join(outdir, 'results_production.npz')
             logger.info(f"FlowMC sampler saving production samples to {name}.")
             
             jnp.savez(name, chains=self.production_chain, 
