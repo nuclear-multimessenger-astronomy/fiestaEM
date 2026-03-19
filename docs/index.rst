@@ -1,22 +1,30 @@
-fiesta
-======
+fiesta documentation
+====================
 
 **F**\ast **I**\nference of **E**\lectromagnetic **S**\ignals and **T**\ransients with j\ **A**\x.
 
 ``fiesta`` is a JAX-based Python library for training machine-learning surrogates for
 kilonova and gamma-ray burst afterglow models, and for performing fast Bayesian inference
-on photometric lightcurve data from such events.
+on photometric lightcurve data from astronomical transients.
+
+Recently, some analytical models have also been made availabe that can be used for light curve fitting.
+
+.. note::
+
+   **Documentation is work in progress!** Some sections may be incomplete or under active development. We appreciate your patience as we improve the documentation.
+   Please contact us with any questions or issues you might encounter.
+
 
 .. grid:: 2
 
-   .. grid-item-card:: Getting Started
-      :link: quickstart
+   .. grid-item-card:: Installation
+      :link: quickstart/installation
       :link-type: doc
 
-      New to ``fiesta``? Start here for a brief introduction and first steps.
+      How to install the package.
 
    .. grid-item-card:: Surrogates
-      :link: surrogates
+      :link: quickstart/surrogates
       :link-type: doc
 
       Learn about the two types of surrogate models (FluxModel and LightcurveModel)
@@ -25,32 +33,16 @@ on photometric lightcurve data from such events.
 .. grid:: 2
 
    .. grid-item-card:: Training
-      :link: overview/training
+      :link: user_guide/training/introduction
       :link-type: doc
 
       How to prepare training data and train your own surrogate models.
 
    .. grid-item-card:: Inference
-      :link: overview/inference
+      :link: user_guide/inference/introduction
       :link-type: doc
 
-      How to set up and run Bayesian parameter estimation with ``fiesta``.
-
-.. grid:: 2
-
-   .. grid-item-card:: Analytical Models
-      :link: analytical_models
-      :link-type: doc
-
-      Physics-based, JIT-compilable light-curve models for kilonovae,
-      supernovae, afterglows, TDEs, and more.
-
-   .. grid-item-card:: Systematic Errors
-      :link: systematics
-      :link-type: doc
-
-      Configure fixed, free, or time-dependent systematic uncertainties in the
-      likelihood.
+      How to perform Bayesian light curve fitting using the fiesta functionalities.
 
 .. grid:: 2
 
@@ -60,52 +52,32 @@ on photometric lightcurve data from such events.
 
       Full auto-generated API documentation for all modules.
 
-Installation
-------------
+   .. grid-item-card:: Citation
+      :link: developer_guide/citing
+      :link-type: doc
 
-``fiesta`` can be installed from PyPI:
+      If you use ``fiesta``, consider citing our paper 📝
 
-.. code-block:: bash
 
-   pip install fiestaEM
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Quickstart
 
-Or directly from source for the latest development version:
+   quickstart/installation
+   quickstart/surrogates
+   quickstart/filters
+   quickstart/analytical_models
 
-.. code-block:: bash
-
-   git clone https://github.com/nuclear-multimessenger-astronomy/fiestaEM.git
-   pip install -e .
-
-For GPU acceleration (requires CUDA 12):
-
-.. code-block:: bash
-
-   pip install fiestaEM[gpu]
-
-For GRB afterglow support:
-
-.. code-block:: bash
-
-   pip install fiestaEM[grb]
 
 .. toctree::
    :hidden:
    :maxdepth: 2
    :caption: User Guide
-
-   quickstart
-   surrogates
-   analytical_models
-   systematics
-   filters
-   training_data
-
-.. toctree::
-   :hidden:
-   :maxdepth: 2
-   :caption: Overview
-
-   overview/index
+   
+   user_guide/index
+   user_guide/training/index
+   user_guide/inference/index
 
 .. toctree::
    :hidden:
@@ -120,4 +92,4 @@ For GRB afterglow support:
    :caption: Developer Guide
 
    developer_guide/index
-   citing
+   developer_guide/citing

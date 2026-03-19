@@ -41,7 +41,7 @@ dependencies = [
 
 [project.optional-dependencies]
 grb = ["afterglowpy"]
-gpu = ["jax[cuda12]"]
+gpu = ["jax[cuda13]"]
 docs = [
     "sphinx>=7.0",
     "sphinx-autobuild",
