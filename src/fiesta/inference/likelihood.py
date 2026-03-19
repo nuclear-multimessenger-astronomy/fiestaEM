@@ -205,18 +205,15 @@ class EMLikelihood:
     def __call__(self, theta):
         return self.evaluate(theta)
         
-    def evaluate(self, 
-                 theta: dict[str, Array],
-                 data: dict | None = None) -> Float:
+    def evaluate(self, theta: dict[str, Array]) -> Float:
         """
         Evaluate the log-likelihood of the data given the model and the parameters theta, at a single point.
 
         Args:
-            theta (dict[str, Array]): _description_
-            data (dict, optional): Unused, but kept to comply with flowMC likelihood function signature. Defaults to None.
+            theta (dict[str, Array]): A dictionary containing the parameters used to generate the model light curve that is then used to compute the loglikelihood.
 
         Returns:
-            Float: The log-likelihood value at this point.
+            Float: The log-likelihood value at this parameter point.
         """
 
         theta = {**theta, **self.fixed_params}
@@ -238,13 +235,13 @@ class EMLikelihood:
         chisq = jax.tree_util.tree_map(self.get_chisq_filt, 
                              mag_est_det, self.mag_det, sigma, self.detection_limit)
         chisq_flatten, _ = jax.flatten_util.ravel_pytree(chisq)
-        chisq_total = jnp.sum(chisq_flatten)#.astype(jnp.float64)
+        chisq_total = jnp.sum(chisq_flatten)
         
         # Get gaussprob:
         gaussprob = jax.tree_util.tree_map(self.get_gaussprob_filt, 
                                  mag_est_nondet, self.mag_nondet, nondet_sigma)
         gaussprob_flatten, _ = jax.flatten_util.ravel_pytree(gaussprob)
-        gaussprob_total = jnp.sum(gaussprob_flatten)#.astype(jnp.float64)
+        gaussprob_total = jnp.sum(gaussprob_flatten)
         
         return chisq_total + gaussprob_total
     
@@ -439,7 +436,7 @@ class FluxLikelihood:
     def __call__(self, theta):
         return self.evaluate(theta)
 
-    def evaluate(self, theta: dict[str, Array], data: dict | None = None) -> Float:
+    def evaluate(self, theta: dict[str, Array]) -> Float:
         """Evaluate log-likelihood in normalized flux space.
 
         The model's ``compute_shape`` is called to get the temporal shape
