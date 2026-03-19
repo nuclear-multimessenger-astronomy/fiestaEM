@@ -10,12 +10,10 @@ import jax.numpy as jnp
 
 from fiesta.inference.prior import Uniform, Constraint, Normal, UniformSourceFrame, ConstrainedPrior, Sine
 
-from fiesta.inference.lightcurve_model import FluxModel, CombinedSurrogate
+from fiesta.inference import FluxModel, CombinedSurrogate, EMLikelihood, Fiesta
 from fiesta.inference.injection import InjectionSurrogate
 from fiesta.inference.systematic import process_file
-from fiesta.inference.likelihood import EMLikelihood
 from fiesta.utils import load_event_data
-from fiesta.inference.fiesta import Fiesta
 
 FILTERS_KN = ["besselli", "bessellv"]
 FILTERS_GRB = ["besselli", "radio-3GHz"]

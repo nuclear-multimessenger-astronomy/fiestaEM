@@ -112,21 +112,25 @@ class Fiesta(object):
                 "print_summary(), save_results(), or plot methods."
             )
 
-    def print_summary(self):
+    def print_summary(self,):
+        """
+        Prints the 68% confidence intervals of the posterior and 
+        some additional sampler output to terminal.
+        """
         self._check_sampled()
         self.sampler.print_summary()
         for key, value in self.posterior_samples.items():
             if key in ["log_prob", "log_likelihood"]:
                 continue
             lower_lim, median, upper_lim = jnp.quantile(value, q=jnp.array([0.16, 0.5, 0.84]))
-            print(f"{key}: {median:.3f} + {upper_lim-median:.3f} - {median-lower_lim:.3f}")
-
-    def save_results(self, bestfit_params: bool = True, sampler_extra_output: bool = False):
+            print(f"{key}: {median:.3f} + {upper_lim-median:.3f} - {median-lower_lim:.3f}")      
+    
+    def save_results(self, bestfit_params: bool =True, sampler_extra_output: bool=False):
         """
         Saves the posterior samples to .npz files in ``outdir``.
 
         Args:
-            bestfit_params (bool): Whether to print an extra file with the best fit parameters and light curves. Defaults to True.
+            bestfit_params (bool): Whether to print an extra .pkl file with the best fit parameters and light curves. Defaults to True.
             sampler_extra_output (bool): Whether to save additional sampler output to the outdir. Defaults to False.
         """
         self._check_sampled()
