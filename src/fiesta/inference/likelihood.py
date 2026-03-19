@@ -327,3 +327,174 @@ class EMLikelihood:
         except TypeError:
             # JAX < 0.5 doesn't support batch_size in lax.map
             return jax.vmap(evaluate_single)(theta_arr)
+
+
+class FluxLikelihood:
+    """Flux-space Gaussian likelihood for phenomenological models.
+
+    Unlike ``EMLikelihood`` which works in magnitude space, this likelihood
+    operates on normalized flux values. The data is converted from magnitudes
+    to flux, normalized by the peak flux across all bands, and the model
+    is evaluated in flux space directly.
+
+    This approach matches the superphot+ fitting pipeline (de Soto et al. 2024)
+    and produces more stable SVI gradients than magnitude-space likelihoods.
+
+    Args:
+        model: A phenomenological model whose ``compute_shape`` returns flux.
+        data: dict mapping filter name to (n, 3) array of [time, mag, mag_err].
+        trigger_time: Reference time (MJD); subtracted from all observation times.
+        tmin, tmax: Phase range (days relative to trigger_time) to include.
+        zp: Zero-point for mag-to-flux conversion (default 23.9 for ZTF).
+        filters: List of filter names. If None, inferred from data keys.
+    """
+
+    def __init__(self,
+                 model,
+                 data: dict[str, Float[Array, "ntimes 3"]],
+                 trigger_time: Float,
+                 tmin: Float = -50.0,
+                 tmax: Float = 100.0,
+                 zp: Float = 23.9,
+                 filters: list[str] | None = None):
+
+        self.model = copy.deepcopy(model)
+        self.trigger_time = trigger_time
+        self.tmin = tmin
+        self.tmax = tmax
+        self.zp = zp
+
+        if filters is None:
+            self.filters = sorted(data.keys())
+        else:
+            self.filters = [f for f in filters if f in data]
+
+        logger.info("FluxLikelihood: converting observations to normalized flux . . .")
+
+        self.times = {}
+        self.flux = {}
+        self.flux_err = {}
+        self.n_obs = {}
+
+        all_flux_vals = []
+        raw_data = {}
+
+        for filt in self.filters:
+            arr = np.array(data[filt])
+            times = arr[:, 0] - trigger_time
+            mag = arr[:, 1]
+            mag_err = arr[:, 2]
+
+            # Phase cut
+            mask = (times >= tmin) & (times <= tmax) & (mag_err != np.inf)
+            times = times[mask]
+            mag = mag[mask]
+            mag_err = mag_err[mask]
+
+            # Mag to flux
+            flux_vals = 10.0 ** ((zp - mag) / 2.5)
+            flux_err_vals = flux_vals * mag_err * np.log(10.0) / 2.5
+
+            raw_data[filt] = (times, flux_vals, flux_err_vals)
+            all_flux_vals.extend(flux_vals.tolist())
+
+        # Normalize by global peak flux
+        self.peak_flux = max(all_flux_vals) if all_flux_vals else 1.0
+        assert self.peak_flux > 0, "Non-positive peak flux."
+
+        for filt in self.filters:
+            times, flux_vals, flux_err_vals = raw_data[filt]
+            self.times[filt] = jnp.array(times)
+            self.flux[filt] = jnp.array(flux_vals / self.peak_flux)
+            self.flux_err[filt] = jnp.array(flux_err_vals / self.peak_flux)
+            self.n_obs[filt] = len(times)
+
+        total_obs = sum(self.n_obs.values())
+        logger.info(f"FluxLikelihood: {total_obs} observations across "
+                    f"{len(self.filters)} filters, peak_flux={self.peak_flux:.2f}")
+
+    def _setup_sys_uncertainty_fixed(self, error_budget=0.3):
+        """Add systematic error budget (in magnitudes) to flux uncertainties.
+
+        Converts the magnitude error budget to flux space at each
+        observation's flux level and adds in quadrature with the
+        measurement flux error, matching EMLikelihood's convention.
+        """
+        for filt in self.filters:
+            # Convert mag error budget to fractional flux error:
+            # delta_flux / flux = delta_mag * ln(10) / 2.5
+            frac_err = error_budget * np.log(10.0) / 2.5
+            sys_flux_err = self.flux[filt] * frac_err
+            self.flux_err[filt] = jnp.sqrt(
+                self.flux_err[filt] ** 2 + sys_flux_err ** 2
+            )
+        self.get_sigma = lambda theta: self.flux_err
+        self.get_nondet_sigma = lambda theta: {}
+
+    def _setup_sys_uncertainty_free(self):
+        """No-op: FluxLikelihood handles scatter via per-filter extra_sigma."""
+        self.get_sigma = lambda theta: self.flux_err
+        self.get_nondet_sigma = lambda theta: {}
+
+    def __call__(self, theta):
+        return self.evaluate(theta)
+
+    def evaluate(self, theta: dict[str, Array], data: dict = None) -> Float:
+        """Evaluate log-likelihood in normalized flux space.
+
+        The model's ``compute_shape`` is called to get the temporal shape
+        S(t), which is then scaled by the per-filter amplitude parameter
+        ``amp_{filt}`` (sampled in linear space, not magnitude).
+
+        The likelihood is:
+            log L = -0.5 * sum((flux_obs - flux_model)^2 / sigma_total^2)
+                    - 0.5 * sum(log(2*pi*sigma_total^2))
+
+        where sigma_total^2 = flux_err^2 + extra_sigma^2.
+        """
+        log_lik = 0.0
+
+        for filt in self.filters:
+            times_filt = self.times[filt]
+            flux_obs = self.flux[filt]
+            flux_err = self.flux_err[filt]
+
+            # Evaluate model shape at observation times
+            shape = self.model.compute_shape(theta, times_filt)
+
+            # Per-filter amplitude (linear flux scale)
+            amp_key = f"amp_{filt}"
+            if amp_key in theta:
+                amp = theta[amp_key]
+            else:
+                amp = 1.0
+
+            flux_model = amp * shape
+
+            # Extra sigma (intrinsic scatter in flux)
+            se_key = f"extra_sigma_{filt}"
+            if se_key in theta:
+                extra_sigma = theta[se_key]
+            else:
+                extra_sigma = 0.0
+
+            sigma_total_sq = flux_err ** 2 + extra_sigma ** 2
+            residual = flux_obs - flux_model
+            log_lik += -0.5 * jnp.sum(
+                residual ** 2 / sigma_total_sq + jnp.log(2 * jnp.pi * sigma_total_sq)
+            )
+
+        return log_lik
+
+    def vectorized_evaluate(self, theta: dict[str, Array]):
+        """Evaluate log-likelihood for multiple parameter samples."""
+        theta_arr = jnp.array([theta[name] for name in theta.keys()]).T
+
+        def evaluate_single(theta_single):
+            param_dict = dict(zip(theta.keys(), theta_single))
+            return self(param_dict)
+
+        try:
+            return jax.lax.map(evaluate_single, theta_arr, batch_size=500)
+        except TypeError:
+            return jax.vmap(evaluate_single)(theta_arr)
