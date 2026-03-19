@@ -207,7 +207,7 @@ class EMLikelihood:
         
     def evaluate(self, 
                  theta: dict[str, Array],
-                 data: dict = None) -> Float:
+                 data: dict | None = None) -> Float:
         """
         Evaluate the log-likelihood of the data given the model and the parameters theta, at a single point.
 

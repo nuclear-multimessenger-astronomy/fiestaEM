@@ -139,7 +139,7 @@ class SVISampler:
                 jax.debug.print("SVI sampling step {}/{}. Loss = {}.", step + 1, self.num_iter, loss)
 
             jax.lax.cond(
-                (step+1) % (self.num_iter // 10) ==0,
+                (step+1) % max(self.num_iter // 10, 1) == 0,
                 log_fn,
                 lambda _: None,
                 operand=None

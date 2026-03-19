@@ -93,7 +93,9 @@ class Fiesta(object):
 
         Args:
             key (PRNGKeyArray): Random seed to start sampling.
-            **kwargs: Additional arguments that are passed to the sample method of the ``.sampler``.
+            **kwargs: Sampler-specific arguments forwarded to ``.sampler.sample()``.
+                For flowmc: ``initial_position`` (Array).
+                Other samplers accept only ``key``.
         """
         
         logger.info("Starting sampling.")
