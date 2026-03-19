@@ -194,8 +194,8 @@ class SVISampler:
         print(f"num_iter: {self.num_iter}")
         print(f"ELBO: {self.metadata['elbo']:.3f}")
         for j, key in enumerate(self.prior.naming):
-            print(f"loc {key}: {self.metadata["svi_loc"][j]}")
-            print(f"scale {key}: {self.metadata["svi_scale"][j]}")
+            print(f"loc {key}: {self.metadata['svi_loc'][j]}")
+            print(f"scale {key}: {self.metadata['svi_scale'][j]}")
         print("=" * 20)
         print("\n")
 

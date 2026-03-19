@@ -322,4 +322,8 @@ class EMLikelihood:
             param_dict = dict(zip(theta.keys(), theta_single))
             return self(param_dict)
 
-        return jax.lax.map(evaluate_single, theta_arr, batch_size=500)
+        try:
+            return jax.lax.map(evaluate_single, theta_arr, batch_size=500)
+        except TypeError:
+            # JAX < 0.5 doesn't support batch_size in lax.map
+            return jax.vmap(evaluate_single)(theta_arr)
