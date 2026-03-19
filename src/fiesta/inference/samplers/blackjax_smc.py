@@ -21,8 +21,8 @@ try:
     from blackjax.smc.tuning.from_particles import particles_covariance_matrix
     from blackjax import nuts
 
-except ImportError:
-    raise ImportError(f"Please install blackjax if you want to use the blackjax-smc sampler.")
+except ImportError as err:
+    raise ImportError("Please install blackjax if you want to use the blackjax-smc sampler.") from err
 
 class BlackJaxSMC:
     """
@@ -316,7 +316,7 @@ class BlackJaxSMC:
                                                logposterior_fn,
                                                initial_particles)
             case _:
-                raise ValueError(f"Kernel for blackjax-smc must either be 'random_walk' or 'nuts'.")
+                raise ValueError("Kernel for blackjax-smc must either be 'random_walk' or 'nuts'.")
                                             
     
     def _setup_random_walk_kernel(self, initial_particles: Array) -> tuple[Callable, Callable, dict, Callable]:
@@ -387,7 +387,8 @@ class BlackJaxSMC:
 
             return mcmc_step_fn, mcmc_init_fn, init_params, mcmc_parameter_update_fn
     
-    def _setup_nuts_kernel(self, logposterior_fn: Callable) -> tuple[Callable, Callable, dict, Callable]:
+    def _setup_nuts_kernel(self, logprior_fn: Callable, loglikelihood_fn: Callable,
+                               logposterior_fn: Callable, initial_particles: Array) -> tuple[Callable, Callable, dict, Callable]:
         """Setup NUTS kernel with Hessian adaptation.
 
         Parameters

@@ -203,4 +203,4 @@ def test_flowmc():
                                    n_production_loops=2,
                                    n_max_examples=2)
 
-    run_with_timeout(fiesta.sample(jax.random.key(0)), 30)
+    run_with_timeout(fiesta.sample, 30, jax.random.key(0))

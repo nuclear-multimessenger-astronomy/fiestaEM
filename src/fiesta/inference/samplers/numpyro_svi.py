@@ -78,20 +78,23 @@ class SVISampler:
 
         prior_mins_j = jnp.array(prior_mins)
         prior_maxs_j = jnp.array(prior_maxs)
+        self._prior_mins = prior_mins_j
+        self._prior_maxs = prior_maxs_j
         init_loc = jnp.array(prior_means)
         init_scale = jnp.array(prior_stds) / 5.0
         
 
-        # SVI model distribution
+        # SVI model: prior is encoded in the TruncatedNormal sample statement,
+        # so only add the likelihood as a factor (avoid double-counting the prior).
         def model():
             with numpyro.plate("params", self.n_dim):
                 params = numpyro.sample("theta",
-                                        npdist.TruncatedNormal(loc=init_loc, 
+                                        npdist.TruncatedNormal(loc=init_loc,
                                                                scale=jnp.array(prior_stds),
-                                                               low=prior_mins_j, 
+                                                               low=prior_mins_j,
                                                                high=prior_maxs_j),
                                         )
-            numpyro.factor("logposterior", logposterior_fn(params))
+            numpyro.factor("loglikelihood", loglikelihood_fn(params))
     
         # constraints
         def guide():
@@ -155,6 +158,9 @@ class SVISampler:
         key, subkey = jax.random.split(key)
         z_norm = jax.random.normal(subkey, shape=(self.num_samples, self.n_dim))
         draws = jnp.array(loc) + z_norm * jnp.array(scale)
+
+        # Clip samples to prior bounds (Normal guide can exceed them)
+        draws = jnp.clip(draws, self._prior_mins, self._prior_maxs)
 
         samples = draws.T  # (n_dim, n_samples)
         posterior_samples = self.prior.add_name(samples)
