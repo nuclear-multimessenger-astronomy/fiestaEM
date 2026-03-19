@@ -13,8 +13,8 @@ try:
     import numpyro
     import numpyro.distributions as npdist
     from numpyro.infer import SVI as NumpyroSVI, Trace_ELBO
-except ImportError:
-    raise ImportError(f"Please install numpyro if you want to use the numpyro-svi sampler.")
+except ImportError as err:
+    raise ImportError("Please install numpyro if you want to use the numpyro-svi sampler.") from err
 
 class SVISampler:
     """
@@ -30,7 +30,7 @@ class SVISampler:
                  prior,
                  rng_key: PRNGKey,
                  num_iter: int = 10_000,
-                 step_size: int = 0.001,
+                 step_size: float = 0.001,
                  num_samples: int = 1000,
                  ):
 
@@ -61,7 +61,11 @@ class SVISampler:
         # Extract parameter names and bounds from the prior
         # CompositePrior has .priors list; bare Prior wraps itself
         prior_list = getattr(self.prior, 'priors', [self.prior])
-        param_names = []; prior_mins = []; prior_maxs = []; prior_means = []; prior_stds = []
+        param_names = []
+        prior_mins = []
+        prior_maxs = []
+        prior_means = []
+        prior_stds = []
         for sub_prior in prior_list:
             for name in sub_prior.naming:
                 param_names.append(name)

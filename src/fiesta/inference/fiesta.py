@@ -53,7 +53,7 @@ class Fiesta(object):
       
         rng_key = jax.random.PRNGKey(seed)
 
-        logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX...")
+        logger.info("Initializing Fast Inference of Electromagnetic Transients with JAX...")
 
         # setup the systematic uncertainty
         if systematics_file is not None:
@@ -73,7 +73,10 @@ class Fiesta(object):
                 from fiesta.inference.samplers.numpyro_svi import SVISampler
                 sampler_cls = SVISampler
             case _:
-                raise ValueError(f"Implemented samplers are 'flowmc', 'blackjax-smc', 'blackjax-nested-sampling'.")
+                raise ValueError(
+                    f"Unknown sampler '{sampler}'. "
+                    "Supported samplers are 'flowmc', 'blackjax-smc', 'numpyro-svi'."
+                )
 
         
         self.sampler = sampler_cls(self.likelihood,
@@ -81,7 +84,7 @@ class Fiesta(object):
                                    rng_key,
                                    **kwargs)
 
-        logger.info(f"Initializing Fast Inference of Electromagnetic Transients with JAX... DONE")
+        logger.info("Initializing Fast Inference of Electromagnetic Transients with JAX... DONE")
 
     def sample(self, key: PRNGKeyArray, **kwargs):
         """
@@ -93,23 +96,30 @@ class Fiesta(object):
             **kwargs: Additional arguments that are passed to the sample method of the ``.sampler``.
         """
         
-        logger.info(f"Starting sampling.")
+        logger.info("Starting sampling.")
         start_time = time.perf_counter()
         self.posterior_samples = self.sampler.sample(key, **kwargs)
         end_time = time.perf_counter()
         logger.info(f"Sampling finished. Sampling took {end_time-start_time:.2f} seconds.")
 
+    def _check_sampled(self):
+        """Raise if sample() has not been called yet."""
+        if not hasattr(self, "posterior_samples"):
+            raise RuntimeError(
+                "No posterior samples available. Call .sample() before "
+                "print_summary(), save_results(), or plot methods."
+            )
 
-    def print_summary(self,):
-
+    def print_summary(self):
+        self._check_sampled()
         self.sampler.print_summary()
         for key, value in self.posterior_samples.items():
             if key in ["log_prob", "log_likelihood"]:
                 continue
             lower_lim, median, upper_lim = jnp.quantile(value, q=jnp.array([0.16, 0.5, 0.84]))
-            print(f"{key}: {median:.3f} + {upper_lim-median:.3f} - {median-lower_lim:.3f}")      
-    
-    def save_results(self, bestfit_params: bool =True, sampler_extra_output: bool=False):
+            print(f"{key}: {median:.3f} + {upper_lim-median:.3f} - {median-lower_lim:.3f}")
+
+    def save_results(self, bestfit_params: bool = True, sampler_extra_output: bool = False):
         """
         Saves the posterior samples to .npz files in ``outdir``.
 
@@ -117,9 +127,9 @@ class Fiesta(object):
             bestfit_params (bool): Whether to print an extra file with the best fit parameters and light curves. Defaults to True.
             sampler_extra_output (bool): Whether to save additional sampler output to the outdir. Defaults to False.
         """
-        
+        self._check_sampled()
         self.sampler.save(sampler_extra_output, self.outdir)
-        
+
         if bestfit_params:
             # - best fit params
             name = os.path.join(self.outdir, f'bestfit_params.pkl')
@@ -141,12 +151,9 @@ class Fiesta(object):
         jnp.savez(name, **self.posterior_samples)
             
 
-    def plot_lightcurves(self,):
-        
-        """
-        Plot the data and the posterior lightcurves and the best fit lightcurve more visible on top
-        """      
-
+    def plot_lightcurves(self):
+        """Plot the data and the posterior lightcurves and the best fit lightcurve more visible on top."""
+        self._check_sampled()
         lc_plotter = LightcurvePlotter(self.posterior_samples,
                                        self.likelihood)
 
@@ -176,7 +183,7 @@ class Fiesta(object):
         fig.savefig(os.path.join(self.outdir, "lightcurves.pdf"), bbox_inches = 'tight', dpi=250)
     
     def plot_corner(self, truths: dict | None = None):
-
+        self._check_sampled()
         fig, ax = corner_plot(self.posterior_samples,
                               self.prior.naming,
                               truths=truths)

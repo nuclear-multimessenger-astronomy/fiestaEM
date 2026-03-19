@@ -64,8 +64,8 @@ def test_injection():
                                 )
     
     injection.write_to_file(join(working_dir, "injection_tmp.dat"))
-    Path.unlink(join(working_dir, "injection_tmp.dat"))
-    Path.unlink(join(working_dir, "param_dict.dat"))
+    Path(join(working_dir, "injection_tmp.dat")).unlink()
+    Path(join(working_dir, "param_dict.dat")).unlink()
 
 
 def test_systematic():

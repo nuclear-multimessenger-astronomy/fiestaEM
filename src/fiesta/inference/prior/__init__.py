@@ -13,6 +13,16 @@ from .prior import (Prior,
 from .prior_dict import (ConstrainedPrior)
 
 __all__ = [
-    name for name in dir()
-    if not name.startswith("_")
+    "Prior",
+    "Uniform",
+    "InterpedPrior",
+    "Normal",
+    "TruncatedNormal",
+    "UniformVolume",
+    "UniformSourceFrame",
+    "LogUniform",
+    "Sine",
+    "CompositePrior",
+    "Constraint",
+    "ConstrainedPrior",
 ]

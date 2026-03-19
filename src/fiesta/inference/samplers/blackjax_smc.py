@@ -275,7 +275,7 @@ class BlackJaxSMC:
         logger.info(f"Estimated log-evidence from sampling: {self.metadata['logZ']:.3f}")
         
         if sampler_extra_output:
-            name = os.path.join(outdir, f'smc_metadata.json')
+            name = os.path.join(outdir, 'smc_metadata.json')
             logger.info(f"BlackJaxSMC sampler saving metadata to {name}.")
 
             with open(name, "w") as f:

@@ -122,17 +122,17 @@ class FlowMCSampler:
 
             self.training_log_prob = resources["log_prob_training"].data
             training_local_acceptance = resources["local_accs_training"].data
-            self.training_local_acceptance = training_local_acceptance[~jnp.isneginf(training_local_acceptance)]
+            self.training_local_acceptance = jnp.where(jnp.isfinite(training_local_acceptance), training_local_acceptance, jnp.nan)
             training_global_acceptance = resources["global_accs_training"].data
-            self.training_global_acceptance = training_global_acceptance[~jnp.isneginf(training_global_acceptance)]
+            self.training_global_acceptance = jnp.where(jnp.isfinite(training_global_acceptance), training_global_acceptance, jnp.nan)
             self.training_loss = resources["loss_buffer"].data
 
             self.production_chain = resources["positions_production"].data.reshape(-1, self.prior.n_dim).T
             self.production_log_prob = resources["log_prob_production"].data
             production_local_acceptance = resources["local_accs_production"].data
-            self.production_local_acceptance = production_local_acceptance[~jnp.isneginf(production_local_acceptance)]
+            self.production_local_acceptance = jnp.where(jnp.isfinite(production_local_acceptance), production_local_acceptance, jnp.nan)
             production_global_acceptance = resources["global_accs_production"].data
-            self.production_global_acceptance = production_global_acceptance[~jnp.isneginf(production_global_acceptance)]
+            self.production_global_acceptance = jnp.where(jnp.isfinite(production_global_acceptance), production_global_acceptance, jnp.nan)
     
     def save(self, sampler_extra_output: bool, outdir: str) -> None:
 
@@ -146,8 +146,8 @@ class FlowMCSampler:
     
             jnp.savez(name, log_prob=self.training_log_prob,
                             chains = self.training_chain,
-                            local_accs=jnp.mean(self.training_local_acceptance, axis=0),
-                            global_accs=jnp.mean(self.training_global_acceptance, axis=0), 
+                            local_accs=jnp.nanmean(self.training_local_acceptance, axis=0),
+                            global_accs=jnp.nanmean(self.training_global_acceptance, axis=0), 
                             loss_vals=self.training_loss
             )
             
@@ -157,8 +157,8 @@ class FlowMCSampler:
             
             jnp.savez(name, chains=self.production_chain, 
                             log_prob=self.production_log_prob,
-                            local_accs=jnp.mean(self.production_local_acceptance, axis=0),
-                            global_accs=jnp.mean(self.production_global_acceptance, axis=0)
+                            local_accs=jnp.nanmean(self.production_local_acceptance, axis=0),
+                            global_accs=jnp.nanmean(self.production_global_acceptance, axis=0)
             )            
       
     def print_summary(self):
@@ -176,12 +176,12 @@ class FlowMCSampler:
             f"Log probability: {self.training_log_prob.mean():.3f} +/- {self.training_log_prob.std():.3f}"
         )
 
-        training_local_acceptance = jnp.mean(self.training_local_acceptance, axis=0)
+        training_local_acceptance = jnp.nanmean(self.training_local_acceptance, axis=0)
         print(
             f"Local acceptance: {training_local_acceptance.mean():.3f} +/- {training_local_acceptance.std():.3f}"
         )
         
-        training_global_acceptance = jnp.mean(self.training_global_acceptance, axis=0)
+        training_global_acceptance = jnp.nanmean(self.training_global_acceptance, axis=0)
         print(
             f"Global acceptance: {training_global_acceptance.mean():.3f} +/- {training_global_acceptance.std():.3f}"
         )
@@ -198,12 +198,12 @@ class FlowMCSampler:
             f"Log probability: {self.production_log_prob.mean():.3f} +/- {self.production_log_prob.std():.3f}"
         )
 
-        production_local_acceptance = jnp.mean(self.production_local_acceptance, axis=0)
+        production_local_acceptance = jnp.nanmean(self.production_local_acceptance, axis=0)
         print(
             f"Local acceptance: {production_local_acceptance.mean():.3f} +/- {production_local_acceptance.std():.3f}"
         )
 
-        production_global_acceptance = jnp.mean(self.production_global_acceptance, axis=0)
+        production_global_acceptance = jnp.nanmean(self.production_global_acceptance, axis=0)
         print(
             f"Global acceptance: {production_global_acceptance.mean():.3f} +/- {production_global_acceptance.std():.3f}"
         )
