@@ -23,11 +23,6 @@ Top-level utility modules.
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: fiesta.plot
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 .. automodule:: fiesta.constants
    :members:
    :undoc-members:

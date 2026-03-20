@@ -82,7 +82,7 @@ Systematics
 Sampler
 -------
 
-.. automodule:: fiesta.inference.fiesta
+.. automodule:: fiesta.inference.samplers
    :members:
    :undoc-members:
    :show-inheritance:
@@ -91,6 +91,11 @@ Utilities
 ---------
 
 .. automodule:: fiesta.inference.injection
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: fiesta.inference.plot
    :members:
    :undoc-members:
    :show-inheritance:
