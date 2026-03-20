@@ -116,10 +116,10 @@ class BlackJaxSMC:
         
         # Define loop conditions with proper type hints
         def cond_fn(carry: tuple[StateWithParameterOverride, PRNGKeyArray, int, Array, Array, Array, float]) -> bool:
-            state, _, _, _, _, _, _ = carry
+            state, _, step_count, _, _, _, _ = carry
             # Cast to proper type for type checker (runtime type is correct)
             sampler_state = cast(TemperedSMCState, state.sampler_state)
-            return sampler_state.tempering_param < 1  # type: ignore[return-value]
+            return (sampler_state.tempering_param < 1) & (step_count < max_steps)  # type: ignore[return-value]
 
         def body_fn(
                     carry: tuple[StateWithParameterOverride, PRNGKeyArray, int, Array, Array, Array, float]
@@ -224,6 +224,13 @@ class BlackJaxSMC:
         )
 
         final_sampler_state = cast(TemperedSMCState, state.sampler_state)
+
+        if int(steps) >= max_steps:
+            logger.warning(
+                f"SMC reached max_steps={max_steps} without converging "
+                f"(tempering_param={float(final_sampler_state.tempering_param):.6f} < 1). "
+                "Consider increasing max_steps."
+            )
 
         ###################
         # post processing #

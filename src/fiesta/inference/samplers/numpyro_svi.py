@@ -55,9 +55,6 @@ class SVISampler:
             x_dict = self.prior.transform(x_dict)
             return self.likelihood.evaluate(x_dict)
         
-        def logposterior_fn(x: Float[Array, "n_particles ndims"]) -> Float:
-            return logprior_fn(x) + loglikelihood_fn(x)
-
         # Extract parameter names and bounds from the prior
         # CompositePrior has .priors list; bare Prior wraps itself
         prior_list = getattr(self.prior, 'priors', [self.prior])
@@ -69,8 +66,25 @@ class SVISampler:
         for sub_prior in prior_list:
             for name in sub_prior.naming:
                 param_names.append(name)
-                xmin = float(sub_prior.xmin) if hasattr(sub_prior, 'xmin') else -10.0
-                xmax = float(sub_prior.xmax) if hasattr(sub_prior, 'xmax') else 10.0
+                if hasattr(sub_prior, 'xmin'):
+                    xmin = float(sub_prior.xmin)
+                elif hasattr(sub_prior, 'xx'):
+                    # InterpedPrior (e.g. UniformSourceFrame) stores support in .xx
+                    xmin = float(sub_prior.xx[0])
+                else:
+                    raise ValueError(
+                        f"Prior for '{name}' has no xmin or xx attribute. "
+                        "SVI requires bounded priors."
+                    )
+                if hasattr(sub_prior, 'xmax'):
+                    xmax = float(sub_prior.xmax)
+                elif hasattr(sub_prior, 'xx'):
+                    xmax = float(sub_prior.xx[-1])
+                else:
+                    raise ValueError(
+                        f"Prior for '{name}' has no xmax or xx attribute. "
+                        "SVI requires bounded priors."
+                    )
                 prior_mins.append(xmin)
                 prior_maxs.append(xmax)
                 prior_means.append(0.5 * (xmin + xmax))
@@ -96,7 +110,7 @@ class SVISampler:
                                         )
             numpyro.factor("loglikelihood", loglikelihood_fn(params))
     
-        # constraints
+        # Guide: use TruncatedNormal to respect prior bounds (avoids edge-piling from clipping)
         def guide():
             loc = numpyro.param(
                 "loc", init_loc,
@@ -107,7 +121,10 @@ class SVISampler:
                 constraint=npdist.constraints.positive,
             )
             with numpyro.plate("params", self.n_dim):
-                numpyro.sample("theta", npdist.Normal(loc, scale))
+                numpyro.sample("theta", npdist.TruncatedNormal(
+                    loc=loc, scale=scale,
+                    low=prior_mins_j, high=prior_maxs_j,
+                ))
 
         # initialize svi_sampler
         optimizer = numpyro.optim.Adam(self.step_size)
@@ -155,12 +172,12 @@ class SVISampler:
         loc = params["loc"]
         scale = params["scale"]
 
+        # Draw from the learned TruncatedNormal guide
         key, subkey = jax.random.split(key)
-        z_norm = jax.random.normal(subkey, shape=(self.num_samples, self.n_dim))
-        draws = jnp.array(loc) + z_norm * jnp.array(scale)
-
-        # Clip samples to prior bounds (Normal guide can exceed them)
-        draws = jnp.clip(draws, self._prior_mins, self._prior_maxs)
+        lower = (self._prior_mins - loc) / scale
+        upper = (self._prior_maxs - loc) / scale
+        z_trunc = jax.random.truncated_normal(subkey, lower, upper, shape=(self.num_samples, self.n_dim))
+        draws = jnp.array(loc) + z_trunc * jnp.array(scale)
 
         samples = draws.T  # (n_dim, n_samples)
         posterior_samples = self.prior.add_name(samples)

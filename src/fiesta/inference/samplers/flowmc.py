@@ -1,4 +1,5 @@
 import os
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -46,7 +47,7 @@ class FlowMCSampler:
         if rq_spline_hidden_units is None:
             rq_spline_hidden_units = [64, 64]
 
-        def log_posterior_fn(params: Float[Array, "n_dims"], data: dict[str, any]) -> Float:
+        def log_posterior_fn(params: Float[Array, "n_dims"], data: dict[str, Any]) -> Float:
             params_named = self.prior.add_name(params.T)
             log_prior = self.prior.log_prob(params_named)
             params_named = self.prior.transform(params_named)

@@ -49,7 +49,7 @@ class Fiesta(object):
                
         self.outdir = outdir
         if not os.path.exists(self.outdir):
-            os.mkdir(self.outdir)
+            os.makedirs(self.outdir, exist_ok=True)
       
         rng_key = jax.random.PRNGKey(seed)
 
