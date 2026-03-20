@@ -13,7 +13,7 @@ from scipy.integrate import trapezoid
 from scipy.interpolate import interp1d
 
 from fiesta.inference.lightcurve_model import LightcurveModel, FluxModel
-from fiesta.plot import latex_labels
+from fiesta.inference.plot import latex_labels
 
 class Benchmarker:
 

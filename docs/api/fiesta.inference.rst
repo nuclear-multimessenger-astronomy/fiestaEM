@@ -6,11 +6,6 @@ Components for Bayesian parameter estimation.
 Analytical Models
 -----------------
 
-.. automodule:: fiesta.inference.analytical_models
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 .. automodule:: fiesta.inference.analytical_models.base
    :members:
    :undoc-members:
