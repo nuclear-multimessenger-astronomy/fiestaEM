@@ -61,6 +61,37 @@ class Fiesta(object):
         else:
             self.likelihood, self.prior = setup_systematics_basic(likelihood, prior, error_budget)
 
+        # check the data time range
+        min_datatime = np.concatenate([*self.likelihood.times_det.values(), *self.likelihood.times_nondet.values()]).min()
+        max_datatime = np.concatenate([*self.likelihood.times_det.values(), *self.likelihood.times_nondet.values()]).max()
+
+        if "redshift" in self.prior.naming:
+            prior_samples = self.prior.sample(jax.random.key(42), 10_000)
+            zmin = np.min(prior_samples["redshift"])
+            zmax = np.max(prior_samples["redshift"])
+        elif "redshift" in self.likelihood.fixed_params:
+            zmin = self.likelihood.fixed_params["redshift"]
+            zmax = zmin
+        else: 
+            raise ValueError(f"Cosmological redshift not specified in prior or as fixed parameter.")
+        
+        source_times = likelihood.model.times
+
+        t_obs_start_max = (1.+zmax) * source_times.min()
+        t_obs_end_min = (1.+zmin) * source_times.max()
+
+        if min_datatime < t_obs_start_max:
+            raise ValueError(f"First data point is at {min_datatime} days,"
+                             f" but with your redshift settings, the model time array in"
+                             f" observer frame can start as late as {t_obs_start_max} days."
+                             f" Please check your data time range, or e.g. adjust ``data_tmin`` in the likelihood.")
+        
+        if t_obs_end_min < max_datatime:
+            raise ValueError(f"Last data point is at {max_datatime} days,"
+                             f" but with your redshift settings, the model time array in"
+                             f" observer frame can end as early as {t_obs_end_min} days."
+                             f" Please check your data time range, or e.g. adjust ``data_tmax`` in the likelihood.")
+
         # setup sampler
         match sampler:
             case "flowmc":

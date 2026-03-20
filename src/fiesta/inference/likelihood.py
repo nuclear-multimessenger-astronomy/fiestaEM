@@ -147,7 +147,7 @@ class LikelihoodBase:
             times -= self.trigger_time
             
             idx = (self.data_tmin < times) & (times < self.data_tmax)
-            times, y, y_err = times[idx], y[idx], y[idx]
+            times, y, y_err = times[idx], y[idx], y_err[idx]
 
             data[filt] = jnp.stack([times, y, y_err]).T
         
