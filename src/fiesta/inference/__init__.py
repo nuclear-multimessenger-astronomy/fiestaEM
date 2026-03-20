@@ -1,5 +1,5 @@
 from .fiesta import Fiesta
-from .likelihood import EMLikelihood
+from .likelihood import EMLikelihood, FluxLikelihood
 from .lightcurve_model import FluxModel, LightcurveModel, CombinedSurrogate
 
 __all__ = [
