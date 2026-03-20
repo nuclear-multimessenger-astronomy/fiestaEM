@@ -10,7 +10,7 @@ import jax.numpy as jnp
 
 from fiesta.inference.prior import Uniform, Constraint, Normal, UniformSourceFrame, ConstrainedPrior, Sine
 
-from fiesta.inference import FluxModel, CombinedSurrogate, EMLikelihood, Fiesta
+from fiesta.inference import FluxModel, CombinedSurrogate, EMLikelihood, FluxLikelihood, Fiesta
 from fiesta.inference.injection import InjectionSurrogate
 from fiesta.inference.systematic import process_file
 from fiesta.utils import load_event_data
@@ -74,8 +74,8 @@ def test_systematic():
 
     likelihood = EMLikelihood(model,
                               data,
-                              tmin=0.3,
-                              tmax=10.,
+                              data_tmin=0.3,
+                              data_tmax=10.,
                               trigger_time=69807,
                               fixed_params={})
     
@@ -114,8 +114,8 @@ def setup_fiesta_sampling(sampler: str, **kwargs):
 
     likelihood = EMLikelihood(model,
                               data,
-                              tmin=0.3,
-                              tmax=10.,
+                              data_tmin=0.3,
+                              data_tmax=10.,
                               trigger_time=69807,
                               fixed_params={})
     
@@ -172,8 +172,8 @@ def setup_fiesta_sampling(sampler: str, **kwargs):
     detection_limit = None
     likelihood = EMLikelihood(model,
                               data,
-                              tmin=0.3,
-                              tmax=100.,
+                              data_tmin=0.3,
+                              data_tmax=100.,
                               trigger_time=69807,
                               detection_limit = detection_limit,
                               fixed_params={})
