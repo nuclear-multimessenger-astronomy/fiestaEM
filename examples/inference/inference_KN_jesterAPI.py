@@ -86,8 +86,8 @@ fiesta_prior = ConstrainedPrior(KN_prior)
 fiesta_likelihood = EMLikelihood(
     model,
     data,
-    tmin=0.3,
-    tmax=28.0,
+    data_tmin=0.3,
+    data_tmax=28.0,
     trigger_time=trigger_time,
     detection_limit=None,
     fixed_params={"luminosity_distance": 43.583656, "redshift": 0.009727},
@@ -210,7 +210,7 @@ try:
         lc_plotter.plot_best_fit_lc(cax, filt, color="blue")
         lc_plotter.plot_sample_lc(cax, filt)
         cax.set_ylabel(filt)
-        cax.set_xlim(left=max(fiesta_likelihood.tmin, 1e-4), right=fiesta_likelihood.tmax)
+        cax.set_xlim(left=max(fiesta_likelihood.data_tmin, 1e-4), right=fiesta_likelihood.data_tmax)
         cax.set_xscale("log")
         ymin = np.min(np.concatenate([lc_plotter.mag_det[filt], lc_plotter.mag_nondet[filt]])) - 2
         ymax = np.max(np.concatenate([lc_plotter.mag_det[filt], lc_plotter.mag_nondet[filt]])) + 2

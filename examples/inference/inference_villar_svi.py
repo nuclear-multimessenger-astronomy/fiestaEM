@@ -81,7 +81,7 @@ if __name__ == "__main__":
     # Likelihood
     likelihood = EMLikelihood(
         model, data, trigger_time=59000.0,
-        tmin=0.5, tmax=90.0, error_budget=0.3,
+        data_tmin=0.5, data_tmax=90.0, error_budget=0.3,
     )
 
     # Prior with superphot+ informed shape parameters

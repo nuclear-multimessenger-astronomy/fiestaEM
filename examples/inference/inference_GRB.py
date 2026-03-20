@@ -56,8 +56,8 @@ prior = ConstrainedPrior(GRB_prior, conversion_function)
 detection_limit = None
 likelihood = EMLikelihood(model,
                           data,
-                          tmin=1.,
-                          tmax=2000.0,
+                          data_tmin=1.,
+                          data_tmax=2000.0,
                           trigger_time=trigger_time,
                           detection_limit = detection_limit,
                           fixed_params={"luminosity_distance": 43.58, "redshift": 0.009727}
