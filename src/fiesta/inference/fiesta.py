@@ -15,7 +15,7 @@ from fiesta.inference.lightcurve_model import LightcurveModel
 from fiesta.inference.prior import Prior
 from fiesta.inference.likelihood import EMLikelihood
 from fiesta.logging import logger
-from fiesta.plot import corner_plot, LightcurvePlotter
+from fiesta.inference.plot import corner_plot, LightcurvePlotter
 from fiesta.inference.systematic import setup_systematics_basic, setup_systematic_from_file
 
 

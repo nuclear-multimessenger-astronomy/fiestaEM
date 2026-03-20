@@ -26,7 +26,6 @@ import jax
 import jax.numpy as jnp
 
 from fiesta.logging import logger
-from fiesta.inference.lightcurve_model import SurrogateModel
 from fiesta.inference.systematic import process_file
 from fiesta.inference.likelihood import LikelihoodBase
 
