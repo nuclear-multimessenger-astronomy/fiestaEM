@@ -3,7 +3,7 @@ Adapter classes that bridge fiesta's inference API with external samplers.
 Currently provides wrappers for the jesterTOV sampler interface
 """
 
-from fiesta.inference.prior_dict import ConstrainedPrior
+from fiesta.inference.prior import ConstrainedPrior
 from fiesta.inference.likelihood import EMLikelihood
 
 

@@ -3,8 +3,7 @@ import jax
 import jax.numpy as jnp
 
 
-from fiesta.inference.prior import Uniform, Constraint
-from fiesta.inference.prior_dict import ConstrainedPrior
+from fiesta.inference.prior import Uniform, Constraint, ConstrainedPrior, Sine
 from fiesta.inference.fiesta import Fiesta
 from fiesta.inference.likelihood import EMLikelihood
 from fiesta.inference.lightcurve_model import AfterglowFlux, BullaFlux, CombinedSurrogate
@@ -40,7 +39,7 @@ model = CombinedSurrogate(models=[model1, model2],
 #########
 
 GRB_prior = [
-             Uniform(xmin=0.0, xmax=np.pi/4, naming=['inclination_EM']),
+             Sine(xmin=0.0, xmax=np.pi/4, naming=['inclination_EM']),
              Uniform(xmin=47.0, xmax=57.0, naming=['log10_E0']), 
              Uniform(xmin=0.01, xmax=np.pi/5, naming=['thetaCore']),
              Uniform(xmin = 0.2, xmax=3.5, naming= ["alphaWing"]),
@@ -83,8 +82,8 @@ prior = ConstrainedPrior(prior_list, conversion_function)
 detection_limit = None
 likelihood = EMLikelihood(model,
                           data,
-                          tmin=0.3,
-                          tmax=1000.,
+                          data_tmin=0.3,
+                          data_tmax=1000.,
                           trigger_time=trigger_time,
                           detection_limit = detection_limit,
                           fixed_params={"luminosity_distance": 43.583656, "redshift":0.009727})
@@ -96,22 +95,14 @@ outdir = f"./outdir_joint/"
 fiesta = Fiesta(likelihood,
                 prior,
                 systematics_file="./systematics_file_joint.yaml",
-                n_chains=225,
-                chain_batch_size=75, # if chain_batch_size is too large, this can cause memory issues
-                outdir = outdir)
-
-
-fiesta = Fiesta(likelihood,
-                prior,
-                systematics_file="./systematics_file_joint.yaml",
                 n_chains=500,
                 n_loop_training=7,
                 n_loop_production=3,
-                num_layers = 4,
-                hidden_size=[64,64],
-                n_epochs = 20,
-                n_local_steps = 50,
-                n_global_steps = 200,
+                num_layers=4,
+                hidden_size=[64, 64],
+                n_epochs=20,
+                n_local_steps=50,
+                n_global_steps=200,
                 outdir=outdir)
 
 if __name__ == "__main__":

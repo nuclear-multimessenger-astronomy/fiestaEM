@@ -26,9 +26,8 @@ import jax
 import jax.numpy as jnp
 
 from fiesta.logging import logger
-from fiesta.inference.lightcurve_model import SurrogateModel
 from fiesta.inference.systematic import process_file
-from fiesta.inference.likelihood import EMLikelihood
+from fiesta.inference.likelihood import LikelihoodBase
 
 
 #############################
@@ -45,7 +44,7 @@ default_corner_kwargs = dict(bins=40,
                         plot_density=False, 
                         plot_datapoints=False, 
                         fill_contours=True,
-                        max_n_ticks=3, 
+                        max_n_ticks=3,
                         min_n_ticks=3,
                         save=False,
                         truth_color="darkorange",
@@ -177,7 +176,7 @@ class LightcurvePlotter:
     
     def __init__(self, 
                  posterior: dict | pd.DataFrame,
-                 likelihood: EMLikelihood,
+                 likelihood: LikelihoodBase,
                  systematics_file: str = None,
                  free_syserr=False):
         
@@ -194,14 +193,23 @@ class LightcurvePlotter:
         
         self.likelihood = likelihood
 
-        self.tmin = likelihood.tmin
-        self.tmax = likelihood.tmax
+        self.tmin = likelihood.data_tmin
+        self.tmax = likelihood.data_tmax
         self.times_det = likelihood.times_det
-        self.mag_det = likelihood.mag_det
-        self.mag_err = likelihood.mag_err
         self.times_nondet = likelihood.times_nondet
-        self.mag_nondet = likelihood.mag_nondet
 
+        if hasattr(likelihood, "zero_point_mag"):
+            def flux_to_mag(flux_arr):
+                return -2.5*np.log10(flux) + likelihood.zero_point_mag
+            self.mag_det = jax.tree.map(flux_to_mag, likelihood.datapoints_det)
+            self.mag_nondet = jax.tree.map(flux_to_mag, likelihood.datapoints_nondet)
+            self.mag_err = -2.5 * jax.tree.map(lambda x, y: x/y, likelihood.datapoints_err, likelihood.datapoints_det)
+
+        else:
+            self.mag_det = likelihood.datapoints_det
+            self.mag_err = likelihood.datapoints_err
+            self.mag_nondet = likelihood.datapoints_nondet
+        
         self.model = likelihood.model
         self.posterior = pd.DataFrame(posterior)
         self.fixed_params = likelihood.fixed_params

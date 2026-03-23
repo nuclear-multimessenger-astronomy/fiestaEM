@@ -1,8 +1,7 @@
 import numpy as np
 import jax
 
-from fiesta.inference.prior import Uniform
-from fiesta.inference.prior_dict import ConstrainedPrior
+from fiesta.inference.prior import Uniform, ConstrainedPrior, Sine
 from fiesta.inference.fiesta import Fiesta
 from fiesta.inference.likelihood import EMLikelihood
 from fiesta.inference.lightcurve_model import BullaFlux
@@ -34,6 +33,7 @@ model = BullaFlux(name="Bu2026_MLP",
 #########
 
 KN_prior = [
+            Sine(xmin=0., xmax=np.pi/2, naming=["inclination_EM"]),
             Uniform(xmin=-4.0, xmax=-1.3, naming=["log10_mej_dyn"]),
             Uniform(xmin=0.12, xmax=0.35, naming=["v_ej_dyn"]),
             Uniform(xmin=0.15, xmax=0.35, naming=["Ye_dyn"]),
@@ -55,8 +55,8 @@ prior = ConstrainedPrior(KN_prior)
 detection_limit = None
 likelihood = EMLikelihood(model,
                           data,
-                          tmin=0.3,
-                          tmax=28.,
+                          data_tmin=0.3,
+                          data_tmax=28.,
                           trigger_time=trigger_time,
                           detection_limit = detection_limit,
                           fixed_params={"luminosity_distance": 43.583656, "redshift":0.009727})
@@ -67,7 +67,6 @@ outdir = f"./outdir_KN/"
 fiesta = Fiesta(likelihood,
                 prior,
                 systematics_file="./systematics_file_KN.yaml",
-                n_chains = 200,
                 outdir = outdir)
 
 

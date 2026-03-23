@@ -1,8 +1,7 @@
+Systematic errors
+-----------------
 
-Systematic error
-----------------
-
-Since neither the physical base model nor the surrogate reflects the physics of the transient perfectly, the likelihood function in fiesta uses a systematic uncertainty :math:`\sigma_{\rm sys}`. 
+Since neither the physical base model nor the surrogate happens to perfectly represent the physics of the transient, the likelihood function in fiesta uses a systematic uncertainty :math:`\sigma_{\rm sys}`. 
 
 .. math::
     \mathcal{L}(\vec{\theta}|d) = - \frac{1}{2} \sum_{t_j} \biggl( \frac{(m(t_j) - m^{\star}(t_j, \vec{\!\theta}\,))^2}{\sigma(t_j)^2 + \sigma_{\text{sys}}^2} + \ln(2\pi (\sigma(t_j)^2 + \sigma_{\text{sys}}^2)) \biggr)

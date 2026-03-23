@@ -265,7 +265,7 @@ class TestLikelihoodIntegration:
         model = ShockCoolingModel(filters=FILTERS)
         data = _make_synthetic_data(FILTERS, trigger_time=0.0)
         lk = EMLikelihood(model=model, data=data, trigger_time=0.0,
-                          tmin=0.1, tmax=4.0)
+                          data_tmin=0.1, data_tmax=4.0)
         params = {
             "log10_Menv": -2.0,
             "log10_Renv": 2.0,

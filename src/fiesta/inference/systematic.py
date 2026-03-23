@@ -7,9 +7,8 @@ import jax.numpy as jnp
 import yaml
 
 from fiesta.logging import logger
-from fiesta.inference.prior_dict import ConstrainedPrior
 import fiesta.inference.prior as fiesta_prior
-
+from fiesta.inference.prior import ConstrainedPrior
 
 ALL_PRIORS = dict(inspect.getmembers(fiesta_prior, inspect.isclass))
 
@@ -87,10 +86,10 @@ def process_file(systematic_file, filters):
             raise ValueError(f"'individual' sys. uncertainty for each filter can only be specified if no other sys. uncertainty setup is given in {systematic_file}.")
         
         nodes, t_range, sys_prior_type, sys_prior_params = fetch_prior_params(yaml_dict["individual"])
-        
-        sys_parameters = []
 
         for filt in filters:
+
+            sys_parameters = []
 
             for j in range(1, nodes+1):
                 naming = f"syserr_{filt}_{j}"

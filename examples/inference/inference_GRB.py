@@ -1,8 +1,7 @@
 import numpy as np
 import jax
 
-from fiesta.inference.prior import Uniform, Constraint
-from fiesta.inference.prior_dict import ConstrainedPrior
+from fiesta.inference.prior import Uniform, Constraint, ConstrainedPrior, Sine
 from fiesta.inference.fiesta import Fiesta
 from fiesta.inference.likelihood import EMLikelihood
 from fiesta.inference.lightcurve_model import AfterglowFlux
@@ -35,7 +34,7 @@ def conversion_function(sample):
     converted_sample["epsilon_tot"] = 10**(converted_sample["log10_epsilon_B"]) + 10**(converted_sample["log10_epsilon_e"]) 
     return converted_sample
 
-GRB_prior = [Uniform(xmin=0.0, xmax=np.pi/4, naming=['inclination_EM']), 
+GRB_prior = [Sine(xmin=0.0, xmax=np.pi/4, naming=['inclination_EM']), 
              Uniform(xmin=47.0, xmax=57.0, naming=['log10_E0']),
              Uniform(xmin=0.01, xmax=np.pi/5, naming=['thetaCore']),
              Uniform(xmin = 0.2, xmax = 3.5, naming= ["alphaWing"]),
@@ -57,8 +56,8 @@ prior = ConstrainedPrior(GRB_prior, conversion_function)
 detection_limit = None
 likelihood = EMLikelihood(model,
                           data,
-                          tmin=1.,
-                          tmax=2000.0,
+                          data_tmin=1.,
+                          data_tmax=2000.0,
                           trigger_time=trigger_time,
                           detection_limit = detection_limit,
                           fixed_params={"luminosity_distance": 43.58, "redshift": 0.009727}

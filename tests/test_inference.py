@@ -1,21 +1,19 @@
 from os.path import dirname, join
 from pathlib import Path
 import shutil
+from multiprocessing import Process
 
 import numpy as np
 import jax
 import jax.numpy as jnp
 
 
-from fiesta.inference.prior import Uniform, Constraint, Normal, UniformSourceFrame
-from fiesta.inference.prior_dict import ConstrainedPrior
+from fiesta.inference.prior import Uniform, Constraint, Normal, UniformSourceFrame, ConstrainedPrior, Sine
 
-from fiesta.inference.lightcurve_model import FluxModel, CombinedSurrogate
+from fiesta.inference import FluxModel, CombinedSurrogate, EMLikelihood, FluxLikelihood, Fiesta
 from fiesta.inference.injection import InjectionSurrogate
 from fiesta.inference.systematic import process_file
-from fiesta.inference.likelihood import EMLikelihood
 from fiesta.utils import load_event_data
-from fiesta.inference.fiesta import Fiesta
 
 FILTERS_KN = ["besselli", "bessellv"]
 FILTERS_GRB = ["besselli", "radio-3GHz"]
@@ -64,8 +62,8 @@ def test_injection():
                                 )
     
     injection.write_to_file(join(working_dir, "injection_tmp.dat"))
-    Path.unlink(join(working_dir, "injection_tmp.dat"))
-    Path.unlink(join(working_dir, "param_dict.dat"))
+    Path(join(working_dir, "injection_tmp.dat")).unlink()
+    Path(join(working_dir, "param_dict.dat")).unlink()
 
 
 def test_systematic():
@@ -76,8 +74,8 @@ def test_systematic():
 
     likelihood = EMLikelihood(model,
                               data,
-                              tmin=0.3,
-                              tmax=10.,
+                              data_tmin=0.3,
+                              data_tmax=10.,
                               trigger_time=69807,
                               fixed_params={})
     
@@ -91,9 +89,23 @@ def test_systematic():
     likelihood._setup_sys_uncertainty_from_file(sys_params_per_filter, time_nodes_per_filter)
 
 
+#################
+# test sampling #
+#################
 
+def run_with_timeout(func, timeout, *args, **kwargs):
 
-def test_inference():
+    p = Process(target=func, args=args, kwargs=kwargs)
+    p.start()
+    p.join(timeout)
+
+    if p.is_alive():
+        p.terminate()
+        p.join()
+        return True
+    return False
+
+def setup_fiesta_sampling(sampler: str, **kwargs):
 
     data = load_event_data(join(working_dir, "injection_KN_GRB_afterglow.dat"))
         
@@ -102,8 +114,8 @@ def test_inference():
 
     likelihood = EMLikelihood(model,
                               data,
-                              tmin=0.3,
-                              tmax=10.,
+                              data_tmin=0.3,
+                              data_tmax=10.,
                               trigger_time=69807,
                               fixed_params={})
     
@@ -121,7 +133,6 @@ def test_inference():
     ]
     
     GRB_prior = [
-                 Uniform(xmin=0.0, xmax=np.pi/2, naming=['inclination_EM']),
                  Uniform(xmin=47.0, xmax=57.0, naming=['log10_E0']), 
                  Uniform(xmin=0.01, xmax=np.pi/5, naming=['thetaCore']),
                  Uniform(xmin = 0.2, xmax=3.5, naming= ["alphaWing"]),
@@ -130,10 +141,12 @@ def test_inference():
                  Uniform(xmin=2.01, xmax=3.0, naming=['p']),
                  Uniform(xmin=-4.0, xmax=0.0, naming=['log10_epsilon_e']),
                  Uniform(xmin=-8.0, xmax=0.0, naming=['log10_epsilon_B']),
+                 Uniform(xmin=100., xmax=1000., naming=['Gamma0']),
                  Constraint(xmin = 0., xmax=1., naming=["epsilon_tot"])
     ]
 
     obs_prior = [
+        Sine(xmin=0.0, xmax=np.pi/2, naming=['inclination_EM']),
         UniformSourceFrame(dmin=10, dmax=100., naming=['luminosity_distance']),
         Normal(mu=0.0098, sigma=0.0008, naming=['redshift'])
     ]
@@ -159,8 +172,8 @@ def test_inference():
     detection_limit = None
     likelihood = EMLikelihood(model,
                               data,
-                              tmin=0.3,
-                              tmax=100.,
+                              data_tmin=0.3,
+                              data_tmax=100.,
                               trigger_time=69807,
                               detection_limit = detection_limit,
                               fixed_params={})
@@ -172,7 +185,20 @@ def test_inference():
     fiesta = Fiesta(likelihood,
                     prior,
                     systematics_file=join(working_dir, "test_systematics.yaml"),
-                    n_chains=2,
-                    outdir = outdir)
+                    sampler=sampler,
+                    **kwargs)
     
-    # TODO: figure out how to call sample here with some interruption
+    return fiesta
+    
+
+def test_flowmc():
+
+    fiesta = setup_fiesta_sampling("flowmc",
+                                   n_chains=10,
+                                   n_local_steps=2,
+                                   n_global_steps=2,
+                                   n_training_loops=2,
+                                   n_production_loops=2,
+                                   n_max_examples=2)
+
+    run_with_timeout(fiesta.sample, 30, jax.random.key(0))

@@ -232,7 +232,63 @@ class Normal(Prior):
 
     def log_prob(self, x: dict[str, Array]) -> Float:
         variable = x[self.naming[0]]
-        return -1/(2*self.sigma**2) * (variable-self.mu)**2 - jnp.sqrt(2*jnp.pi*self.sigma**2)
+        return -1/(2*self.sigma**2) * (variable-self.mu)**2 - 0.5 * jnp.log(2*jnp.pi*self.sigma**2)
+
+
+class TruncatedNormal(Prior):
+    """Truncated normal distribution with explicit bounds.
+
+    Useful for informed priors from population studies (e.g., superphot+).
+    The SVISampler uses xmin/xmax for its guide constraints and mu/sigma
+    for the model's TruncatedNormal distribution.
+    """
+    mu: float = 0.0
+    sigma: float = 1.0
+    xmin: float = -10.0
+    xmax: float = 10.0
+
+    def __repr__(self):
+        return f"TruncatedNormal(mu={self.mu}, sigma={self.sigma}, xmin={self.xmin}, xmax={self.xmax})"
+
+    def __init__(
+        self,
+        mu: Float,
+        sigma: Float,
+        xmin: Float,
+        xmax: Float,
+        naming: list[str],
+        transforms: dict[str, tuple[str, Callable]] = {},
+        **kwargs,
+    ):
+        super().__init__(naming, transforms)
+        assert self.n_dim == 1, "TruncatedNormal needs to be 1D distributions"
+        self.mu = mu
+        self.sigma = sigma
+        self.xmin = xmin
+        self.xmax = xmax
+
+    def sample(
+        self, rng_key: PRNGKeyArray, n_samples: int
+    ) -> dict[str, Float[Array, " n_samples"]]:
+        # Standardize bounds for truncated standard normal, then shift/scale
+        lower = (self.xmin - self.mu) / self.sigma
+        upper = (self.xmax - self.mu) / self.sigma
+        samples = jax.random.truncated_normal(
+            rng_key, lower, upper, (n_samples,),
+        )
+        samples = self.mu + self.sigma * samples
+        return self.add_name(samples[None])
+
+    def log_prob(self, x: dict[str, Array]) -> Float:
+        variable = x[self.naming[0]]
+        in_bounds = (variable >= self.xmin) & (variable <= self.xmax)
+        # Gaussian kernel
+        log_p = -0.5 * ((variable - self.mu) / self.sigma) ** 2 - 0.5 * jnp.log(2 * jnp.pi * self.sigma ** 2)
+        # Truncation normalization: divide by (Phi(upper) - Phi(lower))
+        lower = (self.xmin - self.mu) / self.sigma
+        upper = (self.xmax - self.mu) / self.sigma
+        log_Z = jnp.log(jax.scipy.stats.norm.cdf(upper) - jax.scipy.stats.norm.cdf(lower))
+        return jnp.where(in_bounds, log_p - log_Z, -jnp.inf)
 
 
 @jaxtyped(typechecker=typechecker)

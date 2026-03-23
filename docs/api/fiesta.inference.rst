@@ -6,11 +6,6 @@ Components for Bayesian parameter estimation.
 Analytical Models
 -----------------
 
-.. automodule:: fiesta.inference.analytical_models
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 .. automodule:: fiesta.inference.analytical_models.base
    :members:
    :undoc-members:
@@ -70,10 +65,6 @@ Priors
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: fiesta.inference.prior_dict
-   :members:
-   :undoc-members:
-   :show-inheritance:
 
 Systematics
 -----------
@@ -86,7 +77,7 @@ Systematics
 Sampler
 -------
 
-.. automodule:: fiesta.inference.fiesta
+.. automodule:: fiesta.inference.samplers
    :members:
    :undoc-members:
    :show-inheritance:
@@ -95,6 +86,11 @@ Utilities
 ---------
 
 .. automodule:: fiesta.inference.injection
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: fiesta.inference.plot
    :members:
    :undoc-members:
    :show-inheritance:

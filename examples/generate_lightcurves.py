@@ -10,8 +10,7 @@ import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
-from fiesta.inference.prior import Uniform
-from fiesta.inference.prior_dict import ConstrainedPrior
+from fiesta.inference.prior import Uniform, ConstrainedPrior
 from fiesta.inference.lightcurve_model import BullaFlux
 
 # Define filters to generate lightcurves for
