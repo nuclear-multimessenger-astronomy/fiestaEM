@@ -1,0 +1,36 @@
+# Build the fiestaEM runtime container as a CI check.
+#
+# Build ONLY — this validates that containers/Dockerfile builds (deps resolve,
+# surrogate downloads, `import fiesta, blackjax, jax` succeeds). It does NOT log
+# in to or push to any registry; publishing is intentionally a manual step.
+name: Build Docker image
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/Dockerfile
+          platforms: linux/amd64
+          push: false
+          tags: fiestaem:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
