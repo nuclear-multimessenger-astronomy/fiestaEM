@@ -32,9 +32,19 @@ COPY . /src
 RUN uv pip install --system --break-system-packages . blackjax
 
 # Bake the KN surrogate (a CVMFS/read-only image can't download on a worker).
-RUN python3 -c "from fiesta.surrogates.manage_surrogates import download_surrogate; download_surrogate('Bu2025_MLP')"
+# download_surrogate returns (download_ok, dir) and can return (False, None)
+# WITHOUT raising, so assert it actually succeeded — else the build would ship an
+# image with no baked surrogate.
+RUN python3 -c "from fiesta.surrogates.manage_surrogates import download_surrogate; ok, path = download_surrogate('Bu2026_MLP'); assert ok and path is not None, 'Bu2026_MLP download failed'"
 
 # Fail the build if the runtime isn't importable.
 RUN python3 -c "import fiesta, blackjax, jax; print('fiestaEM + blackjax + jax', jax.__version__)"
+
+# Run as non-root (hygiene for docker/podman; apptainer on OSPool ignores USER
+# and runs as the submitting user). The surrogate lives in world-readable
+# site-packages, so a non-root user can still read it.
+RUN useradd -m -u 10001 appuser
+USER appuser
+WORKDIR /home/appuser
 
 CMD ["python3"]
