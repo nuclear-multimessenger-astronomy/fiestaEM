@@ -79,10 +79,11 @@ class FlowMCSampler:
                                     )
         
         rng_key, subkey = jax.random.split(rng_key)
+        # flowMC 0.6.0 made Sampler's args keyword-only.
         self.Sampler = Sampler(
-            self.prior.n_dim,
-            n_chains,
-            subkey,
+            n_dim=self.prior.n_dim,
+            n_chains=n_chains,
+            rng_key=subkey,
             resource_strategy_bundles=bundle,
         )
 

@@ -33,7 +33,7 @@ dependencies = [
     "matplotlib",
     "astropy",
     "sncosmo",
-    "flowMC",
+    "flowMC>=0.6.0",
     "h5py",
     "corner",
     "huggingface_hub>=0.13.0"
