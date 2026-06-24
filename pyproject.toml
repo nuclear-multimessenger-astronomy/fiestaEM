@@ -17,7 +17,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 keywords = ["sampling", "inference", "astrophysics", "kilonovae", "gamma-ray bursts", "afterglow", "surrogates"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "dill",
     "jax>=0.4.14",

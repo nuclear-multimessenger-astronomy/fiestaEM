@@ -1,0 +1,33 @@
+# Runtime image for fiestaEM: builds from this checkout, adds the blackjax
+# sampler backend, and bakes the KN surrogate for offline workers.
+# Build (context = repo root): docker build -f containers/Dockerfile -t fiestaem:latest .
+# GPU: install the gpu extra instead — uv pip install --system .[gpu]
+FROM ubuntu:24.04
+
+ENV PIP_BREAK_SYSTEM_PACKAGES=1 DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y python3 python3-pip git build-essential \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install uv
+
+WORKDIR /src
+COPY . /src
+
+# fiestaEM + blackjax sampler backend.
+RUN uv pip install --system --break-system-packages . blackjax
+
+# Bake the KN surrogate (download_surrogate returns (False, None) without raising,
+# so assert success).
+RUN python3 -c "from fiesta.surrogates.manage_surrogates import download_surrogate; ok, path = download_surrogate('Bu2026_MLP'); assert ok and path is not None, 'Bu2026_MLP download failed'"
+
+# Fail the build if the runtime isn't importable.
+RUN python3 -c "import fiesta, blackjax, jax; print('fiestaEM + blackjax + jax', jax.__version__)"
+
+# Non-root (apptainer on OSPool ignores USER); surrogate is world-readable.
+RUN useradd -m -u 10001 appuser
+USER appuser
+WORKDIR /home/appuser
+
+CMD ["python3"]
