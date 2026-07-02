@@ -4,6 +4,7 @@ import shutil
 from multiprocessing import Process
 
 import numpy as np
+import pytest
 import jax
 import jax.numpy as jnp
 
@@ -192,6 +193,7 @@ def setup_fiesta_sampling(sampler: str, **kwargs):
     
 
 def test_flowmc():
+    pytest.importorskip("flowMC", reason="flowMC is an optional dependency")
 
     fiesta = setup_fiesta_sampling("flowmc",
                                    n_chains=10,
@@ -200,5 +202,25 @@ def test_flowmc():
                                    n_training_loops=2,
                                    n_production_loops=2,
                                    n_max_examples=2)
+
+    run_with_timeout(fiesta.sample, 30, jax.random.key(0))
+
+
+def test_blackjax():
+    pytest.importorskip("blackjax", reason="blackjax is an optional dependency")
+
+    fiesta = setup_fiesta_sampling("blackjax-smc",
+                                   n_particles=10,
+                                   num_mcmc_steps=2)
+
+    run_with_timeout(fiesta.sample, 30, jax.random.key(0))
+
+
+def test_numpyro():
+    pytest.importorskip("numpyro", reason="numpyro is an optional dependency")
+
+    fiesta = setup_fiesta_sampling("numpyro-svi",
+                                   num_iter=10,
+                                   num_samples=10)
 
     run_with_timeout(fiesta.sample, 30, jax.random.key(0))

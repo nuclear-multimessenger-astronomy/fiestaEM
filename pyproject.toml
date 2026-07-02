@@ -33,13 +33,16 @@ dependencies = [
     "matplotlib",
     "astropy",
     "sncosmo",
-    "flowMC>=0.6.0",
     "h5py",
     "corner",
     "huggingface_hub>=0.13.0"
 ]
 
 [project.optional-dependencies]
+flowmc = ["flowMC>=0.6.0"]
+blackjax = ["blackjax"]
+numpyro = ["numpyro"]
+samplers = ["fiestaEM[flowmc,blackjax,numpyro]"]
 grb = ["afterglowpy"]
 gpu = ["jax[cuda13]"]
 docs = [
