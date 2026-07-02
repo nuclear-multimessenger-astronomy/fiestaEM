@@ -106,7 +106,7 @@ def run_with_timeout(func, timeout, *args, **kwargs):
         return True
     return False
 
-def setup_fiesta_sampling(sampler: str, **kwargs):
+def setup_fiesta_sampling(sampler: str, bounded_priors: bool = False, **kwargs):
 
     data = load_event_data(join(working_dir, "injection_KN_GRB_afterglow.dat"))
         
@@ -146,10 +146,17 @@ def setup_fiesta_sampling(sampler: str, **kwargs):
                  Constraint(xmin = 0., xmax=1., naming=["epsilon_tot"])
     ]
 
+    # Some samplers (e.g. numpyro-svi) require fully bounded priors, so allow
+    # swapping the unbounded Normal redshift prior for a bounded Uniform one.
+    redshift_prior = (
+        Uniform(xmin=0.005, xmax=0.015, naming=['redshift'])
+        if bounded_priors
+        else Normal(mu=0.0098, sigma=0.0008, naming=['redshift'])
+    )
     obs_prior = [
         Sine(xmin=0.0, xmax=np.pi/2, naming=['inclination_EM']),
         UniformSourceFrame(dmin=10, dmax=100., naming=['luminosity_distance']),
-        Normal(mu=0.0098, sigma=0.0008, naming=['redshift'])
+        redshift_prior
     ]
     
     def conversion_function(sample):
@@ -220,6 +227,7 @@ def test_numpyro():
     pytest.importorskip("numpyro", reason="numpyro is an optional dependency")
 
     fiesta = setup_fiesta_sampling("numpyro-svi",
+                                   bounded_priors=True,
                                    num_iter=10,
                                    num_samples=10)
 
