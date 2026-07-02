@@ -94,7 +94,13 @@ class Fiesta(object):
         # setup sampler
         match sampler:
             case "flowmc":
-                from fiesta.inference.samplers.flowmc import FlowMCSampler
+                try:
+                    from fiesta.inference.samplers.flowmc import FlowMCSampler
+                except ImportError as e:
+                    raise ImportError(
+                        "The 'flowmc' sampler requires the optional flowMC dependency. "
+                        "Install it with `pip install fiestaEM[flowmc]` (or `pip install flowMC`)."
+                    ) from e
                 sampler_cls = FlowMCSampler
             case "blackjax-smc":
                 from fiesta.inference.samplers.blackjax_smc import BlackJaxSMC
