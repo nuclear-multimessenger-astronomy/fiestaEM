@@ -30,7 +30,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: containers/Dockerfile
+          file: containers/dockerfile-OSG
           platforms: linux/amd64
           push: false
           tags: fiestaem:ci
