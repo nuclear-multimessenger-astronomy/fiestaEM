@@ -1,3 +1,6 @@
+# This is a dockerfile to install fiesta on the Open Science Grid.
+# Created by Michael Coughlin 2026.
+#
 # Runtime image for fiestaEM: builds from this checkout, adds the blackjax
 # sampler backend, and bakes the KN surrogate for offline workers.
 # Build (context = repo root): docker build -f containers/Dockerfile -t fiestaem:latest .
