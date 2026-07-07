@@ -3,7 +3,7 @@ remaining:
     time_range: linear 0.3 10
     prior: Uniform
     params:
-        xmin: 0.5
+        xmin: 0.3
         xmax: 2.
 
 GRB:
