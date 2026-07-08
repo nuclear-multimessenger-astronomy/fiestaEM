@@ -8,7 +8,7 @@ reportIncompatibleMethodOverride = "warning"
 [project]
 name = "fiestaEM"
 description = "Fast inference of electromagnetic signals with JAX"
-version = "0.2.0"
+version = "0.2.1"
 readme = "README.md"
 authors = [{ name = "Hauke Koehn", email = "hauke.koehn@uni-potsdam.de"}, { name = "Thibeau Wouters", email = "thibeauwouters@gmail.com"}]
 license = "MIT"
