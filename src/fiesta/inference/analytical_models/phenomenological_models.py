@@ -13,7 +13,8 @@ from jaxtyping import Array
 
 from fiesta.inference.analytical_models.base import (
     AnalyticalModel,
-    _LOG10_4PI, _LOG10_SIGMASB,
+    _LOG10_4PI,
+    _LOG10_SIGMASB,
 )
 
 
@@ -52,8 +53,7 @@ class PhenomenologicalModel(AnalyticalModel):
         super().add_filter(filters)
         self._build_parameter_names()
 
-    def compute_shape(self, x: dict[str, Array],
-                      t_days: Array) -> Array:
+    def compute_shape(self, x: dict[str, Array], t_days: Array) -> Array:
         """Return the temporal shape function S(t) >= 0."""
         raise NotImplementedError
 
@@ -68,13 +68,13 @@ class PhenomenologicalModel(AnalyticalModel):
             if self.has_baseline:
                 base_mag = x[f"base_mag_{fname}"]
                 # total_flux = 10^(-0.4*amp_mag) * shape + 10^(-0.4*base_mag)
-                total_flux = (jnp.power(10.0, -0.4 * amp_mag) * shape
-                              + jnp.power(10.0, -0.4 * base_mag))
+                total_flux = jnp.power(10.0, -0.4 * amp_mag) * shape + jnp.power(
+                    10.0, -0.4 * base_mag
+                )
                 mag_app[fname] = -2.5 * jnp.log10(jnp.maximum(total_flux, 1e-30))
             else:
                 # mag = amp_mag - 2.5 * log10(max(shape, 1e-30))
-                mag_app[fname] = amp_mag - 2.5 * jnp.log10(
-                    jnp.maximum(shape, 1e-30))
+                mag_app[fname] = amp_mag - 2.5 * jnp.log10(jnp.maximum(shape, 1e-30))
 
         return t_days, mag_app
 
@@ -100,9 +100,14 @@ class EvolvingBlackbodyModel(AnalyticalModel):
     """
 
     parameter_names = [
-        "log10_temperature_0", "log10_radius_0",
-        "temp_rise_index", "temp_decline_index", "temp_peak_time",
-        "radius_rise_index", "radius_decline_index", "radius_peak_time",
+        "log10_temperature_0",
+        "log10_radius_0",
+        "temp_rise_index",
+        "temp_decline_index",
+        "temp_peak_time",
+        "radius_rise_index",
+        "radius_decline_index",
+        "radius_peak_time",
     ]
 
     def __init__(self, filters, times=None, reference_time=1.0):
@@ -139,8 +144,12 @@ class EvolvingBlackbodyModel(AnalyticalModel):
         )
 
         # L = 4 * pi * R^2 * sigma * T^4
-        log10_L = (_LOG10_4PI + 2.0 * jnp.log10(jnp.maximum(R, 1.0))
-                   + _LOG10_SIGMASB + 4.0 * jnp.log10(jnp.maximum(T, 1.0)))
+        log10_L = (
+            _LOG10_4PI
+            + 2.0 * jnp.log10(jnp.maximum(R, 1.0))
+            + _LOG10_SIGMASB
+            + 4.0 * jnp.log10(jnp.maximum(T, 1.0))
+        )
         log10_R = jnp.log10(jnp.maximum(R, 1.0))
 
         return log10_L, log10_R
@@ -186,8 +195,13 @@ class VillarModel(PhenomenologicalModel):
     Shape parameters: t0, log10_tau_rise, log10_tau_fall, beta_slope, log10_gamma
     """
 
-    shape_parameter_names = ["t0", "log10_tau_rise", "log10_tau_fall",
-                             "beta_slope", "log10_gamma"]
+    shape_parameter_names = [
+        "t0",
+        "log10_tau_rise",
+        "log10_tau_fall",
+        "beta_slope",
+        "log10_gamma",
+    ]
     has_baseline = False
 
     def __init__(self, filters, times=None):
@@ -206,10 +220,12 @@ class VillarModel(PhenomenologicalModel):
         sig_rise = jax.nn.sigmoid(phase / tau_rise)
         w = jax.nn.sigmoid(10.0 * (phase - gamma))
         piece_left = 1.0 - beta * phase
-        piece_right = (1.0 - beta * gamma) * jnp.exp((gamma - phase) / tau_fall)
-        return sig_rise * jnp.maximum(
-            (1.0 - w) * piece_left + w * piece_right, 1e-30)
-
+        # Clip the exponent: for phase << gamma the weight w is ~0, and an
+        # unclipped exp overflows float32 to inf, giving 0*inf = NaN.
+        piece_right = (1.0 - beta * gamma) * jnp.exp(
+            jnp.clip((gamma - phase) / tau_fall, -80.0, 80.0)
+        )
+        return sig_rise * jnp.maximum((1.0 - w) * piece_left + w * piece_right, 1e-30)
 
     def constraint_penalty(self, x):
         """Physical validity penalty (de Soto et al. 2024).
@@ -242,8 +258,7 @@ class PhenomenologicalTDEModel(PhenomenologicalModel):
     Shape parameters: t0, log10_tau_rise, log10_tau_fall, alpha_decay
     """
 
-    shape_parameter_names = ["t0", "log10_tau_rise", "log10_tau_fall",
-                             "alpha_decay"]
+    shape_parameter_names = ["t0", "log10_tau_rise", "log10_tau_fall", "alpha_decay"]
     has_baseline = True
 
     def __init__(self, filters, times=None):
@@ -293,6 +308,7 @@ class AfterglowModel(PhenomenologicalModel):
         phase_soft = jax.nn.softplus(phase) + 1e-6
         r = phase_soft / t_break
         ln_r = jnp.log(r)
-        u1 = jnp.exp(2.0 * alpha_1 * ln_r)
-        u2 = jnp.exp(2.0 * alpha_2 * ln_r)
-        return jnp.power(u1 + u2, -0.5)
+        # Combine the two power-law branches in log space (logaddexp) so
+        # r^(2*alpha) can't overflow float32 at late times (r>>1) — an unclipped
+        # exp there overflows to inf, collapsing the shape to exactly 0.
+        return jnp.exp(-0.5 * jnp.logaddexp(2.0 * alpha_1 * ln_r, 2.0 * alpha_2 * ln_r))

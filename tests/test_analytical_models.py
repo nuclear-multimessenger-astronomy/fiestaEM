@@ -8,7 +8,6 @@ import jax.numpy as jnp
 import pytest
 
 from fiesta.inference.analytical_models import (
-    AnalyticalModel,
     ShockCoolingModel,
     ArnettModel,
     MetzgerModel,
@@ -21,7 +20,6 @@ from fiesta.inference.analytical_models import (
     NickelCobaltModel,
     MagnetarPoweredSNModel,
     CSMInteractionModel,
-    PhenomenologicalModel,
     BazinModel,
     VillarModel,
     PhenomenologicalTDEModel,
@@ -54,6 +52,7 @@ def _make_synthetic_data(filters, trigger_time=0.0, n_obs=10, n_nondet=2, seed=4
 # ---------------------------------------------------------------------------
 # ShockCoolingModel
 # ---------------------------------------------------------------------------
+
 
 class TestShockCooling:
     def _make_model_and_params(self):
@@ -89,18 +88,22 @@ class TestShockCooling:
 
     def test_differentiable(self):
         model, params = self._make_model_and_params()
-        params = {k: jnp.float64(v) if isinstance(v, (int, float)) else v
-                  for k, v in params.items()}
+        params = {
+            k: jnp.float64(v) if isinstance(v, (int, float)) else v
+            for k, v in params.items()
+        }
 
         def _loss(p):
             _, mags = model.predict(p)
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        any_nonzero = any(jnp.any(jnp.abs(v) > 0)
-                          for v in jax.tree_util.tree_leaves(grads))
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
+        any_nonzero = any(
+            jnp.any(jnp.abs(v) > 0) for v in jax.tree_util.tree_leaves(grads)
+        )
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
         assert any_nonzero, "All gradients are zero"
 
@@ -108,6 +111,7 @@ class TestShockCooling:
 # ---------------------------------------------------------------------------
 # ArnettModel
 # ---------------------------------------------------------------------------
+
 
 class TestArnett:
     def _make_model_and_params(self, modified=False):
@@ -160,14 +164,16 @@ class TestArnett:
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite
 
 
 # ---------------------------------------------------------------------------
 # MetzgerModel
 # ---------------------------------------------------------------------------
+
 
 class TestMetzger:
     def _make_model_and_params(self, full=False):
@@ -218,14 +224,16 @@ class TestMetzger:
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite
 
 
 # ---------------------------------------------------------------------------
 # CombinedSurrogate with analytical models
 # ---------------------------------------------------------------------------
+
 
 class TestCombinedWithAnalytical:
     def test_two_analytical_models(self):
@@ -260,12 +268,14 @@ class TestCombinedWithAnalytical:
 # EMLikelihood integration
 # ---------------------------------------------------------------------------
 
+
 class TestLikelihoodIntegration:
     def _make_likelihood(self):
         model = ShockCoolingModel(filters=FILTERS)
         data = _make_synthetic_data(FILTERS, trigger_time=0.0)
-        lk = EMLikelihood(model=model, data=data, trigger_time=0.0,
-                          data_tmin=0.1, data_tmax=4.0)
+        lk = EMLikelihood(
+            model=model, data=data, trigger_time=0.0, data_tmin=0.1, data_tmax=4.0
+        )
         params = {
             "log10_Menv": -2.0,
             "log10_Renv": 2.0,
@@ -285,14 +295,16 @@ class TestLikelihoodIntegration:
         params = {k: jnp.float64(v) for k, v in params.items()}
         grad_fn = jax.grad(lambda p: lk.evaluate(p))
         grads = grad_fn(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients through likelihood are non-finite"
 
 
 # ---------------------------------------------------------------------------
 # OneComponentKilonovaModel
 # ---------------------------------------------------------------------------
+
 
 class TestOneComponentKilonova:
     def _make_model_and_params(self):
@@ -333,10 +345,12 @@ class TestOneComponentKilonova:
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
-        any_nonzero = any(jnp.any(jnp.abs(v) > 0)
-                          for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
+        any_nonzero = any(
+            jnp.any(jnp.abs(v) > 0) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
         assert any_nonzero, "All gradients are zero"
 
@@ -344,6 +358,7 @@ class TestOneComponentKilonova:
 # ---------------------------------------------------------------------------
 # MagnetarBoostedKilonovaModel
 # ---------------------------------------------------------------------------
+
 
 class TestMagnetarBoostedKilonova:
     def _make_model_and_params(self):
@@ -353,10 +368,10 @@ class TestMagnetarBoostedKilonova:
             "log10_vej": -0.7,
             "beta": 3.0,
             "log10_kappa_r": 0.5,
-            "log10_p0": 0.0,       # 1 ms
-            "log10_bp": 0.0,       # 1e14 G
+            "log10_p0": 0.0,  # 1 ms
+            "log10_bp": 0.0,  # 1e14 G
             "mass_ns": 1.4,
-            "theta_pb": 1.0,       # ~57 degrees
+            "theta_pb": 1.0,  # ~57 degrees
             "thermalisation_efficiency": 0.5,
             "luminosity_distance": 40.0,
             "redshift": 0.01,
@@ -388,15 +403,21 @@ class TestMagnetarBoostedKilonova:
             "luminosity_distance": 40.0,
             "redshift": 0.01,
         }
-        mag_params = {**shared, "log10_p0": 0.0, "log10_bp": 0.0,
-                      "mass_ns": 1.4, "theta_pb": 1.0,
-                      "thermalisation_efficiency": 0.5}
+        mag_params = {
+            **shared,
+            "log10_p0": 0.0,
+            "log10_bp": 0.0,
+            "mass_ns": 1.4,
+            "theta_pb": 1.0,
+            "thermalisation_efficiency": 0.5,
+        }
         _, mags_mag = mag_model.predict(mag_params)
         _, mags_met = metz_model.predict(shared)
         # Brighter = lower apparent magnitude for at least some times
         for filt in FILTERS:
-            assert jnp.any(mags_mag[filt] < mags_met[filt]), \
+            assert jnp.any(mags_mag[filt] < mags_met[filt]), (
                 f"Magnetar model not brighter in {filt}"
+            )
 
     def test_differentiable(self):
         model, params = self._make_model_and_params()
@@ -407,14 +428,16 @@ class TestMagnetarBoostedKilonova:
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
 
 
 # ---------------------------------------------------------------------------
 # ShockedCocoonModel
 # ---------------------------------------------------------------------------
+
 
 class TestShockedCocoon:
     def _make_model_and_params(self):
@@ -423,10 +446,10 @@ class TestShockedCocoon:
             "log10_mej": -1.5,
             "log10_vej": -0.7,
             "eta": 10.0,
-            "log10_tshock": 1.0,   # 10 seconds
+            "log10_tshock": 1.0,  # 10 seconds
             "shocked_fraction": 0.5,
             "cos_theta_cocoon": 0.5,
-            "log10_kappa": 0.0,    # 1 cm^2/g
+            "log10_kappa": 0.0,  # 1 cm^2/g
             "luminosity_distance": 40.0,
             "redshift": 0.01,
         }
@@ -454,10 +477,12 @@ class TestShockedCocoon:
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
-        any_nonzero = any(jnp.any(jnp.abs(v) > 0)
-                          for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
+        any_nonzero = any(
+            jnp.any(jnp.abs(v) > 0) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
         assert any_nonzero, "All gradients are zero"
 
@@ -466,18 +491,19 @@ class TestShockedCocoon:
 # EvolvingBlackbodyModel
 # ---------------------------------------------------------------------------
 
+
 class TestEvolvingBlackbody:
     def _make_model_and_params(self):
         model = EvolvingBlackbodyModel(filters=FILTERS)
         params = {
-            "log10_temperature_0": 4.0,       # 10,000 K
-            "log10_radius_0": 14.0,           # ~1e14 cm
+            "log10_temperature_0": 4.0,  # 10,000 K
+            "log10_radius_0": 14.0,  # ~1e14 cm
             "temp_rise_index": 0.5,
             "temp_decline_index": 0.3,
-            "temp_peak_time": 2.0,            # days
+            "temp_peak_time": 2.0,  # days
             "radius_rise_index": 0.8,
             "radius_decline_index": 0.2,
-            "radius_peak_time": 5.0,          # days
+            "radius_peak_time": 5.0,  # days
             "luminosity_distance": 40.0,
             "redshift": 0.01,
         }
@@ -505,10 +531,12 @@ class TestEvolvingBlackbody:
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
-        any_nonzero = any(jnp.any(jnp.abs(v) > 0)
-                          for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
+        any_nonzero = any(
+            jnp.any(jnp.abs(v) > 0) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
         assert any_nonzero, "All gradients are zero"
 
@@ -517,15 +545,16 @@ class TestEvolvingBlackbody:
 # TDEAnalyticalModel
 # ---------------------------------------------------------------------------
 
+
 class TestTDEAnalytical:
     def _make_model_and_params(self):
         model = TDEAnalyticalModel(filters=FILTERS)
         params = {
-            "log10_l0": 45.0,         # 1e45 erg/s at 1 second
-            "t_0_turn": 1.0,          # 1 day turn-on
-            "log10_mej": 0.0,         # 1 solar mass
-            "log10_vej": 4.0,         # 1e4 km/s
-            "log10_kappa": -0.7,      # ~0.2 cm^2/g
+            "log10_l0": 45.0,  # 1e45 erg/s at 1 second
+            "t_0_turn": 1.0,  # 1 day turn-on
+            "log10_mej": 0.0,  # 1 solar mass
+            "log10_vej": 4.0,  # 1e4 km/s
+            "log10_kappa": -0.7,  # ~0.2 cm^2/g
             "log10_kappa_gamma": -2.0,
             "luminosity_distance": 200.0,
             "redshift": 0.05,
@@ -554,8 +583,9 @@ class TestTDEAnalytical:
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
 
     def test_fallback_decay(self):
@@ -565,21 +595,23 @@ class TestTDEAnalytical:
         for filt in FILTERS:
             # Verify the light curve is not flat (diffusion modifies the engine)
             mag_range = jnp.max(mags[filt]) - jnp.min(mags[filt])
-            assert mag_range > 0.1, \
+            assert mag_range > 0.1, (
                 f"{filt}: expected varying light curve, got range {mag_range}"
+            )
 
 
 # ---------------------------------------------------------------------------
 # NickelCobaltModel
 # ---------------------------------------------------------------------------
 
+
 class TestNickelCobalt:
     def _make_model_and_params(self, f_nickel=0.1):
         model = NickelCobaltModel(filters=FILTERS)
         params = {
             "f_nickel": f_nickel,
-            "log10_mej": 0.5,         # ~3 solar masses
-            "log10_vej": 4.0,         # 1e4 km/s
+            "log10_mej": 0.5,  # ~3 solar masses
+            "log10_vej": 4.0,  # 1e4 km/s
             "log10_kappa": -0.7,
             "log10_kappa_gamma": -2.0,
             "luminosity_distance": 100.0,
@@ -609,8 +641,9 @@ class TestNickelCobalt:
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
 
     def test_nickel_scaling(self):
@@ -621,24 +654,26 @@ class TestNickelCobalt:
         _, mags_hi = model_hi.predict(params_hi)
         for filt in FILTERS:
             # Higher nickel -> brighter -> lower mean magnitude
-            assert jnp.mean(mags_hi[filt]) < jnp.mean(mags_lo[filt]), \
+            assert jnp.mean(mags_hi[filt]) < jnp.mean(mags_lo[filt]), (
                 f"{filt}: higher f_nickel should be brighter"
+            )
 
 
 # ---------------------------------------------------------------------------
 # MagnetarPoweredSNModel
 # ---------------------------------------------------------------------------
 
+
 class TestMagnetarPoweredSN:
     def _make_model_and_params(self):
         model = MagnetarPoweredSNModel(filters=FILTERS)
         params = {
-            "log10_p0": 0.0,          # 1 ms
-            "log10_bp": 0.0,          # 1e14 G
+            "log10_p0": 0.0,  # 1 ms
+            "log10_bp": 0.0,  # 1e14 G
             "mass_ns": 1.4,
             "theta_pb": 1.0,
-            "log10_mej": 0.5,         # ~3 solar masses
-            "log10_vej": 4.0,         # 1e4 km/s
+            "log10_mej": 0.5,  # ~3 solar masses
+            "log10_vej": 4.0,  # 1e4 km/s
             "log10_kappa": -0.7,
             "log10_kappa_gamma": -2.0,
             "luminosity_distance": 200.0,
@@ -668,8 +703,9 @@ class TestMagnetarPoweredSN:
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
 
     def test_magnetar_brighter(self):
@@ -684,31 +720,38 @@ class TestMagnetarPoweredSN:
             "luminosity_distance": 200.0,
             "redshift": 0.05,
         }
-        mag_params = {**shared, "log10_p0": 0.0, "log10_bp": 0.0,
-                      "mass_ns": 1.4, "theta_pb": 1.0}
+        mag_params = {
+            **shared,
+            "log10_p0": 0.0,
+            "log10_bp": 0.0,
+            "mass_ns": 1.4,
+            "theta_pb": 1.0,
+        }
         ni_params = {**shared, "f_nickel": 0.1}
         _, mags_mag = mag_model.predict(mag_params)
         _, mags_ni = ni_model.predict(ni_params)
         for filt in FILTERS:
-            assert jnp.mean(mags_mag[filt]) < jnp.mean(mags_ni[filt]), \
+            assert jnp.mean(mags_mag[filt]) < jnp.mean(mags_ni[filt]), (
                 f"{filt}: magnetar SN should be brighter than NickelCobalt"
+            )
 
 
 # ---------------------------------------------------------------------------
 # CSMInteractionModel
 # ---------------------------------------------------------------------------
 
+
 class TestCSMInteraction:
     def _make_model_and_params(self):
         model = CSMInteractionModel(filters=FILTERS, nn=12, delta=1)
         params = {
-            "log10_mej": 0.5,         # ~3 solar masses
-            "log10_csm_mass": 0.0,    # 1 solar mass CSM
-            "log10_vej": 4.0,         # 1e4 km/s
+            "log10_mej": 0.5,  # ~3 solar masses
+            "log10_csm_mass": 0.0,  # 1 solar mass CSM
+            "log10_vej": 4.0,  # 1e4 km/s
             "eta": 0.5,
-            "log10_rho": -13.0,       # typical CSM density
+            "log10_rho": -13.0,  # typical CSM density
             "log10_kappa": -0.7,
-            "log10_r0": 0.0,          # 1 AU
+            "log10_r0": 0.0,  # 1 AU
             "luminosity_distance": 200.0,
             "redshift": 0.05,
         }
@@ -736,8 +779,9 @@ class TestCSMInteraction:
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
 
     def test_eta_sensitivity(self):
@@ -756,8 +800,9 @@ class TestCSMInteraction:
         _, mags_lo = model.predict({**base, "eta": 0.2})
         _, mags_hi = model.predict({**base, "eta": 1.5})
         for filt in FILTERS:
-            assert not jnp.allclose(mags_lo[filt], mags_hi[filt]), \
+            assert not jnp.allclose(mags_lo[filt], mags_hi[filt]), (
                 f"{filt}: eta should change the light curve"
+            )
 
     def test_csm_mass_scaling(self):
         """More CSM mass should produce brighter emission."""
@@ -775,13 +820,15 @@ class TestCSMInteraction:
         _, mags_lo = model.predict({**base, "log10_csm_mass": -0.5})
         _, mags_hi = model.predict({**base, "log10_csm_mass": 0.5})
         for filt in FILTERS:
-            assert not jnp.allclose(mags_lo[filt], mags_hi[filt]), \
+            assert not jnp.allclose(mags_lo[filt], mags_hi[filt]), (
                 f"{filt}: CSM mass should change the light curve"
+            )
 
 
 # ---------------------------------------------------------------------------
 # BazinModel
 # ---------------------------------------------------------------------------
+
 
 class TestBazin:
     def _make_model_and_params(self):
@@ -812,16 +859,19 @@ class TestBazin:
 
     def test_differentiable(self):
         model, params = self._make_model_and_params()
-        params = {k: jnp.float64(v) if isinstance(v, (int, float)) else v
-                  for k, v in params.items()}
+        params = {
+            k: jnp.float64(v) if isinstance(v, (int, float)) else v
+            for k, v in params.items()
+        }
 
         def _loss(p):
             _, mags = model.predict(p)
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
 
     def test_peak_near_t0(self):
@@ -832,13 +882,15 @@ class TestBazin:
             # Minimum magnitude = brightest = peak
             peak_idx = jnp.argmin(mags[filt])
             peak_time = times[peak_idx]
-            assert jnp.abs(peak_time - params["t0"]) < 15.0, \
+            assert jnp.abs(peak_time - params["t0"]) < 15.0, (
                 f"{filt}: peak at t={float(peak_time):.1f}, expected near t0={params['t0']}"
+            )
 
 
 # ---------------------------------------------------------------------------
 # VillarModel
 # ---------------------------------------------------------------------------
+
 
 class TestVillar:
     def _make_model_and_params(self):
@@ -853,6 +905,24 @@ class TestVillar:
             "amp_mag_bessellr": 19.5,
         }
         return model, params
+
+    def test_float32_no_nan_pre_gamma(self):
+        # phase << gamma with large gamma / small tau_fall overflows
+        # exp((gamma - phase) / tau_fall) in float32; the ~0 weight then gives
+        # 0 * inf = NaN without the exponent clip.
+        model = VillarModel(filters=FILTERS)
+        params = {
+            "t0": 30.0,
+            "log10_tau_rise": 0.5,
+            "log10_tau_fall": 0.0,
+            "beta_slope": 0.005,
+            "log10_gamma": 2.0,
+            "amp_mag_bessellb": 20.0,
+            "amp_mag_bessellr": 19.5,
+        }
+        _, mags = model.predict(params)
+        for filt in FILTERS:
+            assert jnp.all(jnp.isfinite(mags[filt])), f"NaN in {filt}"
 
     def test_shape(self):
         model, params = self._make_model_and_params()
@@ -869,16 +939,19 @@ class TestVillar:
 
     def test_differentiable(self):
         model, params = self._make_model_and_params()
-        params = {k: jnp.float64(v) if isinstance(v, (int, float)) else v
-                  for k, v in params.items()}
+        params = {
+            k: jnp.float64(v) if isinstance(v, (int, float)) else v
+            for k, v in params.items()
+        }
 
         def _loss(p):
             _, mags = model.predict(p)
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
 
     def test_piecewise_transition(self):
@@ -895,13 +968,15 @@ class TestVillar:
         _, mags_lo = model.predict({**base, "log10_gamma": jnp.log10(10.0)})
         _, mags_hi = model.predict({**base, "log10_gamma": jnp.log10(40.0)})
         for filt in FILTERS:
-            assert not jnp.allclose(mags_lo[filt], mags_hi[filt]), \
+            assert not jnp.allclose(mags_lo[filt], mags_hi[filt]), (
                 f"{filt}: gamma should change the light curve"
+            )
 
 
 # ---------------------------------------------------------------------------
 # PhenomenologicalTDEModel
 # ---------------------------------------------------------------------------
+
 
 class TestPhenomenologicalTDE:
     def _make_model_and_params(self):
@@ -933,16 +1008,19 @@ class TestPhenomenologicalTDE:
 
     def test_differentiable(self):
         model, params = self._make_model_and_params()
-        params = {k: jnp.float64(v) if isinstance(v, (int, float)) else v
-                  for k, v in params.items()}
+        params = {
+            k: jnp.float64(v) if isinstance(v, (int, float)) else v
+            for k, v in params.items()
+        }
 
         def _loss(p):
             _, mags = model.predict(p)
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
 
     def test_late_time_decay(self):
@@ -952,15 +1030,17 @@ class TestPhenomenologicalTDE:
         for filt in FILTERS:
             # Compare last quarter vs middle quarter — late times should be fainter
             n = len(times)
-            mid_mag = jnp.mean(mags[filt][n // 4: n // 2])
-            late_mag = jnp.mean(mags[filt][3 * n // 4:])
-            assert late_mag > mid_mag, \
+            mid_mag = jnp.mean(mags[filt][n // 4 : n // 2])
+            late_mag = jnp.mean(mags[filt][3 * n // 4 :])
+            assert late_mag > mid_mag, (
                 f"{filt}: expected late-time decay (fainter), got mid={float(mid_mag):.1f} late={float(late_mag):.1f}"
+            )
 
 
 # ---------------------------------------------------------------------------
 # AfterglowModel
 # ---------------------------------------------------------------------------
+
 
 class TestAfterglow:
     def _make_model_and_params(self):
@@ -974,6 +1054,27 @@ class TestAfterglow:
             "amp_mag_bessellr": 19.5,
         }
         return model, params
+
+    def test_float32_no_late_time_overflow(self):
+        # Small t_break + large alpha_2 pushes r >> 1 at late times, where
+        # r^(2*alpha) overflowed float32 to inf and collapsed the shape to a
+        # hard 0 (the max(shape, 1e-30) clamp keeps mags finite but wrong, so
+        # this asserts shape > 0, not just finiteness).
+        model = AfterglowModel(filters=FILTERS)
+        params = {
+            "t0": 0.5,
+            "log10_t_break": -4.0,
+            "alpha_1": -1.0,
+            "alpha_2": 3.0,
+            "amp_mag_bessellb": 20.0,
+            "amp_mag_bessellr": 19.5,
+        }
+        shape = model.compute_shape(params, model.times)
+        assert jnp.all(jnp.isfinite(shape))
+        assert jnp.all(shape > 0.0), "shape collapsed to 0 (r^(2*alpha) overflow)"
+        _, mags = model.predict(params)
+        for filt in FILTERS:
+            assert jnp.all(jnp.isfinite(mags[filt]))
 
     def test_shape(self):
         model, params = self._make_model_and_params()
@@ -990,16 +1091,19 @@ class TestAfterglow:
 
     def test_differentiable(self):
         model, params = self._make_model_and_params()
-        params = {k: jnp.float64(v) if isinstance(v, (int, float)) else v
-                  for k, v in params.items()}
+        params = {
+            k: jnp.float64(v) if isinstance(v, (int, float)) else v
+            for k, v in params.items()
+        }
 
         def _loss(p):
             _, mags = model.predict(p)
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
 
     def test_break_time(self):
@@ -1015,8 +1119,9 @@ class TestAfterglow:
         _, mags_lo = model.predict({**base, "log10_t_break": 0.5})
         _, mags_hi = model.predict({**base, "log10_t_break": 2.0})
         for filt in FILTERS:
-            assert not jnp.allclose(mags_lo[filt], mags_hi[filt]), \
+            assert not jnp.allclose(mags_lo[filt], mags_hi[filt]), (
                 f"{filt}: t_break should change the light curve"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1028,8 +1133,7 @@ SALT3_FILTERS = ["ztfg", "ztfr"]
 _has_jax_bandflux = importlib.util.find_spec("jax_supernovae") is not None
 
 
-@pytest.mark.skipif(not _has_jax_bandflux,
-                    reason="jax-bandflux not installed")
+@pytest.mark.skipif(not _has_jax_bandflux, reason="jax-bandflux not installed")
 class TestSALT3:
     def _make_model_and_params(self):
         model = SALT3Model(
@@ -1073,10 +1177,12 @@ class TestSALT3:
             return jnp.sum(jnp.stack([jnp.sum(mags[f]) for f in SALT3_FILTERS]))
 
         grads = jax.grad(_loss)(params)
-        all_finite = all(jnp.all(jnp.isfinite(v))
-                         for v in jax.tree_util.tree_leaves(grads))
-        any_nonzero = any(jnp.any(jnp.abs(v) > 0)
-                          for v in jax.tree_util.tree_leaves(grads))
+        all_finite = all(
+            jnp.all(jnp.isfinite(v)) for v in jax.tree_util.tree_leaves(grads)
+        )
+        any_nonzero = any(
+            jnp.any(jnp.abs(v) > 0) for v in jax.tree_util.tree_leaves(grads)
+        )
         assert all_finite, "Gradients contain non-finite values"
         assert any_nonzero, "All gradients are zero"
 
