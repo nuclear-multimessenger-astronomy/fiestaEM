@@ -1,0 +1,45 @@
+# GPU runtime image for fiestaEM on the Open Science Grid.
+# Created by Michael Coughlin 2026.
+#
+# Same as dockerfile-OSG but with the [gpu] extra (jax[cuda12]) so Tier B/C
+# models (physics analytic + NN surrogates) run on a GPU worker. Distributed via
+# CVMFS (no per-job pull), which matters here: the CUDA wheels make this image
+# multi-GB. Route jobs to it with request_gpus>=1.
+# Build (context = repo root): docker build -f containers/dockerfile-OSG-gpu -t fiestaem-gpu:latest .
+FROM ubuntu:24.04
+
+ENV PIP_BREAK_SYSTEM_PACKAGES=1 DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y python3 python3-pip git build-essential \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install uv
+
+WORKDIR /src
+COPY . /src
+
+# fiestaEM with CUDA JAX + blackjax sampler backend.
+RUN uv pip install --system --break-system-packages ".[gpu]" blackjax
+
+# Bake the KN surrogates (download_surrogate returns (False, None) without
+# raising, so assert success). Bu2026_MLP is the GPU target; keep Bu2025_MLP too.
+RUN python3 <<'PY'
+import sys
+from fiesta.surrogates.manage_surrogates import download_surrogate
+for name in ("Bu2025_MLP", "Bu2026_MLP"):
+    ok, _ = download_surrogate(name)
+    if not ok:
+        sys.exit(f"{name} download failed")
+PY
+
+# Import check: pin JAX to CPU so the GPU-less builder doesn't fail on cuInit
+# (at runtime on a GPU node, JAX auto-selects CUDA).
+RUN JAX_PLATFORMS=cpu python3 -c "import fiesta, blackjax, jax; print('fiestaEM + blackjax + jax', jax.__version__)"
+
+# Non-root (apptainer on OSPool ignores USER); surrogate is world-readable.
+RUN useradd -m -u 10001 appuser
+USER appuser
+WORKDIR /home/appuser
+
+CMD ["python3"]
