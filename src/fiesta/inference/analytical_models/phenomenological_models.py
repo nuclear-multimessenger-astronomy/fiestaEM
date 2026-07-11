@@ -218,14 +218,14 @@ class VillarModel(PhenomenologicalModel):
 
         phase = t_days - t0
         sig_rise = jax.nn.sigmoid(phase / tau_rise)
-        w = jax.nn.sigmoid(10.0 * (phase - gamma))
-        piece_left = 1.0 - beta * phase
-        # Clip the exponent: for phase << gamma the weight w is ~0, and an
-        # unclipped exp overflows float32 to inf, giving 0*inf = NaN.
-        piece_right = (1.0 - beta * gamma) * jnp.exp(
-            jnp.clip((gamma - phase) / tau_fall, -80.0, 80.0)
+        u = gamma - phase
+        # Fold the weight into the exponent via log_sigmoid so the decline term
+        # can't overflow float32 for phase << gamma (smooth, no hard clip edge).
+        left = jax.nn.sigmoid(10.0 * u) * (1.0 - beta * phase)
+        right = (1.0 - beta * gamma) * jnp.exp(
+            u / tau_fall + jax.nn.log_sigmoid(-10.0 * u)
         )
-        return sig_rise * jnp.maximum((1.0 - w) * piece_left + w * piece_right, 1e-30)
+        return sig_rise * jnp.maximum(left + right, 1e-30)
 
     def constraint_penalty(self, x):
         """Physical validity penalty (de Soto et al. 2024).
