@@ -18,6 +18,7 @@ permissions:
 jobs:
   deploy:
 
+    if: github.repository == 'nuclear-multimessenger-astronomy/fiestaEM'
     runs-on: ubuntu-latest
 
     steps:
