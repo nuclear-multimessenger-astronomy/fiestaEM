@@ -18,6 +18,14 @@ permissions:
 jobs:
   docker-build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: containers/dockerfile-OSG
+            tag: fiestaem:ci
+          - dockerfile: containers/dockerfile-OSG-gpu
+            tag: fiestaem-gpu:ci
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,9 +38,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: containers/dockerfile-OSG
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: false
-          tags: fiestaem:ci
+          tags: ${{ matrix.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
