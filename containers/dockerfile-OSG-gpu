@@ -1,7 +1,7 @@
 # GPU runtime image for fiestaEM on the Open Science Grid.
 # Created by Michael Coughlin 2026.
 #
-# Same as dockerfile-OSG but with the [gpu] extra (jax[cuda13]) so Tier B/C
+# Same as dockerfile-OSG but with the [gpu] extra (jax[cuda12]) so Tier B/C
 # models (physics analytic + NN surrogates) run on a GPU worker. Distributed via
 # CVMFS (no per-job pull), which matters here: the CUDA wheels make this image
 # multi-GB. Route jobs to it with request_gpus>=1.
@@ -24,8 +24,14 @@ RUN uv pip install --system --break-system-packages ".[gpu]" blackjax
 
 # Bake the KN surrogates (download_surrogate returns (False, None) without
 # raising, so assert success). Bu2026_MLP is the GPU target; keep Bu2025_MLP too.
-RUN python3 -c "from fiesta.surrogates.manage_surrogates import download_surrogate; \
-[__import__('sys').exit(f'{n} download failed') for n in ('Bu2025_MLP','Bu2026_MLP') if not download_surrogate(n)[0]]"
+RUN python3 <<'PY'
+import sys
+from fiesta.surrogates.manage_surrogates import download_surrogate
+for name in ("Bu2025_MLP", "Bu2026_MLP"):
+    ok, _ = download_surrogate(name)
+    if not ok:
+        sys.exit(f"{name} download failed")
+PY
 
 # Import check: pin JAX to CPU so the GPU-less builder doesn't fail on cuInit
 # (at runtime on a GPU node, JAX auto-selects CUDA).
