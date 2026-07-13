@@ -2,21 +2,21 @@ Samplers
 --------
 
 There are currently three different samplers that are directly integrated within fiesta's API.
-Of course, the fiesta priors and likelihood functions could also be used with different samplers, but direct use through the ``Fiesta`` sampling class is only possible with either ``flowMC``, ``blackjax-smc``, or ``numpyro-svi``.
-To decide which sampler to use, use the ``sampler`` argument when initializing the ``Fiesta`` class. By default, this will be ``flowMC``.
+Of course, the fiesta priors and likelihood functions could also be used with different samplers, but direct use through the ``Fiesta`` sampling class is only possible with either ``flowmc``, ``blackjax-smc``, or ``numpyro-svi``.
+To decide which sampler to use, use the ``sampler`` argument when initializing the ``Fiesta`` class. By default, this will be ``flowmc``.
 You can also pass additional sampling kwargs to the ``Fiesta`` class, if you do not wanna use their standard settings.
 
 We briefly present the different samplers and their optional arguments here.
 
 
-``flowMC`` (default)
+``flowmc`` (default)
 ^^^^^^^^^^^^^^^^^^^^
 
 flowMC is an MCMC sampler that combines local Metropolis-adjusted Langevin algorithm (MALA) steps with a normalizing flow that is trained on the fly for efficient global proposals. 
 This significantly improves sampling efficiency for complicated posterior distributions while still sampling the true posterior distribution.
-Details can be found in the ``flowMC`` `paper <https://arxiv.org/abs/2211.06397>`_ and the ``flowMC`` `documentation <https://gw-jax-team.github.io/flowMC/stable/>`_.
+Details can be found in the flowMC `paper <https://arxiv.org/abs/2211.06397>`_ and the `documentation <https://gw-jax-team.github.io/flowMC/stable/>`_.
 
-The following keyword arguments can be passed to ``Fiesta(..., sampler="flowMC", **sampling_kwargs)``:
+The following keyword arguments can be passed to ``Fiesta(..., sampler="flowmc", **sampling_kwargs)``:
 
 .. list-table::
    :header-rows: 1
@@ -82,7 +82,7 @@ The parameters that are most commonly adjusted are ``n_chains``, ``n_training_lo
 
     sampler = Fiesta(
     ...,
-    sampler="flowMC",
+    sampler="flowmc",
     n_chains=200,
     n_training_loops=30,
     n_production_loops=20,
@@ -90,7 +90,7 @@ The parameters that are most commonly adjusted are ``n_chains``, ``n_training_lo
     )
 
 After sampling, fiesta returns the production samples as the posterior samples. 
-If ``sampler_extra_output=True`` is passed to the ``sample()`` method, additional diagnostic information from both the training and production phases (chains, log probabilities, acceptance rates, and training losses) are saved in two separate files ``results_training.npz`` and ``results_production.npz`` in the output directory.
+If ``sampler_extra_output=True`` is passed to the ``Fiesta.save_results()`` method, additional diagnostic information from both the training and production phases (chains, log probabilities, acceptance rates, and training losses) are saved in two separate files ``results_training.npz`` and ``results_production.npz`` in the output directory.
 
 
 
@@ -145,7 +145,7 @@ For most applications, the default settings work well. The parameters that are m
 
 After sampling, ``fiesta`` returns the posterior samples. 
 In addition, the estimated log-evidence is printed to the console. 
-If ``sampler_extra_output=True`` is passed to the ``sample()`` method, ``fiesta`` also saves a ``smc_metadata.json`` file containing diagnostic information.
+If ``sampler_extra_output=True`` is passed to the ``Fiesta.save_results()`` method, ``fiesta`` also saves a ``smc_metadata.json`` file containing diagnostic information.
 
 
 ``numpyro-svi``
@@ -193,4 +193,4 @@ The ``step_size`` may also need tuning if the ELBO is unstable or converges slow
 
 After optimization, ``fiesta`` draws ``num_samples`` samples from the learned variational distribution and returns them as posterior samples. 
 The final ELBO is printed to the console. 
-If ``sampler_extra_output=True`` is passed to the ``sample()`` method, ``fiesta`` also saves a svi_metadata.json file containing diagnostic information.
+If ``sampler_extra_output=True`` is passed to the ``Fiesta.save_results()`` method, ``fiesta`` also saves a svi_metadata.json file containing diagnostic information.
