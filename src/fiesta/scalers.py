@@ -40,8 +40,8 @@ class MinMaxScalerJax(Scaler):
     """
     
     def __init__(self,
-                 min_val: Array = 1.,
-                 max_val: Array = 0.):
+                 min_val: Array = 0.,
+                 max_val: Array = 1.):
         
         self.min_val = min_val
         self.max_val = max_val

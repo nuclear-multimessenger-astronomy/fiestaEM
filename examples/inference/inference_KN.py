@@ -1,10 +1,11 @@
 import numpy as np
 import jax
+import jax.numpy as jnp
 
 from fiesta.inference.prior import Uniform, ConstrainedPrior, Sine
 from fiesta.inference.fiesta import Fiesta
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.inference.lightcurve_model import BullaFlux
+from fiesta.inference.lightcurve_model import FluxModel
 from fiesta.utils import load_event_data
 
 
@@ -24,8 +25,10 @@ FILTERS = list(data.keys())
 # MODEL #
 #########
 
-model = BullaFlux(name="Bu2026_MLP",
-                  filters = FILTERS)
+model = FluxModel(
+    name="Bu2026_MLP",
+    filters = FILTERS
+)
 
 
 #########
@@ -33,8 +36,8 @@ model = BullaFlux(name="Bu2026_MLP",
 #########
 
 KN_prior = [
-            Sine(xmin=0., xmax=np.pi/2, naming=["inclination_EM"]),
-            Uniform(xmin=-4.0, xmax=-1.3, naming=["log10_mej_dyn"]),
+            Sine(xmin=0., xmax=jnp.pi/2, naming=["inclination_EM"]),
+            Uniform(xmin=-3.0, xmax=-1.3, naming=["log10_mej_dyn"]),
             Uniform(xmin=0.12, xmax=0.35, naming=["v_ej_dyn"]),
             Uniform(xmin=0.15, xmax=0.35, naming=["Ye_dyn"]),
             Uniform(xmin=-4., xmax=-0.56, naming=["log10_mej_wind"]),
@@ -56,7 +59,7 @@ detection_limit = None
 likelihood = EMLikelihood(model,
                           data,
                           data_tmin=0.3,
-                          data_tmax=28.,
+                          data_tmax=10.,
                           trigger_time=trigger_time,
                           detection_limit = detection_limit,
                           fixed_params={"luminosity_distance": 43.583656, "redshift":0.009727})
@@ -64,10 +67,12 @@ likelihood = EMLikelihood(model,
 
 outdir = f"./outdir_KN/"
 
-fiesta = Fiesta(likelihood,
-                prior,
-                systematics_file="./systematics_file_KN.yaml",
-                outdir = outdir)
+fiesta = Fiesta(
+    likelihood,
+    prior,
+    systematics_file="./systematics_file_KN.yaml",
+    outdir = outdir
+)
 
 
 if __name__ == "__main__":

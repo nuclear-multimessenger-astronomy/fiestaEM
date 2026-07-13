@@ -46,7 +46,7 @@ samplers = ["fiestaEM[flowmc,blackjax,numpyro]"]
 grb = ["afterglowpy"]
 # cuda12 (not 13): the CUDA 12 wheels run on driver >=525, matching far more
 # OSPool GPU nodes than cuda13's >=580 floor.
-gpu = ["jax[cuda12]"]
+gpu = ["jax[cuda13]"]
 docs = [
     "sphinx>=7.0",
     "sphinx-autobuild",

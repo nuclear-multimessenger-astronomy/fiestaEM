@@ -27,7 +27,7 @@ Note, that by default only the cpu version of `jax` is installed. If you want to
 ```
 pip install fiestaEM[gpu]
 ```
-or install `jax[cuda12]` as indicated on the [`jax` webpage](https://docs.jax.dev/en/latest/installation.html#installation) manually.
+or install `jax[cuda13]` as indicated on the [`jax` webpage](https://docs.jax.dev/en/latest/installation.html#installation) manually.
 
 To obtain a set of recommended built-in surrogates (see below), additionally run
 
