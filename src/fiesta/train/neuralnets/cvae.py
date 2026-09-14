@@ -62,7 +62,7 @@ class CVAE(NN):
         params = net.init(
             key, 
             jnp.ones(config.input_size), 
-            jnp.ones(config.conditional_dim), 
+            jnp.ones(config.conditional_dim),
             subkey
         )['params']
 
