@@ -194,7 +194,15 @@ class DataLoader:
         mask = nu_mask[:, None] & time_mask
         self.mask = mask
         self.n_mask = np.sum(self.mask)
-    
+
+        # array_mask_from_interval always selects a single contiguous run of indices,
+        # so the 2D mask above is always an axis-aligned rectangle. Store its index
+        # bounds too, so data can be read directly as a hyperslab instead of reading the full grid
+        nu_idx = np.flatnonzero(nu_mask)
+        time_idx = np.flatnonzero(time_mask)
+        self.nu_start, self.nu_stop = int(nu_idx[0]), int(nu_idx[-1]) + 1
+        self.time_start, self.time_stop = int(time_idx[0]), int(time_idx[-1]) + 1
+
     def print_file_info(self,) -> None:
         """
         Prints the meta data of the raw data, i.e., time, frequencies, and parameter names to terminal. 
@@ -314,59 +322,83 @@ class DataLoader:
 
         return train_X, val_X, X_scaler
 
+    # Batch size used to read a dataset that has no native HDF5 chunking to align
+    # to (a contiguously-stored dataset). Keeps peak memory bounded regardless of
+    # n_training even when the file wasn't written with chunked storage.
+    _UNCHUNKED_BATCH_SIZE = 1024
+
     def preprocess_fluxes(
         self,
         y_scaler: DataScaler
     ) -> tuple[Array, Array, DataScaler]:
+        """
+        Fits and transforms the fluxes (``y`` data sets) from ``self.file``.
+
+        Only the requested frequency/time window (``nu_start:nu_stop``,
+        ``time_start:time_stop`` from :meth:`set_up_domain_mask`) is ever read from
+        disk.
+        """
 
         with h5py.File(self.file, "r") as f:
 
             train_set = f["train"]["y"]
+            dtype = train_set.dtype
+            nu_sl = slice(self.nu_start, self.nu_stop)
+            time_sl = slice(self.time_start, self.time_stop)
 
-            # First fit the y_scaler 
-            # with a fit batch of max. 20k samples
-            # to save memory
+            # First fit the y_scaler
+            # with a fit batch of max. 20k samples to save memory
             n_fits = min(20_000, self.n_training)
-            fit_batch = train_set[:n_fits][:, self.mask].astype(np.float16)
+            fit_batch = train_set[:n_fits, self.nu_start:self.nu_stop, self.time_start:self.time_stop]
+            fit_batch = fit_batch.reshape(fit_batch.shape[0], -1).astype(np.float16)
             self._check_array_for_garbage(fit_batch, "fit training batch")
+
             fit_batch = y_scaler.fit_transform(fit_batch)
             transformed_shape = fit_batch[0].shape
-            del fit_batch; gc.collect() # remove fit_batch from memory
+            del fit_batch # remove fit_batch from memory
 
-            # loop over the entire training data
+
+            # loop over the entire training data in batches
             train_y = np.empty((self.n_training, *transformed_shape))
-            chunk_size = train_set.chunks[0]
-            nchunks, rest = divmod(self.n_training, chunk_size)
+            if train_set.chunks is not None:
+                # align batches to the file's on-disk chunking for efficient I/O
+                batch_size = train_set.chunks[0]
+            else:
+                # no native chunking to align to (contiguous storage): fall back to
+                # a fixed batch size so memory use is still bounded
+                batch_size = min(self.n_training, self._UNCHUNKED_BATCH_SIZE)
+            nbatches, rest = divmod(self.n_training, batch_size)
 
-            for chunk in tqdm.tqdm(range(nchunks)):
-                sl = slice(chunk * chunk_size, (chunk+1) * chunk_size)
+            for batch in tqdm.tqdm(range(nbatches)):
+                sl = slice(batch * batch_size, (batch+1) * batch_size)
 
-                # read into raw batch
-                raw_batch = np.empty((chunk_size, self.n_nus_data, self.n_times_data))
-                train_set.read_direct(raw_batch, source_sel=np.s_[sl, :, :])
-                raw_batch = raw_batch[:, self.mask]
-                self._check_array_for_garbage(raw_batch, f"training data chunk {chunk}")
+                # read only the requested (nu, time) window into the raw batch
+                raw_batch = np.empty((batch_size, self.n_nus, self.n_times), dtype=dtype)
+                train_set.read_direct(raw_batch, source_sel=np.s_[sl, nu_sl, time_sl])
+                raw_batch = raw_batch.reshape(raw_batch.shape[0], -1)
+                self._check_array_for_garbage(raw_batch, f"training data batch {batch}")
 
                 train_y[sl] = y_scaler.transform(raw_batch)
 
             if rest:
                 sl = slice(self.n_training - rest, self.n_training)
-                raw_batch = np.empty((rest, self.n_nus_data, self.n_times_data))
-                train_set.read_direct(raw_batch, source_sel=np.s_[sl, :, :])
-                raw_batch = raw_batch[:, self.mask]
+                raw_batch = np.empty((rest, self.n_nus, self.n_times), dtype=dtype)
+                train_set.read_direct(raw_batch, source_sel=np.s_[sl, nu_sl, time_sl])
+                raw_batch = raw_batch.reshape(raw_batch.shape[0], -1)
                 self._check_array_for_garbage(raw_batch, "training data remainder")
                 train_y[sl] = y_scaler.transform(raw_batch)
 
 
             # add special training data
             for label in self.special_training:
-                special_train_y = f["special_train"][label]["y"][:]
-                special_train_y = special_train_y[:, self.mask].astype(np.float16)
+                special_train_y = f["special_train"][label]["y"][:, self.nu_start:self.nu_stop, self.time_start:self.time_stop]
+                special_train_y = special_train_y.reshape(special_train_y.shape[0], -1).astype(np.float16)
                 special_train_y = y_scaler.transform(special_train_y)
                 train_y = np.concatenate((train_y, special_train_y))
 
             # add val data
-            val_y_raw = f["val"]["y"][:self.n_val][:, self.mask]
+            val_y_raw = f["val"]["y"][:self.n_val, self.nu_start:self.nu_stop, self.time_start:self.time_stop]
+            val_y_raw = val_y_raw.reshape(val_y_raw.shape[0], -1)
             val_y = y_scaler.transform(val_y_raw)
 
         return train_y, val_y, y_scaler
@@ -464,18 +496,19 @@ class DataLoader:
             val_X_raw = concatenate_redshift(val_X_raw)
             val_X = Xscaler.transform(val_X_raw)
 
-            train_y_raw = f["train"]["y"][:self.n_training, self.mask].reshape(-1, self.n_nus, self.n_times)
-            mJys_train = np.exp(train_y_raw)
-            val_y_raw =  f["val"]["y"][:self.n_val, self.mask].reshape(-1, self.n_nus, self.n_times)
-            mJys_val = np.exp(val_y_raw)
-            
+            train_y_raw = f["train"]["y"][:self.n_training, self.nu_start:self.nu_stop, self.time_start:self.time_stop]
+            mJys_train = np.power(10, train_y_raw)
+            val_y_raw = f["val"]["y"][:self.n_val, self.nu_start:self.nu_stop, self.time_start:self.time_stop]
+            mJys_val = np.power(10, val_y_raw)
+
             for filt in filters:
                 mag = redshifted_magnitude(filt, mJys_train, self.nus, train_X_raw[:,-1]) # convert to magnitudes
                 train_data = yscaler[filt.name].fit_transform(mag)
 
                 # preprocess the special training data
                 for label in self.special_training:
-                    special_train_y = np.exp(f["special_train"][label]["y"][:, self.mask].reshape(-1, self.n_nus, self.n_times))
+                    special_train_y_raw = f["special_train"][label]["y"][:, self.nu_start:self.nu_stop, self.time_start:self.time_stop]
+                    special_train_y = np.power(10, special_train_y_raw)
                     special_mag = redshifted_magnitude(filt, special_train_y, self.nus, special_train_X_raw[:,-1]) # convert to magnitudes
                     special_train_data = yscaler[filt.name].transform(special_mag)
                     train_data = np.concatenate((train_data, special_train_data))

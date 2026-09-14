@@ -22,9 +22,10 @@ import fiesta.train.neuralnets as fiesta_nn
 class FluxSurrogateTrainer:
     """Training API class for training a surrogate model that predicts a spectral flux density array."""
 
-    name: str
+    surrogte_name: str
     data: DataLoader
     outdir: str
+    network: fiesta_nn.NN
     model_type: str
 
     def __init__(

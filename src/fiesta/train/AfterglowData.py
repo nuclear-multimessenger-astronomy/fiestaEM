@@ -1,4 +1,4 @@
-"""Method to train the surrogate models"""
+"""Classes to create afterglow training data. Not well maintained, mostly used at the very beginning for training data creation."""
 import os
 from xmlrpc.client import Boolean
 import numpy as np
