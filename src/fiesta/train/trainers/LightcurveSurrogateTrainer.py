@@ -12,7 +12,7 @@ import jax
 from jaxtyping import Array, Float, Int
 
 from fiesta.filters import Filter
-from fiesta.train.DataManager import DataManager
+from retreat.hauke_presentation_fiesta.fiestaEM.src.fiesta.train.DataLoader import DataManager
 from fiesta.scalers import MinMaxScalerJax
 import fiesta.train.neuralnets as fiesta_nn
 from fiesta.logging import logger

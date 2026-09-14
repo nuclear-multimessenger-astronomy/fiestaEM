@@ -1,5 +1,7 @@
 import time
 
+import numpy as np
+
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
@@ -11,8 +13,16 @@ from ml_collections import ConfigDict
 import optax
 import pickle
 
+from fiesta.logger import logger
+from fiesta.train import DataLoader
 import fiesta.train.nn_architectures as nn
-from fiesta.logging import logger
+from fiesta.scalers import (
+    ParameterScaler,
+    DataScaler,
+    StandardScalerJax,
+    PCADecomposer,
+    ImageScaler
+)
 
 ###############
 ### CONFIGS ###
@@ -21,34 +31,35 @@ from fiesta.logging import logger
 class NeuralnetConfig(ConfigDict):
     """Configuration for a neural network model. For type hinting"""
     name: str
+    input_size: Int
     output_size: Int
     hidden_layer_sizes: list[int]
-    layer_sizes: list[int]
-    latent_dim: Int
     learning_rate: Float
-    batch_size: Int
-    nb_epochs: Int
-    nb_report: Int
+
     
-    def __init__(self,
-                 name: str = "MLP",
-                 output_size: int = 10,
-                 hidden_layer_sizes: list[int] = [64, 128, 64],
-                 latent_dim: int = 20,
-                 learning_rate: Float = 1e-3,
-                 weight_decay: Float = 0.0,
-                 batch_size: int = 128,
-                 nb_epochs: Int = 1_000,
-                 nb_report: Int = None,
-                 dropout_rate: float = 0.0,
-                 use_cosine_schedule: bool = False,
-                 cosine_alpha: float = 0.01,
-                 max_grad_norm: float = 0.0,
-                 pca_smoothness_weight: float = 0.0,
-                 pca_smoothness_start: int = 0):
+    def __init__(
+            self,
+            name: str,
+            output_size: int,
+            input_size: int,
+            hidden_layer_sizes: list[int],
+            learning_rate: Float = 1e-3,
+            latent_dim: int = 20,
+            weight_decay: Float = 0.0,
+            batch_size: int = 128,
+            nb_epochs: Int = 1_000,
+            nb_report: Int = None,
+            dropout_rate: float = 0.0,
+            use_cosine_schedule: bool = False,
+            cosine_alpha: float = 0.01,
+            max_grad_norm: float = 0.0,
+            pca_smoothness_weight: float = 0.0,
+            pca_smoothness_start: int = 0
+        ):
 
         super().__init__()
         self.name = name
+        self.input_size = input_size
         self.output_size = output_size
         self.hidden_layer_sizes = hidden_layer_sizes
         self.layer_sizes = [*hidden_layer_sizes, output_size]
@@ -114,24 +125,139 @@ def serialize(state: TrainState,
 ### TRAINING ###
 ################
 
+class NN:
+    """
+    Abstract base class for the NN architecture wrappers of flax networks below.
+    """
 
-class CVAE:
+    def train_loop(
+        self,       
+        train_X: Float[Array, "n_batch_train ndim_input"], 
+        train_y: Float[Array, "n_batch_train ndim_output"],
+        val_X: Float[Array, "n_batch_val ndim_output"] = None, 
+        val_y: Float[Array, "n_batch_val ndim_output"] = None,
+        verbose: bool = True
+    ) -> tuple[TrainState, Array, Array]:
+        raise NotImplementedError
+
+    def save_model(self, outfile: str) -> None:
+        """
+        Serialize and save the model to a file.
+
+        Raises:
+            ValueError: If the provided file extension is not .pkl or .pickle.
+
+        Args:
+            outfile (str): The pickle file to which we save the serialized model.
+        """
+
+        if not outfile.endswith(".pkl") and not outfile.endswith(".pickle"):
+            raise ValueError("For now, only .pkl or .pickle extensions are supported.")
+
+        serialized_dict = serialize(self.trained_state, self.config)
+        with open(outfile, 'wb') as handle:
+            pickle.dump(serialized_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+class CVAE(NN):
+    """
+    Conditional variational autoencoder using the flax-interface.
+
+    Args: 
+        config (NeuralnetConfig): NN config dictionary. 
+                                  Its ``latent_dim`` will determine the size of the latent layer.                   
+        image_size (tuple[int]): Tuple of length two that will determine to which size the 2D arrays
+                                 for the flux densities are down scaled to when preprocessing the data.
+                                 This also then becomes the input and output dimension of the CVAE.
+        key (PRNGKey, optional): Random key for initialization. Defaults to ``21``.
+    """
     def __init__(
             self,
             config: NeuralnetConfig,
-            conditional_dim: Int,
+            image_size: tuple[int], 
             key: jax.random.PRNGKey = jax.random.key(21)
         ):
-        self.config = config
-        net = nn.CVAE(hidden_layer_sizes=config.hidden_layer_sizes, latent_dim=config.latent_dim, output_size=config.output_size)
-        key, subkey, subkey2 = jax.random.split(key, 3)
 
-        params = net.init(subkey, jnp.ones(config.output_size), jnp.ones(conditional_dim), subkey2)['params']
+        self.config = config
+        if len(image_size) !=2:
+            return ValueError("``image_size`` must be a tuple of length 2.")
+        # FIXME: image_size here must be a numpy-array
+        # so that the ImageScaler does not break during pickling.
+        # In future the ImageScaler should just store the image sizes as attributes.
+        self.image_size = np.array(image_size)
+        self.input_size = int(np.prod(image_size))
+        self.output_size = self.input_size
+        key, subkey = jax.random.split(key)
+
+        
+        # Create the neural network
+        net = nn.CVAE(
+            hidden_layer_sizes=config.hidden_layer_sizes, 
+            latent_dim=config.latent_dim,
+            output_size=self.output_size,
+        )
+        params = net.init(
+            key, 
+            jnp.ones(config.input_size), 
+            jnp.ones(config.conditional_dim), 
+            subkey
+        )['params']
+
+        # Set up the optimizer
         if getattr(config, 'weight_decay', 0.0) > 0:
             tx = optax.adamw(config.learning_rate, weight_decay=config.weight_decay)
         else:
             tx = optax.adam(config.learning_rate)
-        self.state = TrainState.create(apply_fn = net.apply, params = params, tx = tx) # initialize the training state
+
+        # Create the state
+        self.state = TrainState.create(apply_fn = net.apply, params = params, tx = tx)
+
+    def preprocess_data(self, data: DataLoader, conversion: callable) -> None:
+        """
+        Preprocesses the training and validation data.
+        Returns rescaled training and validation data arrays 
+        as well as the scaler objects.
+        For the CVAE, we scale the 2D flux arrays down to the shape determined through
+        ``image_size`` and standardize them.
+
+        Args:
+            data (DataLoader): Data file with training and validation data.
+            conversion (callable): Special conversion function to generate 
+                                   parameter combinations that assist the training.
+
+        Raises:
+            ValueError: If ``nan``s are introduced when rescaling the flux densities.
+        """
+
+        X_scaler = ParameterScaler(
+            scaler=StandardScalerJax(),
+            parameter_names=data.parameter_names,
+            conversion=conversion
+        )
+
+        y_scaler = DataScaler([
+            ImageScaler(downscale=self.image_size,
+                        upscale=(data.n_nus, data.n_times)),
+            StandardScalerJax()
+        ])
+
+        train_X, val_X, X_scaler = data.preprocess_parameters(X_scaler)
+
+        # first just the ImageScaler
+        train_y, val_y, y_scaler = data.preprocess_fluxes(y_scaler.scalers[0])
+        train_y = train_y.reshape(-1, self.output_size)
+        val_y = val_y.reshape(-1, self.output_size)
+
+        # then standardize the down sampled fluxes
+        train_y = y_scaler.scalers[1].fit_transform(train_y)
+        val_y = y_scaler.scalers[1].transform(val_y)
+
+        data._check_array_for_garbage(train_y, "train after standardization")
+        data._check_array_for_garbage(val_y, "val after standardization")
+
+        logger.info("Preprocessing data . . . done")
+
+        return train_X, train_y, val_X, val_y, X_scaler, y_scaler
     
     @staticmethod
     @jax.jit
@@ -209,24 +335,6 @@ class CVAE:
 
         return self.trained_state, train_losses, val_losses
     
-    def save_model(self, outfile: str = "my_flax_model.pkl"):
-        """
-        Serialize and save the model to a file.
-        
-        Raises:
-            ValueError: If the provided file extension is not .pkl or .pickle.
-    
-        Args:
-            outfile (str, optional): The pickle file to which we save the serialized model. Defaults to "my_flax_model.pkl".
-        """
-        
-        if not outfile.endswith(".pkl") and not outfile.endswith(".pickle"):
-            raise ValueError("For now, only .pkl or .pickle extensions are supported.")
-        
-        serialized_dict = serialize(self.trained_state, self.config)
-        with open(outfile, 'wb') as handle:
-            pickle.dump(serialized_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
     @staticmethod
     def load_model(filename: str) -> tuple[TrainState, NeuralnetConfig]:
         """
@@ -269,23 +377,85 @@ class CVAE:
         return state, config
         
 
-class MLP:
+class MLP(NN):
+    """
+    Classical multi-layer perceptron using the flax-interface.
+
+    Args: 
+        config (NeurnetConfig): NN config dictionary. Its ``output_size``
+                                will determine to the number of PCA components kept
+                                after data preprocessing.
+        key (PRNGKey, optional): Random key for initialization. Defaults to ``21``.
+    """
     def __init__(
             self,
             config: NeuralnetConfig,
-            input_ndim: Int,
             key: jax.random.PRNGKey = jax.random.key(21)
-        ):
+        ) -> None:
+
         self.config = config
         dropout_rate = getattr(config, 'dropout_rate', 0.0)
+
+        # Create the neural network
         net = nn.MLP(layer_sizes=config.layer_sizes, dropout_rate=dropout_rate)
-        key, subkey = jax.random.split(key)
-        params = net.init(subkey, jnp.ones(input_ndim), train=False)['params']
+        params = net.init(key, jnp.ones(config.input_size), train=False)['params']
+
+        # Set up the optimizer
         if getattr(config, 'weight_decay', 0.0) > 0:
             tx = optax.adamw(config.learning_rate, weight_decay=config.weight_decay)
         else:
             tx = optax.adam(config.learning_rate)
+
+        # Create the state
         self.state = TrainState.create(apply_fn=net.apply, params=params, tx=tx)
+
+    def preprocess_data(self, data: DataLoader, conversion: callable) -> None:
+        """
+        Preprocesses the training and validation data.
+        Returns rescaled training and validation data arrays 
+        as well as the scaler objects.
+        For the MLP, we perform PCA decomposition and keep the number of 
+        PCA components specified through the ``output_size`` of the NN.
+
+        Args:
+            data (DataLoader): Data file with training and validation data.
+            conversion (callable): Special conversion function to generate 
+                                   parameter combinations that assist the training.
+
+        Raises:
+            ValueError: If ``nan``s are introduced when rescaling the flux densities.
+        """
+
+        X_scaler = ParameterScaler(
+            scaler=StandardScalerJax(),
+            parameter_names=data.parameter_names,
+            conversion=conversion
+        )
+
+        y_scaler = DataScaler([
+            PCADecomposer(n_components=self.config.output_size)
+        ])
+
+        (   
+            train_X, 
+            train_y, 
+            val_X, 
+            val_y, 
+            X_scaler, 
+            y_scaler
+                    ) = data.preprocess_data(X_scaler, y_scaler) 
+
+        if jnp.any(jnp.isnan(train_y)) or jnp.any(jnp.isnan(val_y)):
+            raise ValueError(f"Data preprocessing introduced nans."
+                              "Check raw data for nans of infs or "
+                              "vanishing variance in a specific entry.")
+
+        logger.info("PCA decomposition accounts for "
+                    f"{jnp.sum(self.y_scaler.scalers[0].explained_variance_ratio_).item() *100 :.2f} %"
+                    " of the total variance in the training data. This value is hopefully close to 1.")
+        logger.info("Preprocessing data . . . done")
+
+        return train_X, train_y, val_X, val_y, X_scaler, y_scaler
 
     @staticmethod
     @jax.jit
@@ -393,24 +563,7 @@ class MLP:
         self.trained_state = best_state if val_X is not None else state
 
         return self.trained_state, train_losses, val_losses
-    
-    def save_model(self, outfile: str = "my_flax_model.pkl"):
-        """
-        Serialize and save the model to a file.
-        
-        Raises:
-            ValueError: If the provided file extension is not .pkl or .pickle.
-    
-        Args:
-            outfile (str, optional): The pickle file to which we save the serialized model. Defaults to "my_flax_model.pkl".
-        """
-        
-        if not outfile.endswith(".pkl") and not outfile.endswith(".pickle"):
-            raise ValueError("For now, only .pkl or .pickle extensions are supported.")
-        
-        serialized_dict = serialize(self.trained_state, self.config)
-        with open(outfile, 'wb') as handle:
-            pickle.dump(serialized_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
 
     @staticmethod
     def load_model(filename: str) -> tuple[TrainState, NeuralnetConfig]:

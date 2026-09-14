@@ -1,3 +1,4 @@
+"""DataLoader class to interact with the training data files"""
 from typing import Callable
 import tqdm
 
@@ -13,6 +14,10 @@ from fiesta.scalers import ParameterScaler, DataScaler
 from fiesta.conversions import apply_redshift
 from fiesta.logging import logger
 
+
+##############
+# DATA UTILS #
+##############
 
 def array_mask_from_interval(sorted_array, amin, amax):
     """
@@ -43,6 +48,16 @@ def array_mask_from_interval(sorted_array, amin, amax):
 
     return mask
 
+def _check_index_in_range(index: int | slice, n_entries: int, group: str) -> None:
+    """Raises an IndexError if ``index`` (or, for a slice, either of its bounds) falls outside [-n_entries, n_entries) for ``group``."""
+    if isinstance(index, slice):
+        for bound in (index.start, index.stop):
+            if bound is not None and not (-n_entries <= bound <= n_entries):
+                raise IndexError(f"Slice {index} is out of range for group '{group}' with {n_entries} entries.")
+    else:
+        if not (-n_entries <= index < n_entries):
+            raise IndexError(f"Index {index} is out of range for group '{group}' with {n_entries} entries.")
+
 def concatenate_redshift(X_raw, max_z=0.5):
     redshifts = np.random.uniform(0, max_z, size= 3*X_raw.shape[0])
     X_raw = np.tile(X_raw, (3,1))
@@ -71,7 +86,7 @@ def redshifted_magnitude(filt, mJys, nus, redshifts):
 # DATA MANAGEMENT #       
 ###################
 
-class DataManager:
+class DataLoader:
     
     def __init__(
         self,
@@ -85,16 +100,18 @@ class DataManager:
         special_training: list = [],
     ) -> None:
         """
-        DataManager class used to handle and preprocess the raw data from the physical model computations stored in an .h5 file.
-        Initializing an instance of this class will only read in the meta data, the actual training data and validation data will only be loaded if one of the preprocessing methods is called.
+        DataLoader class used to handle and preprocess the training, validation, and test data from the base model.
+        Initializing an instance of this class will only read in the meta data, 
+        the actual data samples will only be loaded once the preprocessing methods is called.
 
-        The .h5 file must contain the following data sets:
+        The training data file must be in ``.h5`` format and contain the following data sets:
             - "times": times in days associated to the spectral flux densities
             - "nus": frequencies in Hz associated to the spectral flux densities
             - "parameter_names": list of the parameter names that are present in the training data.
             - "parameter_distributions": utf-8-string of a dict containing the boundaries and distribution of the parameters.
         Additionally, it must contain three data groups "train", "val", "test". Each of these groups contains two data sets, namely "X" and "y". 
-        The X arrays contain the model parameters with columns in the order of "parameter_names" and thus have shape (-1, #parameters). The y array contains the associated log10 of the spectral flux densities in mJys and have shape (-1, #nus, #times).
+        The X arrays contain the model parameters with columns in the order of "parameter_names" and thus have shape (-1, #parameters). 
+        The y array contains the associated log10 of the spectral flux densities in mJys and have shape (-1, #nus, #times).
         
         Args:
             file (str): Path to the .h5 file that contains the raw data.
@@ -109,7 +126,10 @@ class DataManager:
                               Will raise a ValueError, if ``n_val`` is larger than the number of validation data points stored in the file.
                               Defaults to ``None``, in which case all validation samples from the file are used.
     
-            special_training (list[str]): Batch of 'special' training data to be added. This can be customly designed training data to cover a certain area of the parameter space more intensily and should be stored in the .h5 file as f['special_train'][label]['X'] and f['special_train'][label]['y'], where label is an entry for this special_training argument. Defaults to [].
+            special_training (list[str]): Batch of 'special' training data to be added. 
+                                          This can be customly designed training data to cover a certain area of the parameter space more intensely
+                                          and should be stored in the ``.h5`` file as ``f['special_train'][label]['X']`` and ``f['special_train'][label]['y']``, 
+                                          where ``label`` is an entry for this special_training argument. Defaults to [].
         """
         
         self.file = file
@@ -146,6 +166,9 @@ class DataManager:
                 self.n_training = self.n_training_exists
             if self.n_val is None:
                 self.n_val = self.n_val_exists
+
+        self.n_times_data = len(self.times_data)
+        self.n_nus_data = len(self.nus_data)
         
         # check if there is enough data
         if self.n_training > self.n_training_exists: 
@@ -214,55 +237,152 @@ class DataManager:
             logger.info(f"   Validation data: {self.n_val}")
             logger.info("")
     
-    def load_raw_data_from_file(self, n_training: int=1, n_val: int=0) -> tuple[Array, Array, Array, Array]:
-        """Loads raw data for training and validation data and returns them as arrays"""
-        with h5py.File(self.file, "r") as f:
-            if n_training>self.n_training_exists:
-                raise ValueError(f"Only {self.n_training_exists} entries in file, not enough to train with {self.n_training} data points.")
-            train_X_raw = f["train"]["X"][:n_training]
-            train_y_raw = f["train"]["y"][:n_training][:, self.mask]
-
-            if n_val>self.n_val_exists:
-                raise ValueError(f"Only {self.n_val_exists} entries in file, not enough to validate with {self.n_val} data points.")
-            
-            val_X_raw = f["val"]["X"][:n_val]
-            val_y_raw = f["val"]["y"][:n_val][:, self.mask]
-        
-        return train_X_raw, train_y_raw, val_X_raw, val_y_raw
-    
-    def preprocess_pca(self, 
-                       n_components: int,
-                       conversion: str=None) -> tuple[Array, Array, Array, Array, object, object]:
+    def load_from_file(
+            self,
+            group: str,
+            index: int | slice,
+            special_label: str | None = None
+        ) -> tuple[Array, Array]:
         """
-        Loads in the training and validation data and performs PCA decomposition using fiesta.utils.PCADecomposer. 
-        Because of memory issues, the training data set is loaded in chunks.
-        The X arrays (parameter values) are standardized with fiesta.utils.StandardScalerJax.
+        Loads raw data from the file and returns them as arrays.
 
         Args:
-            n_components(int): Number of PCA components to keep.
-            conversion (str): references how to convert the parameters for the training. Defaults to None, in which case it's the identity.
+            group (str): The data group from which the file to load from.
+                         Can be ``train``, ``val``, ``test``, or ``special_train``.
+                         If ``special_train``, the argument ``special_label`` must also be provided.
+            index (int | slice): Index or slice of indices to load (e.g. ``5`` or ``slice(5, 8)``).
+            special_label (str): Special data set to load from the ``special_train`` data group.
+                                 Only relevant when ``group`` is ``"special_train"``. Defaults to ``None``.
 
-        Returns:
-            train_X (Array): Standardized training parameters.
-            train_y (Array): PCA coefficients of the training data. 
-            val_X (Array): Standardized validation parameters
-            val_y (Array): PCA coefficients of the validation data.
-            Xscaler (StandardScalerJax): Standardizer object fitted to the mean and sigma of the raw training data. Can be used to transform and inverse transform parameter points.
-            yscaler (PCAdecomposer): PCADecomposer object fitted to part of the raw training data. Can be used to transform and inverse transform log spectral flux densities.
+        Raises:
+            IndexError: If ``index`` (or, for a slice, either of its bounds) falls outside the range of entries stored in ``group``.
         """
-        Xscaler = ParameterScaler(scaler=scalers.StandardScalerJax(),
-                                  parameter_names=self.parameter_names,
-                                  conversion=conversion)
-        yscaler = DataScaler([scalers.PCADecomposer(n_components=n_components)])
-        
-        # load potentially large training data set
-        train_X, train_y, Xscaler, yscaler = self._preprocess_training_batches(Xscaler, yscaler, n_components)
-        
-        # preprocess the special training data as well ass the validation data
-        train_X, train_y, val_X, val_y = self.__preprocess__special_and_val_data(train_X, train_y, Xscaler, yscaler)
 
-        return train_X, train_y, val_X, val_y, Xscaler, yscaler
-    
+        with h5py.File(self.file, "r") as f:
+
+            if group != "special_train":
+                dataset = f[group]
+            else:
+                if not special_label in f["special_train"].keys():
+                    if special_label is None:
+                        raise ValueError("When loading special training data, please provide ``special_label``"
+                                         "so that a particular special data set can be loaded.")
+                    else:
+                        raise ValueError(f"Could not find data set {special_label} in ``special_train``.")
+                dataset = f["special_train"][special_label]
+
+            n_entries = dataset["X"].shape[0]
+            _check_index_in_range(index, n_entries, group)
+
+            X_raw = dataset["X"][index]
+            y_raw = dataset["y"][index][:, self.mask]
+
+        return X_raw, y_raw
+
+    def preprocess_data(
+            self,
+            X_scaler: ParameterScaler,
+            y_scaler: DataScaler,
+    ) -> tuple[Array, Array, Array, Array, ParameterScaler, DataScaler]:
+
+        train_X, val_X, X_scaler = self.preprocess_parameters(X_scaler)
+        train_y, val_y, y_scaler = self.preprocess_fluxes(y_scaler)       
+
+        return train_X, train_y, val_X, val_y, X_scaler, y_scaler
+
+    def preprocess_parameters(
+        self,
+        X_scaler: ParameterScaler,
+    ) -> tuple[Array, Array, ParameterScaler]:
+        """
+        Fits and transforms the parameters (``X`` data sets) from ``self.file``.
+        """
+        
+        with h5py.File(self.file, "r") as f:
+            train_X_raw = f["train"]["X"][:self.n_training]
+            val_X_raw = f["train"]["X"][:self.n_training]
+
+            # fit and transform
+            train_X = X_scaler.fit_transform(train_X_raw)
+            val_X = X_scaler.transform(val_X_raw)
+
+            # add special training data
+            for label in self.special_training:
+                special_X_raw = f["train"]["special_train"][label]["X"][:]
+                special_X = X_scaler.transform(special_X_raw)
+                train_X = np.concatenate((train_X, special_X))
+
+        return train_X, val_X, X_scaler
+
+    def preprocess_fluxes(
+        self,
+        y_scaler: DataScaler
+    ) -> tuple[Array, Array, DataScaler]:
+
+        with h5py.File(self.file, "r") as f:
+
+            train_set = f["train"]["y"]
+
+            # First fit the y_scaler 
+            # with a fit batch of max. 20k samples
+            # to save memory
+            n_fits = min(20_000, self.n_training)
+            fit_batch = train_set[:n_fits, self.mask].astype(np.float16)
+            self._check_array_for_garbage(fit_batch, "fit training batch")
+            fit_batch = y_scaler.fit_transform(fit_batch)
+            transformed_shape = fit_batch[0].shape
+            del fit_batch; gc.collect() # remove fit_batch from memory
+
+            # loop over the entire training data
+            train_y = np.empty(self.n_training, *transformed_shape)
+            chunk_size = train_set.chunks[0]
+            nchunks, rest = divmod(self.n_training, chunk_size)
+
+            for chunk in tqdm.tqdm(range(nchunks)):
+                sl = slice(chunk * chunk_size, (chunk+1) * chunk_size)
+
+                # read into raw batch
+                raw_batch = np.empty((chunk_size, self.n_nus_data, self.n_times_data))
+                train_set.read_direct(raw_batch, source_sel=np.s_[sl, :, :])
+                raw_batch = raw_batch[:, self.mask]
+                self._check_array_for_garbage(raw_batch, f"training data chunk {chunk}")
+
+                train_y[sl] = y_scaler.transform(raw_batch)
+
+            if rest:
+                sl = slice(self.n_training - rest, self.n_training)
+                raw_batch = np.empty((rest, self.n_nus_data, self.n_times_data))
+                train_set.read_direct(raw_batch, source_sel=np.s_[sl, :, :])
+                raw_batch = raw_batch[:, self.mask]
+                self._check_array_for_garbage(raw_batch)
+                train_y[sl] = y_scaler.transform(raw_batch)
+
+
+            # add special training data
+            for label in self.special_training:
+                special_train_y = f["special_train"][label]["y"][:]
+                special_train_y = special_train_y[:, self.mask].astype(np.float16)
+                special_train_y = np.concatenate((train_y, special_train_y))
+
+            # add val data
+            val_y_raw = f["val"]["X"][:self.n_val][:, self.mask]
+            val_y = y_scaler.transform(val_y_raw)                
+
+        return train_y, val_y, y_scaler
+
+    def _check_array_for_garbage(y: Array, label: str):
+
+        if np.any(np.isnan(y)):
+            raise ValueError(
+                f"Found nans in data ({label})."
+            )
+
+        if np.any(np.isinfty(y)):
+            raise ValueError(
+                f"Found infinites in data ({label})."
+            )
+
+                
     def preprocess_cVAE(self,
                         image_size: Int[Array, "shape=(2,)"],
                         conversion: str=None) -> tuple[Array, Array, Array, Array, object, object]:
@@ -296,71 +416,7 @@ class DataManager:
         # preprocess the special training data as well ass the validation data
         train_X, train_y, val_X, val_y = self.__preprocess__special_and_val_data(train_X, train_y, Xscaler, yscaler)
         return train_X, train_y, val_X, val_y, Xscaler, yscaler
-    
-    def _preprocess_training_batches(self, Xscaler, yscaler, feature_shape) -> tuple[Array, Array, object, object]:
-        # preprocess the training data
-        with h5py.File(self.file, "r") as f:
-
-            # X preprocessing
-            train_X_raw = f["train"]["X"][:self.n_training]
-            train_X = Xscaler.fit_transform(train_X_raw) # fit the Xscaler and transform the train_X_raw
-            
-            # y preprocessing
-            y_set = f["train"]["y"]
-
-            # only load max. 20k cause otherwise we might run out of memory at this step
-            fit_batch = y_set[: min(20_000, self.n_training)].astype(np.float16)
-            fit_batch = fit_batch[:, self.mask]
-            if np.any(np.isinf(fit_batch)):
-                raise ValueError(f"Found inftys in training data (fit batch).")
-            
-            yscaler.fit(fit_batch) # fit the yscaler and transform with the loaded data
-            del fit_batch; gc.collect() # remove fit_batch from memory
-
-            # remaining y_data
-            train_y = np.empty((self.n_training, jnp.prod(feature_shape)))
-            chunk_size = y_set.chunks[0] # load raw data in chunks of chunk_size
-            nchunks, rest = divmod(self.n_training, chunk_size) # load raw data in chunks of chunk_size
-
-            for j in tqdm.tqdm(range(nchunks)):
-                sl = slice(j*chunk_size, (j+1)*chunk_size)
-                raw_batch = np.empty((chunk_size, len(self.nus_data), len(self.times_data)), dtype=jnp.float16)
-                y_set.read_direct(raw_batch, source_sel=np.s_[sl, :, :])
-                raw_batch = raw_batch[:, self.mask]
-                if np.any(np.isinf(raw_batch)):
-                    raise ValueError(f"Found infinities in training data chunk {j}")
-                train_y[sl] = yscaler.transform(raw_batch)
-
-            if rest:
-                sl = slice(self.n_training - rest, self.n_training)
-                raw_batch = np.empty((rest, len(self.nus_data), len(self.times_data)), dtype=jnp.float16)
-                y_set.read_direct(raw_batch, source_sel=np.s_[sl, :, :])
-                raw_batch = raw_batch[:, self.mask]
-                if np.any(np.isinf(raw_batch)):
-                    raise ValueError(f"Found infinities in training data rest chunk")
-                train_y[sl] = yscaler.transform(raw_batch)
         
-        return train_X, train_y, Xscaler, yscaler
-    
-    def __preprocess__special_and_val_data(self, train_X, train_y, Xscaler, yscaler) -> tuple[Array, Array, Array, Array]:
-        """ sub method that just applies the scaling transforms to the validation and special training data """
-        with h5py.File(self.file, "r") as f:
-            # preprocess the special training data       
-            for label in self.special_training:
-                special_train_X = Xscaler.transform(f["special_train"][label]["X"][:])
-                train_X = np.concatenate((train_X, special_train_X))
-
-                special_train_y = yscaler.transform(f["special_train"][label]["y"][:][:, self.mask])
-                train_y = np.concatenate(( train_y, special_train_y.astype(jnp.float16) ))
-
-            # preprocess validation data
-            val_X_raw = f["val"]["X"][:self.n_val]
-            val_X = Xscaler.transform(val_X_raw)
-            val_y_raw = f["val"]["y"][:self.n_val][:, self.mask]
-            val_y = yscaler.transform(val_y_raw)
-        
-        return train_X, train_y, val_X, val_y
-    
     def preprocess_svd(self,
                        svd_ncoeff: Int,
                        filters: list,
@@ -431,10 +487,3 @@ class DataManager:
                 val_y[filt.name] = val_data
 
         return train_X, train_y, val_X, val_y, Xscaler, yscaler
-                
-    def pass_meta_data(self, object) -> None:
-        """Pass training data meta data to another object. Used for the FluxTrainers."""
-        object.parameter_names = self.parameter_names
-        object.times = self.times
-        object.nus = self.nus
-        object.parameter_distributions = self.parameter_distributions

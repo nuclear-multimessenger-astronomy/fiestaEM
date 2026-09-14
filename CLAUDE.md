@@ -67,7 +67,7 @@ The package has a training pipeline (`src/fiesta/train/`) that produces surrogat
 
 ### Model layer (`src/fiesta/models/`)
 
-- **`surrogate_models.py`** — `SurrogateModel` (abstract base) → `FluxModel` / `LightcurveModel` subclasses that load a trained surrogate and predict lightcurves/spectra from physical parameters, plus `CombinedSurrogate` for combining several models (surrogate or analytical) into one joint-emission predictor.
+- **`surrogate_models.py`** — `SurrogateModel` (abstract base) → `FluxSurrogate` / `LightcurveSurrogate` subclasses that load a trained surrogate and predict lightcurves/spectra from physical parameters, plus `CombinedSurrogate` for combining several models (surrogate or analytical) into one joint-emission predictor.
 - **`analytical_models/`** — non-surrogate, ab-initio physical models (kilonova, phenomenological, SALT3, shock-powered, supernova, TDE) sharing an `AnalyticalModel` base (`base.py`), useful for validation against or in place of surrogates. All models across both submodules share the same `predict(x) -> (times, {filter: mag})` contract, though the two hierarchies aren't yet unified under one shared base class (`AnalyticalModel` is currently missing a `.name` attribute that `SurrogateModel` has — a known gap, see `CombinedSurrogate.__repr__`).
 - `fiesta.inference.tables` (a data-only, `__init__.py`-less namespace package under `src/fiesta/inference/tables/`) holds `csm_table.txt`, referenced by `analytical_models/supernova_models.py`'s CSM interaction model — it did not move with the rest of the model code.
 
