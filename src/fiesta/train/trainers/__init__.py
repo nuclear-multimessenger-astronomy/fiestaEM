@@ -1,1 +1,1 @@
-from FluxSurrogateTrainer import FluxSurrogateTrainer
+from .FluxSurrogateTrainer import FluxSurrogateTrainer

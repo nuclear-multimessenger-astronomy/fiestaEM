@@ -7,13 +7,12 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
 import flax
-from flax import linen as nn  # Linen API
 from flax.training.train_state import TrainState
 from ml_collections import ConfigDict
 import optax
 import pickle
 
-from fiesta.logger import logger
+from fiesta.logging import logger
 from fiesta.train import DataLoader
 import fiesta.train.nn_architectures as nn
 from fiesta.scalers import (
@@ -39,10 +38,10 @@ class NeuralnetConfig(ConfigDict):
     
     def __init__(
             self,
-            name: str,
-            output_size: int,
-            input_size: int,
-            hidden_layer_sizes: list[int],
+            name: str = "MLP",
+            output_size: int = 10,
+            input_size: int = 10,
+            hidden_layer_sizes: list[int] = [64, 128, 64],
             learning_rate: Float = 1e-3,
             latent_dim: int = 20,
             weight_decay: Float = 0.0,
@@ -180,7 +179,7 @@ class CVAE(NN):
 
         self.config = config
         if len(image_size) !=2:
-            return ValueError("``image_size`` must be a tuple of length 2.")
+            raise ValueError("``image_size`` must be a tuple of length 2.")
         # FIXME: image_size here must be a numpy-array
         # so that the ImageScaler does not break during pickling.
         # In future the ImageScaler should just store the image sizes as attributes.
@@ -244,7 +243,7 @@ class CVAE(NN):
         train_X, val_X, X_scaler = data.preprocess_parameters(X_scaler)
 
         # first just the ImageScaler
-        train_y, val_y, y_scaler = data.preprocess_fluxes(y_scaler.scalers[0])
+        train_y, val_y, _ = data.preprocess_fluxes(y_scaler.scalers[0])
         train_y = train_y.reshape(-1, self.output_size)
         val_y = val_y.reshape(-1, self.output_size)
 
@@ -451,7 +450,7 @@ class MLP(NN):
                               "vanishing variance in a specific entry.")
 
         logger.info("PCA decomposition accounts for "
-                    f"{jnp.sum(self.y_scaler.scalers[0].explained_variance_ratio_).item() *100 :.2f} %"
+                    f"{jnp.sum(y_scaler.scalers[0].explained_variance_ratio_).item() *100 :.2f} %"
                     " of the total variance in the training data. This value is hopefully close to 1.")
         logger.info("Preprocessing data . . . done")
 

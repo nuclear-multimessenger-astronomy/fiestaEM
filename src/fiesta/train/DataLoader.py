@@ -300,7 +300,7 @@ class DataLoader:
         
         with h5py.File(self.file, "r") as f:
             train_X_raw = f["train"]["X"][:self.n_training]
-            val_X_raw = f["train"]["X"][:self.n_training]
+            val_X_raw = f["val"]["X"][:self.n_val]
 
             # fit and transform
             train_X = X_scaler.fit_transform(train_X_raw)
@@ -308,7 +308,7 @@ class DataLoader:
 
             # add special training data
             for label in self.special_training:
-                special_X_raw = f["train"]["special_train"][label]["X"][:]
+                special_X_raw = f["special_train"][label]["X"][:]
                 special_X = X_scaler.transform(special_X_raw)
                 train_X = np.concatenate((train_X, special_X))
 
@@ -327,14 +327,14 @@ class DataLoader:
             # with a fit batch of max. 20k samples
             # to save memory
             n_fits = min(20_000, self.n_training)
-            fit_batch = train_set[:n_fits, self.mask].astype(np.float16)
+            fit_batch = train_set[:n_fits][:, self.mask].astype(np.float16)
             self._check_array_for_garbage(fit_batch, "fit training batch")
             fit_batch = y_scaler.fit_transform(fit_batch)
             transformed_shape = fit_batch[0].shape
             del fit_batch; gc.collect() # remove fit_batch from memory
 
             # loop over the entire training data
-            train_y = np.empty(self.n_training, *transformed_shape)
+            train_y = np.empty((self.n_training, *transformed_shape))
             chunk_size = train_set.chunks[0]
             nchunks, rest = divmod(self.n_training, chunk_size)
 
@@ -354,7 +354,7 @@ class DataLoader:
                 raw_batch = np.empty((rest, self.n_nus_data, self.n_times_data))
                 train_set.read_direct(raw_batch, source_sel=np.s_[sl, :, :])
                 raw_batch = raw_batch[:, self.mask]
-                self._check_array_for_garbage(raw_batch)
+                self._check_array_for_garbage(raw_batch, "training data remainder")
                 train_y[sl] = y_scaler.transform(raw_batch)
 
 
@@ -362,22 +362,23 @@ class DataLoader:
             for label in self.special_training:
                 special_train_y = f["special_train"][label]["y"][:]
                 special_train_y = special_train_y[:, self.mask].astype(np.float16)
-                special_train_y = np.concatenate((train_y, special_train_y))
+                special_train_y = y_scaler.transform(special_train_y)
+                train_y = np.concatenate((train_y, special_train_y))
 
             # add val data
-            val_y_raw = f["val"]["X"][:self.n_val][:, self.mask]
-            val_y = y_scaler.transform(val_y_raw)                
+            val_y_raw = f["val"]["y"][:self.n_val][:, self.mask]
+            val_y = y_scaler.transform(val_y_raw)
 
         return train_y, val_y, y_scaler
 
-    def _check_array_for_garbage(y: Array, label: str):
+    def _check_array_for_garbage(self, y: Array, label: str):
 
         if np.any(np.isnan(y)):
             raise ValueError(
                 f"Found nans in data ({label})."
             )
 
-        if np.any(np.isinfty(y)):
+        if np.any(np.isinf(y)):
             raise ValueError(
                 f"Found infinites in data ({label})."
             )

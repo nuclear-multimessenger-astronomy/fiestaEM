@@ -77,7 +77,7 @@ class Benchmarker:
             mJys = np.power(10, test_y_raw)
         
         if "redshift" in self.parameter_names:
-            from retreat.hauke_presentation_fiesta.fiestaEM.src.fiesta.train.DataLoader import concatenate_redshift, redshifted_magnitude
+            from fiesta.train.DataLoader import concatenate_redshift, redshifted_magnitude
             self.test_X_raw = concatenate_redshift(self.test_X_raw, max_z=self.parameter_distributions["redshift"][1])
             for Filt in self.Filters:
                 self.test_mag[Filt.name] = jnp.array(redshifted_magnitude(Filt, mJys.copy(), nus, self.test_X_raw[:,-1]))

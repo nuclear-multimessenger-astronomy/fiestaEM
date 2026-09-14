@@ -11,7 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from fiesta.logging import logger
-from fiesta.train import DataLoader, NeuralnetConfig
+from fiesta.train import DataLoader
 import fiesta.train.neuralnets as fiesta_nn
 
 
@@ -75,6 +75,7 @@ class FluxSurrogateTrainer:
         self.data.print_loaded_data_info()
 
         self.network = network
+        self.model_type = type(network).__name__
 
     def __repr__(self) -> str:
         return f"FluxSurrogateTrainer({self.surrogate_name})"
@@ -124,10 +125,10 @@ class FluxSurrogateTrainer:
         meta_filename = os.path.join(self.outdir, f"{self.surrogate_name}_metadata.pkl")
         
         save = {}
-        save["times"] = self.times
-        save["nus"] = self.nus
-        save["parameter_names"] = self.parameter_names
-        save["parameter_distributions"] = self.parameter_distributions
+        save["times"] = self.data.times
+        save["nus"] = self.data.nus
+        save["parameter_names"] = self.data.parameter_names
+        save["parameter_distributions"] = self.data.parameter_distributions
         save["X_scaler"] = self.X_scaler
         save["y_scaler"] = self.y_scaler
         save["model_type"] = self.model_type
