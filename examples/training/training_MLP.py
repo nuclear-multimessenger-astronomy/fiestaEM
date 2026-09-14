@@ -25,10 +25,9 @@ outdir = f"./model/"
 file = "./data/afterglowpy_tophat_reduced_set.h5"
 
 
-###############
-### TRAINER ###
-###############
-
+#################
+### Load data ###
+#################
 
 data = DataLoader(
     file=file,
@@ -41,6 +40,11 @@ data = DataLoader(
     special_training=["special_1"],
 )
 
+
+#############################
+### Set up neural network ###
+#############################
+
 config = NeuralnetConfig(
     output_size=n_pca,
     input_size=len(data.parameter_names),
@@ -50,6 +54,13 @@ config = NeuralnetConfig(
 )
 
 network = MLP(config=config)
+
+
+
+
+#################################
+### Use the trainer interface ###
+#################################
 
 trainer = FluxSurrogateTrainer(
     name,
@@ -64,9 +75,9 @@ trainer = FluxSurrogateTrainer(
 ### FITTING ###
 ###############
 
-
 trainer.fit()
 trainer.save()
+
 
 #############
 ### TEST ###
@@ -74,4 +85,4 @@ trainer.save()
 
 print("Producing example lightcurve . . .")
 
-trainer.plot_example_lc(["ps1::y", "besselli", "bessellv", "bessellux"])
+trainer.plot_example_lc(["radio-3GHz", "bessellv", "X-ray-1keV"])
