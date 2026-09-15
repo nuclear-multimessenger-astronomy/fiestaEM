@@ -188,7 +188,8 @@ class FluxSurrogateTrainer:
 
         y = y.reshape(len(self.data.nus), len(self.data.times))
         mJys_val = np.power(10, y)
-        params = dict(zip(self.parameter_names, X.flatten() ))
+        params = dict(zip(self.data.parameter_names, X.flatten() ))
+        # compare at redshift 0 / the flux training reference distance (10 pc)
         _, mag_predict = lc_model.predict_abs_mag(params)
         mag_val = {Filt.name: Filt.get_mag(mJys_val, self.data.nus) 
                         for Filt in lc_model.Filters}

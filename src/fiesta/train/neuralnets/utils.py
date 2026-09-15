@@ -29,6 +29,7 @@ class NeuralnetConfig(ConfigDict):
             input_size: int = 10,
             hidden_layer_sizes: list[int] = [64, 128, 64],
             learning_rate: Float = 1e-3,
+            conditional_dim: int = None,
             latent_dim: int = 20,
             weight_decay: Float = 0.0,
             batch_size: int = 128,
@@ -48,6 +49,7 @@ class NeuralnetConfig(ConfigDict):
         self.output_size = output_size
         self.hidden_layer_sizes = hidden_layer_sizes
         self.layer_sizes = [*hidden_layer_sizes, output_size]
+        self.conditional_dim = conditional_dim
         self.latent_dim = latent_dim
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay

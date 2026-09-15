@@ -282,6 +282,10 @@ class DataLoader:
             n_entries = dataset["X"].shape[0]
             _check_index_in_range(index, n_entries, group)
 
+            if isinstance(index, int):
+                # keep this as a slice
+                index = slice(index, None if index == -1 else index + 1)
+
             X_raw = dataset["X"][index]
             y_raw = dataset["y"][index][:, self.mask]
 

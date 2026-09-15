@@ -20,7 +20,7 @@ from fiesta.scalers import (
 )
 
 from .base import NN
-from utils import NeuralnetConfig
+from .utils import NeuralnetConfig
         
 
 class MLP(NN):
