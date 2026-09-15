@@ -150,4 +150,4 @@ If you use ``fiesta`` in your research, please cite our paper:
 
 ## Acknowledgements
 
-The logo was created by [ideogram AI](https://ideogram.ai/).
+The logo was created based on the NMMA logo using [flaticons](https://flaticon.com).
