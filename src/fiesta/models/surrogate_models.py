@@ -27,16 +27,19 @@ def get_default_directory(name):
     
     for model_name, surrogate_dir, _ in built_in_surrogates():
         if name==model_name:
-            if not os.path.exists(surrogate_dir / "model"):
-                raise OSError(f"Could not find model directory for name {name} in {surrogate_dir}. Please change the name or provide a path manually.")
-            return surrogate_dir / "model"
+            if not os.path.exists(surrogate_dir):
+                raise OSError(
+                    f"Could not find model directory for {name} in {surrogate_dir}."
+                     "Please change the surrogate name or provide a path manually."
+                )
+            return surrogate_dir
     
     logger.info(f"Could not find {name} in built-in surrogates. Attempting download.")
     download_ok, surrogate_dir = download_surrogate(name)
     if download_ok:
-        return surrogate_dir / "model"
+        return surrogate_dir
     else:
-        raise ValueError(f"No model directory provided, but could not find built-in surrogate {name} or download it.")
+        raise ValueError(f"No model directory provided, but could not find built-in surrogate for {name} or download it.")
 
 
 ########################

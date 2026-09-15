@@ -57,7 +57,7 @@ Note: by default only CPU JAX is installed. GPU support requires `pip install fi
 
 ### Three independent pieces: training, models, and inference
 
-The package has a training pipeline (`src/fiesta/train/`) that produces surrogate model artifacts, a model layer (`src/fiesta/models/`) that defines everything with a `predict()` lightcurve interface (trained surrogates and analytical physics models alike), and an inference pipeline (`src/fiesta/inference/`) that consumes model objects to run Bayesian parameter estimation. Training and models interact only through the on-disk surrogate format (a `.pkl` metadata file + Flax/dill model files in a `model/` subdirectory).
+The package has a training pipeline (`src/fiesta/train/`) that produces surrogate model artifacts, a model layer (`src/fiesta/models/`) that defines everything with a `predict()` lightcurve interface (trained surrogates and analytical physics models alike), and an inference pipeline (`src/fiesta/inference/`) that consumes model objects to run Bayesian parameter estimation. Training and models interact only through the on-disk surrogate format (a `.pkl` metadata file + Flax/dill model file, both living directly in the surrogate's `src/fiesta/surrogates/{KN,GRB}/<model_name>/` directory).
 
 ### Surrogate model loading (`src/fiesta/surrogates/`)
 
