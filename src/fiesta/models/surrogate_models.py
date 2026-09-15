@@ -260,6 +260,10 @@ class FluxSurrogate(Surrogate):
 
         times_obs, nus_obs, mJys_obs= apply_redshift(mJys, self.times, self.nus, x["redshift"])
         # TODO: Add EBL table here at some point
+        
+        # shift the times according to the timeshift parameter if it is present in the input dictionary
+        if "timeshift" in x.keys():
+            times_obs = times_obs + x["timeshift"]
 
         mag_abs = jax.tree.map(lambda Filter: Filter.get_mag(mJys_obs, nus_obs), 
                                self.Filters)
