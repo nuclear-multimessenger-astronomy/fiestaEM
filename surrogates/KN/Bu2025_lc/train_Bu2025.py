@@ -5,7 +5,7 @@ import h5py
 from sncosmo.bandpasses import _BANDPASSES, _BANDPASS_INTERPOLATORS
 
 from fiesta.train.LightcurveTrainer import SVDTrainer
-from fiesta.inference.lightcurve_model import BullaLightcurveModel
+from fiesta.models.surrogate_models import BullaLightcurveModel
 from fiesta.train.neuralnets import NeuralnetConfig
 from fiesta.filters import Filter
 

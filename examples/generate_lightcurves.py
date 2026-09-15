@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 from fiesta.inference.prior import Uniform, ConstrainedPrior
-from fiesta.inference.lightcurve_model import BullaFlux
+from fiesta.models import FluxSurrogate
 
 # Define filters to generate lightcurves for
 # NOTE: the training script for this model is found at fiestaEM/surrogates/KN/Bu2025_MLP/train_Bu2025.py
@@ -19,7 +19,7 @@ FILTERS = ["ps1::y", "besselli", "bessellv", "bessellux"]
 print(f"Using filters: {FILTERS}")
 
 # Define the model we want to use
-model = BullaFlux(name="Bu2025_MLP",
+model = FluxSurrogate(name="Bu2025_MLP",
                   filters=FILTERS)
 
 print(f"Using model: {model.name}")

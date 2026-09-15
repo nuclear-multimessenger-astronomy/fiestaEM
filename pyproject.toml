@@ -47,7 +47,7 @@ grb = ["afterglowpy"]
 # cuda12 (not 13): the CUDA 12 wheels run on driver >=525, matching far more
 # OSPool GPU nodes than cuda13's >=580 floor.
 gpu = ["jax[cuda13]"]
-docs = [
+dev = [
     "sphinx>=7.0",
     "sphinx-autobuild",
     "sphinx-book-theme>=1.0",
@@ -55,7 +55,11 @@ docs = [
     "sphinx-autodoc-typehints>=2.0",
     "sphinx-copybutton>=0.5",
     "myst-parser>=2.0",
+    "nbsphinx>=0.9",
+    "ipykernel>=7.1.0",
     "dust-extinction",
+    "gdown>=6.2.0",
+    "jupyter>=1.1.1",
 ]
 
 [tool.setuptools]

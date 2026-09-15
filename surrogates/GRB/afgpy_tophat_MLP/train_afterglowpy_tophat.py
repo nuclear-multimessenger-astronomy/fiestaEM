@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import h5py
 
 from fiesta.train.FluxTrainer import PCATrainer
-from fiesta.inference.lightcurve_model import AfterglowFlux
 from fiesta.train.neuralnets import NeuralnetConfig
 
 #############
@@ -68,8 +67,4 @@ trainer.save()
 print("Producing example lightcurve . . .")
 FILTERS = ["radio-3GHz", "X-ray-1keV", "radio-6GHz", "bessellv"]
 
-lc_model = AfterglowFlux(name,
-                         directory=outdir, 
-                         filters = FILTERS)
-
-trainer.plot_example_lc(lc_model)
+trainer.plot_example_lc(FILTERS)

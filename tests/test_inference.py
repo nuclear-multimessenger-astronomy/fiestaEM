@@ -11,7 +11,8 @@ import jax.numpy as jnp
 
 from fiesta.inference.prior import Uniform, Constraint, Normal, UniformSourceFrame, ConstrainedPrior, Sine
 
-from fiesta.inference import FluxModel, CombinedSurrogate, EMLikelihood, FluxLikelihood, Fiesta
+from fiesta.models import FluxSurrogate, CombinedModel
+from fiesta.inference import EMLikelihood, FluxLikelihood, Fiesta
 from fiesta.inference.injection import InjectionSurrogate
 from fiesta.inference.systematic import process_file
 from fiesta.utils import load_event_data
@@ -23,13 +24,13 @@ working_dir = Path(dirname(__file__))
 
 def test_injection():
 
-    model_afg = FluxModel(name="pbag_gaussian_CVAE",
+    model_afg = FluxSurrogate(name="pbag_gaussian_CVAE",
                           filters = FILTERS_GRB)
     
-    model_kn = FluxModel(name="Bu2026_MLP",
+    model_kn = FluxSurrogate(name="Bu2026_MLP",
                          filters = FILTERS_KN)
     
-    model = CombinedSurrogate(models=[model_kn, model_afg],
+    model = CombinedModel(models=[model_kn, model_afg],
                               sample_times=jnp.geomspace(0.3, 1000, 200))
 
 
@@ -70,7 +71,7 @@ def test_injection():
 def test_systematic():
     data = load_event_data(join(working_dir, "injection_KN_GRB_afterglow.dat"))
         
-    model = FluxModel(name="pbag_gaussian_CVAE",
+    model = FluxSurrogate(name="pbag_gaussian_CVAE",
                          filters = FILTERS_GRB)
 
     likelihood = EMLikelihood(model,
@@ -110,7 +111,7 @@ def setup_fiesta_sampling(sampler: str, bounded_priors: bool = False, **kwargs):
 
     data = load_event_data(join(working_dir, "injection_KN_GRB_afterglow.dat"))
         
-    model = FluxModel(name="pbag_gaussian_CVAE",
+    model = FluxSurrogate(name="pbag_gaussian_CVAE",
                          filters = FILTERS_GRB)
 
     likelihood = EMLikelihood(model,

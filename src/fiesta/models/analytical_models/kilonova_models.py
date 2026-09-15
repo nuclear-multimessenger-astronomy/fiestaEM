@@ -10,7 +10,7 @@ import jax.numpy as jnp
 
 from fiesta.constants import c_cgs, msun_cgs, days_to_seconds
 
-from fiesta.inference.analytical_models.base import (
+from fiesta.models.analytical_models.base import (
     AnalyticalModel,
     _magnetar_luminosity,
     _LOG10_MSUN, _LOG10_RSUN, _LOG10_CCGS, _LOG10_4PI,
@@ -63,11 +63,11 @@ class MetzgerModel(AnalyticalModel):
     _n_shells = 300
     _n_internal = 500
 
-    def __init__(self, filters, times=None):
+    def __init__(self, filters, times=None, name: str | None = None):
         if times is None:
             times = jnp.geomspace(0.1, 30.0, 100)
         _validate_times(times)
-        super().__init__(filters, times)
+        super().__init__(name or type(self).__name__, filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):
         M0 = jnp.power(10.0, x["log10_mej"]) * msun_cgs    # total ejecta mass (g)
@@ -182,13 +182,14 @@ class MetzgerFullModel(AnalyticalModel):
 
     _n_shells = 200
 
-    def __init__(self, filters, times=None, neutron_precursor=True, vmax=0.7):
+    def __init__(self, filters, times=None, neutron_precursor=True, vmax=0.7,
+                 name: str | None = None):
         self._neutron_precursor = neutron_precursor
         self._vmax = vmax
         if times is None:
             times = jnp.geomspace(0.1, 30.0, 100)
         _validate_times(times)
-        super().__init__(filters, times)
+        super().__init__(name or type(self).__name__, filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):
         mej = jnp.power(10.0, x["log10_mej"])   # solar masses
@@ -305,11 +306,12 @@ class OneComponentKilonovaModel(AnalyticalModel):
 
     parameter_names = ["log10_mej", "log10_vej", "log10_kappa"]
 
-    def __init__(self, filters, times=None, temperature_floor=4000.0):
+    def __init__(self, filters, times=None, temperature_floor=4000.0,
+                 name: str | None = None):
         if times is None:
             times = jnp.geomspace(0.1, 30.0, 100)
         _validate_times(times)
-        super().__init__(filters, times, temperature_floor=temperature_floor)
+        super().__init__(name or type(self).__name__, filters, times, temperature_floor=temperature_floor)
 
     def compute_log10_lbol_rphot(self, x, t_days):
         log10_mej_g = x["log10_mej"] + _LOG10_MSUN
@@ -409,7 +411,8 @@ class MagnetarBoostedKilonovaModel(AnalyticalModel):
     _n_shells = 200
 
     def __init__(self, filters, times=None, neutron_precursor=True,
-                 pair_cascade=True, vmax=0.7, magnetar_heating='first_layer'):
+                 pair_cascade=True, vmax=0.7, magnetar_heating='first_layer',
+                 name: str | None = None):
         self._neutron_precursor = neutron_precursor
         self._pair_cascade = pair_cascade
         self._vmax = vmax
@@ -417,7 +420,7 @@ class MagnetarBoostedKilonovaModel(AnalyticalModel):
         if times is None:
             times = jnp.geomspace(0.1, 30.0, 100)
         _validate_times(times)
-        super().__init__(filters, times)
+        super().__init__(name or type(self).__name__, filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):
         mej = jnp.power(10.0, x["log10_mej"])   # solar masses
