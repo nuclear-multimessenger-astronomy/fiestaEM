@@ -180,7 +180,7 @@ def print_downloadable_surrogates():
         # Expected structure:
         # {transient}/<name>/<name>_metadata.pkl
         parts = path.split("/")
-        if len(parts) == 3 and parts[2].endswith("_metadata.pkl"):
+        if len(parts) == 3 and parts[2].endswith("_metadata.pkl") and not parts[1].startswith("."):
             transient = parts[0]
             name = parts[1]
             available.setdefault(transient, set()).add(name)
