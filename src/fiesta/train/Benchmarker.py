@@ -23,8 +23,8 @@ def _highest_lc_error(times, residual):
 
 # The two error metrics that ``Benchmarker.benchmark()`` evaluates and plots for every filter.
 METRICS = {
-    "mean_square_lc_error": {"latex": "$\\mathcal{L}_2$", "func": _mean_square_lc_error},
-    "highest_lc_error": {"latex": "$\\mathcal{L}_\\infty$", "func": _highest_lc_error},
+    "mean_square_lc_error": {"latex": "$\\mathcal{L}_2$", "label": "mean square LC error", "func": _mean_square_lc_error},
+    "highest_lc_error": {"latex": "$\\mathcal{L}_\\infty$", "label": "highest LC error", "func": _highest_lc_error},
 }
 
 
@@ -173,9 +173,16 @@ class Benchmarker:
         n_filters = len(self.Filters)
         ncols = min(n_filters, 3)
         nrows = int(np.ceil(n_filters / ncols))
-        fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4.5 * nrows))
+        # reserve fixed (nrows-independent) margins: room below for the x-axis label,
+        # and room above for both the per-panel title and the figure-level suptitle
+        extra_bottom, extra_top = 0.5, 0.75
+        plot_height = 4.5 * nrows
+        fig_height = plot_height + extra_bottom + extra_top
+        fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, fig_height))
         axes = np.atleast_2d(axes)
-        fig.subplots_adjust(hspace=0.55, wspace=0.35, bottom=0.06, top=0.94, left=0.07, right=0.97)
+        fig.subplots_adjust(hspace=0.55, wspace=0.35,
+                             bottom=extra_bottom / fig_height, top=1 - extra_top / fig_height,
+                             left=0.07, right=0.97)
 
         for i, filt in enumerate(self.Filters):
             cax = axes[i // ncols, i % ncols]
@@ -237,9 +244,16 @@ class Benchmarker:
         n_filters = len(self.Filters)
         ncols = min(n_filters, 3)
         nrows = int(np.ceil(n_filters / ncols))
-        fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4.5 * nrows))
+        # reserve fixed (nrows-independent) margins so the x-axis label doesn't get
+        # clipped at the bottom of the figure for small grids (e.g. a single row)
+        extra_bottom, extra_top = 0.5, 0.35
+        plot_height = 4.5 * nrows
+        fig_height = plot_height + extra_bottom + extra_top
+        fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, fig_height))
         axes = np.atleast_2d(axes)
-        fig.subplots_adjust(hspace=0.55, wspace=0.35, bottom=0.06, top=0.94, left=0.07, right=0.97)
+        fig.subplots_adjust(hspace=0.55, wspace=0.35,
+                             bottom=extra_bottom / fig_height, top=1 - extra_top / fig_height,
+                             left=0.07, right=0.97)
 
         # Pick time indices evenly in log-space
         log_times = np.log10(self.times)
@@ -420,7 +434,7 @@ class Benchmarker:
             cax.bar(bin_centers, mean_error, width=np.diff(bins) * 0.85,
                     color="steelblue", edgecolor="white", linewidth=0.5)
             cax.set_xlabel(label_dic.get(p, p), fontsize=9)
-            cax.set_ylabel(f"mean {METRICS[metric_key]['latex']}", fontsize=9)
+            cax.set_ylabel(METRICS[metric_key]['label'], fontsize=9)
             cax.set_xlim(pmin, pmax)
             cax.grid(True, axis="y", alpha=0.25, lw=0.5)
             cax.tick_params(labelsize=8)
