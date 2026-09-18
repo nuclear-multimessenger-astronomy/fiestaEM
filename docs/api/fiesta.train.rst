@@ -6,13 +6,18 @@ Components for training surrogate models.
 Trainers
 --------
 
-.. automodule:: fiesta.train.FluxTrainer
+``FluxSurrogateTrainer`` is the actively maintained training path: it trains a single
+spectral-flux surrogate covering all filters at once. ``LightcurveSurrogateTrainer``
+(and its ``SVDTrainer`` subclass) predates it and is kept only so that already-trained
+``fiesta.models.surrogate_models.LightcurveSurrogate`` models can still be reproduced
+or retrained; it is deprecated in favor of ``FluxSurrogateTrainer``.
+
+.. automodule:: fiesta.train.trainers.FluxSurrogateTrainer
    :members:
    :undoc-members:
    :show-inheritance:
-   :exclude-members: train_X, train_y, val_X, val_y
 
-.. automodule:: fiesta.train.LightcurveTrainer
+.. automodule:: fiesta.train.trainers.LightcurveSurrogateTrainer
    :members:
    :undoc-members:
    :show-inheritance:
@@ -21,7 +26,7 @@ Trainers
 Data
 ----
 
-.. automodule:: fiesta.train.DataManager
+.. automodule:: fiesta.train.DataLoader
    :members:
    :undoc-members:
    :show-inheritance:
@@ -31,10 +36,34 @@ Data
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: fiesta.train.utils
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Neural Networks
 ---------------
 
-.. automodule:: fiesta.train.neuralnets
+``fiesta.train.neuralnets`` wraps the raw Flax network definitions in
+``fiesta.train.nn_architectures`` with a common training-loop interface (the ``NN``
+base class) and a shared configuration object (``NeuralnetConfig``).
+
+.. automodule:: fiesta.train.neuralnets.base
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: fiesta.train.neuralnets.mlp
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: fiesta.train.neuralnets.cvae
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: fiesta.train.neuralnets.utils
    :members:
    :undoc-members:
    :show-inheritance:

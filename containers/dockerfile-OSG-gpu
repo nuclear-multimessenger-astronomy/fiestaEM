@@ -23,11 +23,11 @@ COPY . /src
 RUN uv pip install --system --break-system-packages ".[gpu]" blackjax
 
 # Bake the KN surrogates (download_surrogate returns (False, None) without
-# raising, so assert success). Bu2026_MLP is the GPU target; keep Bu2025_MLP too.
+# raising, so assert success). Bu2026_MLP is the GPU target.
 RUN python3 <<'PY'
 import sys
 from fiesta.surrogates.manage_surrogates import download_surrogate
-for name in ("Bu2025_MLP", "Bu2026_MLP"):
+for name in ("Bu2026_MLP"):
     ok, _ = download_surrogate(name)
     if not ok:
         sys.exit(f"{name} download failed")
