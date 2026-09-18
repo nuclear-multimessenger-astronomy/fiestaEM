@@ -69,7 +69,7 @@ class MLP(NN):
                                    parameter combinations that assist the training.
 
         Raises:
-            ValueError: If ``nan``s are introduced when rescaling the flux densities.
+            ValueError: If ``nan`` values are introduced when rescaling the flux densities.
         """
 
         X_scaler = ParameterScaler(
