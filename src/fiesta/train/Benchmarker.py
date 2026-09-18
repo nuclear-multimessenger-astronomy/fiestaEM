@@ -1,99 +1,100 @@
 import os
-import ast
 import warnings
 
-import h5py
 import numpy as np
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
-from matplotlib.cm import ScalarMappable
 
 from scipy.integrate import trapezoid
 from scipy.interpolate import interp1d
+
+from fiesta.logging import logger
+from fiesta.train.DataLoader import DataLoader, concatenate_redshift, redshifted_magnitude
+
+
+def _mean_square_lc_error(times, residual):
+    return np.sqrt(trapezoid(x=np.log(times), y=residual**2, axis=-1)) / (np.log(times[-1]) - np.log(times[0]))
+
+
+def _highest_lc_error(times, residual):
+    return np.max(np.abs(residual), axis=-1)
+
+
+# The two error metrics that ``Benchmarker.benchmark()`` evaluates and plots for every filter.
+METRICS = {
+    "mean_square_lc_error": {"latex": "$\\mathcal{L}_2$", "func": _mean_square_lc_error},
+    "highest_lc_error": {"latex": "$\\mathcal{L}_\\infty$", "func": _highest_lc_error},
+}
+
 
 class Benchmarker:
 
     def __init__(self,
                  model,
-                 data_file: str,
+                 data: DataLoader,
                  filters: list = None,
                  outdir: str = "./benchmarks",
-                 metric_name: str = "Linf",
                  output_format: str = "pdf",
                  ) -> None:
 
         self.model = model
         self.times = self.model.times
-        self.file = data_file
+        self.data = data
         self.outdir = outdir
         self.output_format = output_format
-        
+
         # Load filters
         if filters is None:
             self.Filters = model.Filters
-        else: 
-            self.Filters = [Filt for Filt in model.Filters if Filt.name in filters]
-        print(f"Loaded filters are: {[Filt.name for Filt in self.Filters]}.")
-
-        # Load metric
-        if metric_name == "L2":
-            self.metric_name = "$\\mathcal{L}_2$"
-            self.metric = lambda y: np.sqrt(trapezoid(x= np.log(self.times) ,y=y**2, axis = -1)) / (np.log(self.times[-1]) - np.log(self.times[0]))
-            self.metric2d = lambda y: np.sqrt(trapezoid(x = self.nus, y =trapezoid(x = self.times, y = (y**2).reshape(-1, len(self.nus), len(self.times)) ) ))
-            self.file_ending = "L2"
         else:
-            self.metric_name = "$\\mathcal{L}_\\infty$"
-            self.metric = lambda y: np.max(np.abs(y), axis = -1)
-            self.metric2d = lambda y: np.max(np.abs(y), axis = (1,2))
-            self.file_ending = "Linf"
+            self.Filters = [Filt for Filt in model.Filters if Filt.name in filters]
 
-        # load data
+        # load data and compute both error metrics for every filter
         self.get_data()
         self.calculate_error()
-        self.get_error_distribution()
 
         # steal latex_labels from inference
         # this is a dirty fix for a circular import issue
         from fiesta.inference.plot import latex_labels
         self.latex_labels = latex_labels
 
+        logger.info(f"Initialized benchmarker for model {self.model}.")
+        logger.info(f"Loaded filters are: {[Filt.name for Filt in self.Filters]}.")
+
     def get_data(self,):
-        
-        # get the test data
+
+
+        self.parameter_names = self.model.parameter_names
+        self.parameter_distributions = self.model.parameter_distributions
+
+        test_X_raw, test_y_raw = self.data.load_from_file("test", slice(None, None))
+        test_y_raw = test_y_raw.reshape(len(test_X_raw), self.data.n_nus, self.data.n_times)
+        test_y_raw = interp1d(self.data.times, test_y_raw, axis=2)(self.times) # interpolate the test data over the time range of the model
+
+        self.test_X_raw = test_X_raw
+        self.test_log_flux = test_y_raw  # store log10 flux for FluxModel error calculation
+        self.data_nus = self.data.nus  # store data frequency grid
+        mJys = np.power(10, test_y_raw)
+
         self.test_mag = {}
-        with h5py.File(self.file, "r") as f:
-            self.parameter_distributions = self.model.parameter_distributions
-            self.parameter_names =  self.model.parameter_names
-            nus = f["nus"][:]
-
-            self.test_X_raw = f["test"]["X"][:]
-            test_y_raw = f["test"]["y"][:]
-            test_y_raw = test_y_raw.reshape(len(self.test_X_raw), len(f["nus"]), len(f["times"]) )
-
-            test_y_raw = interp1d(f["times"][:], test_y_raw, axis = 2)(self.times) # interpolate the test data over the time range of the model
-            self.test_log_flux = test_y_raw  # store log10 flux for FluxModel error calculation
-            self.data_nus = nus  # store raw data frequency grid
-            mJys = np.power(10, test_y_raw)
-        
         if "redshift" in self.parameter_names:
-            from fiesta.train.DataLoader import concatenate_redshift, redshifted_magnitude
             self.test_X_raw = concatenate_redshift(self.test_X_raw, max_z=self.parameter_distributions["redshift"][1])
             for Filt in self.Filters:
-                self.test_mag[Filt.name] = jnp.array(redshifted_magnitude(Filt, mJys.copy(), nus, self.test_X_raw[:,-1]))
+                self.test_mag[Filt.name] = jnp.array(redshifted_magnitude(Filt, mJys.copy(), self.data_nus, self.test_X_raw[:,-1]))
         else:
             for Filt in self.Filters:
-                self.test_mag[Filt.name] = Filt.get_mags(mJys, nus)
-        
+                self.test_mag[Filt.name] = Filt.get_mags(mJys, self.data_nus)
+
         # get the model prediction on the test data
         param_dict = dict(zip(self.parameter_names, self.test_X_raw.T))
         param_dict["luminosity_distance"] = np.ones(len(self.test_X_raw)) * 1e-5
         if "redshift" not in param_dict.keys():
             param_dict["redshift"] = np.zeros(len(self.test_X_raw))
-        _, self.pred_mag = self.model.vpredict(param_dict)         
-    
+        _, self.pred_mag = self.model.vpredict(param_dict)
+
     def calculate_error(self,):
-        self.error = {}
+        self.error = {metric_key: {} for metric_key in METRICS}
 
         for Filt in self.Filters:
             test_y = self.test_mag[Filt.name]
@@ -101,7 +102,9 @@ class Benchmarker:
             mask = np.isinf(pred_y) | np.isinf(test_y)
             test_y = test_y.at[mask].set(0.)
             pred_y = pred_y.at[mask].set(0.)
-            self.error[Filt.name] = self.metric(test_y - pred_y)
+            residual = test_y - pred_y
+            for metric_key, metric in METRICS.items():
+                self.error[metric_key][Filt.name] = metric["func"](self.times, residual)
 
         if hasattr(self.model, "nus"):
             self.nus = self.model.nus
@@ -134,99 +137,35 @@ class Benchmarker:
             log_flux_residual = np.where(nan_mask, np.nan, log_flux_residual)
             log_flux_residual = np.clip(log_flux_residual, -100, 100)
             # Exclude NaN/Inf entries from error calculation
-            if self.file_ending == "Linf":
-                self.error["total"] = np.nanmax(np.abs(log_flux_residual), axis=(1, 2))
-            else:
-                # NaN-aware L2: integrate only over finite entries per sample
-                r2 = np.where(nan_mask, np.nan, log_flux_residual ** 2)
-                self.error["total"] = np.sqrt(np.nanmean(r2, axis=(1, 2)))
-            # Replace NaN/Inf (from all-NaN samples or overflow) with 0
-            self.error["total"] = np.nan_to_num(
-                self.error["total"], nan=0.0, posinf=0.0, neginf=0.0)
+            r2 = np.where(nan_mask, np.nan, log_flux_residual ** 2)
+            totals = {
+                "highest_lc_error": np.nanmax(np.abs(log_flux_residual), axis=(1, 2)),
+                "mean_square_lc_error": np.sqrt(np.nanmean(r2, axis=(1, 2))),
+            }
+            for metric_key, total in totals.items():
+                # Replace NaN/Inf (from all-NaN samples or overflow) with 0
+                self.error[metric_key]["total"] = np.nan_to_num(total, nan=0.0, posinf=0.0, neginf=0.0)
         else:
-            max_errors = {key: np.max(value) for key, value in self.error.items()}
-            max_key = max(max_errors, key=max_errors.get)
-            self.error["total"] = self.error[max_key]
-    
-    def get_error_distribution(self,):
-        error_distribution = {}
-        # Normalize weights to prevent overflow in density computation
-        total = self.error["total"]
-        w_max = np.max(np.abs(total))
-        if w_max > 0:
-            weights = total / w_max
-        else:
-            weights = np.ones_like(total)
-        for j, p in enumerate(self.parameter_names):
-            p_array = self.test_X_raw[:,j]
-            bins = np.linspace(self.parameter_distributions[p][0], self.parameter_distributions[p][1], 12)
-            error_distribution[p] = np.histogram(p_array, weights=weights, bins=bins, density=True)
+            for metric_key in METRICS:
+                max_errors = {key: np.max(value) for key, value in self.error[metric_key].items()}
+                max_key = max(max_errors, key=max_errors.get)
+                self.error[metric_key]["total"] = self.error[metric_key][max_key]
 
-        self.error_distribution = error_distribution
-    
+    ###############################
+    # ACTUAL BENCHMARKING METHODS #
+    ###############################
+
     def benchmark(self,):
-        self.plot_worst_lightcurves()
         self.plot_error_over_time()
-        self.plot_error_distribution()
+        self.plot_worst_lightcurves()
         self.plot_lightcurves_mismatch()
 
-    def plot_lightcurves_mismatch(self):
-
-        if self.metric_name == "$\\mathcal{L}_2$":
-            vline = self.metric(np.ones(len(self.times)))
-            vmin, vmax = 0, vline*2
-            bins = np.linspace(vmin, vmax, 25)
-        else:
-            vline = 1.
-            vmin, vmax = 0, 2*vline
-            bins = np.linspace(vmin, vmax, 20)
-    
-        cmap = colors.LinearSegmentedColormap.from_list(name = "mymap", colors = [(0, "lightblue"), (1, "darkred")])
-        label_dic = {p: self.latex_labels.get(p, p) for p in self.parameter_names}
-
-        for Filt in self.Filters:
-
-            mismatch = self.error[Filt.name]
-            colored_mismatch = cmap(mismatch/vmax)
-
-    
-            fig, ax = plt.subplots(len(self.parameter_names)-1, len(self.parameter_names)-1)
-            fig.suptitle(f"{Filt.name}: {self.metric_name} norm")
-    
-            for j, p in enumerate(self.parameter_names[1:]):
-                for k, pp in enumerate(self.parameter_names[:j+1]):
-                    sort = np.argsort(mismatch)
-    
-                    ax[j,k].scatter(self.test_X_raw[sort,k], self.test_X_raw[sort,j+1], c = colored_mismatch[sort], s = 1, rasterized = True)
-    
-                    ax[j,k].set_xlim((self.test_X_raw[:,k].min(), self.test_X_raw[:,k].max()))
-                    ax[j,k].set_ylim((self.test_X_raw[:,j+1].min(), self.test_X_raw[:,j+1].max()))
-                
-    
-                    if k!=0:
-                        ax[j,k].set_yticklabels([])
-    
-                    if j!=len(self.parameter_names)-2:
-                        ax[j,k].set_xticklabels([])
-    
-                    ax[-1,k].set_xlabel(label_dic[pp])
-                ax[j,0].set_ylabel(label_dic[p])
-                    
-                for cax in ax[j, j+1:]:
-                    cax.set_axis_off()
-            
-            ax[0,-1].set_axis_on()
-            ax[0,-1].hist(mismatch, density = True, histtype = "step", bins = bins,)
-            ax[0,-1].vlines([vline], *ax[0,-1].get_ylim(), colors = ["lightgrey"], linestyles = "dashed")
-            ax[0,-1].set_yticks([])
-                
-            #fig.colorbar(ScalarMappable(norm=colors.Normalize(vmin=vmin, vmax=vmax), cmap=cmap), ax=ax[1:, -1])
-            outfile  = f"benchmark_{Filt.name}_{self.file_ending}.{self.output_format}"
-            
-            fig.savefig(os.path.join(self.outdir, outfile))
-            plt.close(fig)
-    
     def plot_worst_lightcurves(self,):
+
+        for metric in METRICS:
+            self.worst_lightcurves(metric)       
+
+    def worst_lightcurves(self, metric_key: str = "highest_lc_error"):
         label_dic = {p: self.latex_labels.get(p, p) for p in self.parameter_names}
 
         MAG_FAINT_CLIP = 40  # magnitudes fainter than this are unphysical
@@ -240,7 +179,7 @@ class Benchmarker:
 
         for i, filt in enumerate(self.Filters):
             cax = axes[i // ncols, i % ncols]
-            ind = np.argmax(self.error[filt.name])
+            ind = np.argmax(self.error[metric_key][filt.name])
             prediction = np.array(self.pred_mag[filt.name][ind])
             truth = np.array(self.test_mag[filt.name][ind])
 
@@ -288,8 +227,11 @@ class Benchmarker:
         for i in range(n_filters, nrows * ncols):
             axes[i // ncols, i % ncols].set_visible(False)
 
-        fig.savefig(os.path.join(self.outdir, f"worst_lightcurves_{self.file_ending}.{self.output_format}"), dpi=200)
+        fig.suptitle(metric_key)
+
+        fig.savefig(os.path.join(self.outdir, f"worst_lightcurves_{metric_key}.{self.output_format}"), dpi=200)
         plt.close(fig)
+
 
     def plot_error_over_time(self,):
         n_filters = len(self.Filters)
@@ -353,17 +295,100 @@ class Benchmarker:
         for i in range(n_filters, nrows * ncols):
             axes[i // ncols, i % ncols].set_visible(False)
 
-        fig.savefig(os.path.join(self.outdir, f"error_over_time.{self.output_format}"), dpi=200)
+        fig.savefig(os.path.join(self.outdir, f"benchmark_error_over_time.{self.output_format}"), dpi=200)
         plt.close(fig)
 
-    def print_correlations(self, ):
+    def print_correlations(self, metric_key: str = "highest_lc_error"):
         for Filt in self.Filters:
-            error = self.error[Filt.name]
+            error = self.error[metric_key][Filt.name]
             print(f"\n \n \nCorrelations for filter {Filt.name}:\n")
             for j, p in enumerate(self.parameter_names):
                 print(f"{p}: {np.corrcoef(self.test_X_raw[:,j], error)[0,1]}")
-    
-    def plot_error_distribution(self,):
+
+    def plot_lightcurves_mismatch(self,):
+
+        for metric in METRICS:
+            self.lightcurves_mismatch(metric)
+
+
+    def lightcurves_mismatch(self, metric_key: str = "highest_lc_error"):
+
+        if metric_key == "mean_square_lc_error":
+            vline = METRICS[metric_key]["func"](self.times, np.ones(len(self.times)))
+            vmin, vmax = 0, vline*2
+            bins = np.linspace(vmin, vmax, 25)
+        else:
+            vline = 1.
+            vmin, vmax = 0, 2*vline
+            bins = np.linspace(vmin, vmax, 20)
+
+        cmap = colors.LinearSegmentedColormap.from_list(name = "mymap", colors = [(0, "lightblue"), (1, "darkred")])
+        label_dic = {p: self.latex_labels.get(p, p) for p in self.parameter_names}
+
+        n_params = len(self.parameter_names)
+        # size of the pairwise-scatter corner grid; at least 1x1 even for a single parameter
+        n_grid = max(n_params - 1, 1)
+
+        for Filt in self.Filters:
+
+            mismatch = self.error[metric_key][Filt.name]
+            colored_mismatch = cmap(mismatch/vmax)
+
+            # the histogram always gets its own dedicated axis (an extra column), rather
+            # than reusing a "spare" corner-grid cell, since for n_params <= 2 the corner
+            # grid has no spare cell to give it
+            fig = plt.figure(figsize=(2.6 * (n_grid + 1), 2.6 * n_grid))
+            gs = fig.add_gridspec(n_grid, n_grid + 1)
+            ax = np.empty((n_grid, n_grid), dtype=object)
+            for r in range(n_grid):
+                for c in range(n_grid):
+                    ax[r, c] = fig.add_subplot(gs[r, c])
+            hist_ax = fig.add_subplot(gs[0, -1])
+
+            fig.suptitle(f"{Filt.name}: {METRICS[metric_key]['latex']} norm")
+
+            sort = np.argsort(mismatch)
+            if n_params == 1:
+                p = self.parameter_names[0]
+                ax[0,0].scatter(self.test_X_raw[sort,0], mismatch[sort], c = colored_mismatch[sort], s = 1, rasterized = True)
+                ax[0,0].set_xlim((self.test_X_raw[:,0].min(), self.test_X_raw[:,0].max()))
+                ax[0,0].set_xlabel(label_dic[p])
+                ax[0,0].set_ylabel(METRICS[metric_key]['latex'])
+            else:
+                for j, p in enumerate(self.parameter_names[1:]):
+                    for k, pp in enumerate(self.parameter_names[:j+1]):
+
+                        ax[j,k].scatter(self.test_X_raw[sort,k], self.test_X_raw[sort,j+1], c = colored_mismatch[sort], s = 1, rasterized = True)
+
+                        ax[j,k].set_xlim((self.test_X_raw[:,k].min(), self.test_X_raw[:,k].max()))
+                        ax[j,k].set_ylim((self.test_X_raw[:,j+1].min(), self.test_X_raw[:,j+1].max()))
+
+
+                        if k!=0:
+                            ax[j,k].set_yticklabels([])
+
+                        if j!=n_grid-1:
+                            ax[j,k].set_xticklabels([])
+
+                        ax[-1,k].set_xlabel(label_dic[pp])
+                    ax[j,0].set_ylabel(label_dic[p])
+
+                    for cax in ax[j, j+1:]:
+                        cax.set_axis_off()
+
+            hist_ax.hist(mismatch, density = True, histtype = "step", bins = bins,)
+            hist_ax.vlines([vline], *hist_ax.get_ylim(), colors = ["lightgrey"], linestyles = "dashed")
+            hist_ax.set_yticks([])
+            hist_ax.set_xlabel(METRICS[metric_key]['latex'])
+
+            outfile  = f"benchmark_{Filt.name}_{metric_key}.{self.output_format}"
+
+            fig.suptitle(metric_key)
+
+            fig.savefig(os.path.join(self.outdir, outfile))
+            plt.close(fig)
+
+    def plot_error_distribution(self, metric_key: str = "highest_lc_error"):
         label_dic = {p: self.latex_labels.get(p, p) for p in self.parameter_names}
 
         n_params = len(self.parameter_names)
@@ -379,6 +404,7 @@ class Benchmarker:
             title += f"  ({100*nan_frac:.1f}% of flux residual entries were NaN/Inf, excluded)"
         fig.suptitle(title, fontsize=10)
 
+        total_error = self.error[metric_key]["total"]
         for j, p in enumerate(self.parameter_names):
             cax = axes[j // ncols, j % ncols]
             p_array = self.test_X_raw[:, j]
@@ -387,14 +413,14 @@ class Benchmarker:
 
             # Mean error per bin
             counts, _ = np.histogram(p_array, bins=bins)
-            weighted, _ = np.histogram(p_array, bins=bins, weights=self.error["total"])
+            weighted, _ = np.histogram(p_array, bins=bins, weights=total_error)
             mean_error = np.where(counts > 0, weighted / counts, 0)
 
             bin_centers = 0.5 * (bins[:-1] + bins[1:])
             cax.bar(bin_centers, mean_error, width=np.diff(bins) * 0.85,
                     color="steelblue", edgecolor="white", linewidth=0.5)
             cax.set_xlabel(label_dic.get(p, p), fontsize=9)
-            cax.set_ylabel(f"mean {self.metric_name}", fontsize=9)
+            cax.set_ylabel(f"mean {METRICS[metric_key]['latex']}", fontsize=9)
             cax.set_xlim(pmin, pmax)
             cax.grid(True, axis="y", alpha=0.25, lw=0.5)
             cax.tick_params(labelsize=8)
@@ -402,5 +428,5 @@ class Benchmarker:
         for i in range(n_params, nrows * ncols):
             axes[i // ncols, i % ncols].set_visible(False)
 
-        fig.savefig(os.path.join(self.outdir, f"error_distribution.{self.output_format}"), dpi=200)
+        fig.savefig(os.path.join(self.outdir, f"error_distribution_{metric_key}.{self.output_format}"), dpi=200)
         plt.close(fig)
