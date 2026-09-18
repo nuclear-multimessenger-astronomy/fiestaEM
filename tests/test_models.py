@@ -2,7 +2,7 @@ from os.path import dirname, join
 from pathlib import Path
 
 from fiesta.surrogates import built_in_surrogates
-from fiesta.inference.lightcurve_model import FluxModel
+from fiesta.models import FluxSurrogate
 
 working_dir = Path(dirname(__file__))
 
@@ -10,8 +10,10 @@ working_dir = Path(dirname(__file__))
 
 def test_CVAE_surrogates():
 
-    model = FluxModel(name="afgpy_gaussian_CVAE",
-                      filters=["radio-3GHz", "bessellv", "X-ray-1keV"])
+    model = FluxSurrogate(
+        name="afgpy_gaussian_CVAE",
+        filters=["radio-3GHz", "bessellv", "X-ray-1keV"]
+    )
     
     
     params = {p: 0.5*(val[0] + val[1]) for p, val in model.parameter_distributions.items()}
@@ -23,8 +25,10 @@ def test_CVAE_surrogates():
 
 def test_MLP_surrogates():
 
-    model = FluxModel(name="Bu2026_MLP",
-                      filters=["besselli", "bessellv"])
+    model = FluxSurrogate(
+        name="Bu2026_MLP",
+        filters=["besselli", "bessellv"]
+    )
     
     
     params = {p: 0.5*(val[0] + val[1]) for p, val in model.parameter_distributions.items()}

@@ -13,7 +13,7 @@ All internal physics computations use log10 space to avoid float32 overflow
 (e.g. explosion energies ~1e49 erg exceed float32 max ~3.4e38).
 """
 
-from fiesta.inference.analytical_models.base import (
+from fiesta.models.analytical_models.base import (
     AnalyticalModel,
     _magnetar_luminosity,
     _compute_diffusion_constants,
@@ -21,23 +21,23 @@ from fiesta.inference.analytical_models.base import (
     _gauss_legendre_nodes_weights,
     _log10_blackbody_mJy_at_10pc,
 )
-from fiesta.inference.analytical_models.kilonova_models import (
+from fiesta.models.analytical_models.kilonova_models import (
     MetzgerModel, MetzgerFullModel, OneComponentKilonovaModel,
     MagnetarBoostedKilonovaModel,
 )
-from fiesta.inference.analytical_models.supernova_models import (
+from fiesta.models.analytical_models.supernova_models import (
     ArnettModel, NickelCobaltModel, MagnetarPoweredSNModel,
     CSMInteractionModel,
 )
-from fiesta.inference.analytical_models.shock_powered_models import (
+from fiesta.models.analytical_models.shock_powered_models import (
     ShockCoolingModel, ShockedCocoonModel,
 )
-from fiesta.inference.analytical_models.tde_models import TDEAnalyticalModel
-from fiesta.inference.analytical_models.phenomenological_models import (
+from fiesta.models.analytical_models.tde_models import TDEAnalyticalModel
+from fiesta.models.analytical_models.phenomenological_models import (
     PhenomenologicalModel, EvolvingBlackbodyModel,
     BazinModel, VillarModel, PhenomenologicalTDEModel, AfterglowModel,
 )
-from fiesta.inference.analytical_models.salt3_models import SALT3Model
+from fiesta.models.analytical_models.salt3_models import SALT3Model
 
 __all__ = [
     "AfterglowModel",

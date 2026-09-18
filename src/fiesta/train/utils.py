@@ -125,6 +125,7 @@ def convert_POSSIS_outputs_to_h5(
         outfile: str,
         parameter_names: list[str],
         log_arguments: list[int],
+        train_size: float = 0.8,
         clip: float = 6.5144,
     ) -> None:
     """
@@ -137,6 +138,7 @@ def convert_POSSIS_outputs_to_h5(
                                      These will be the parameters of the trained surrogate in the end.
                                      Note that function expects the possis file to contain different inclinations.
         log_arguments (list[int]): Parameters, which are not log10 when read from the filenames, but should be converted to log10 for the training.
+        train_size (float): Relative proportion of the training data. Defaults to 0.8.
         clip (float): Lower floor value for the minimum log10(mJy) at 10 pc. Every flux density below that will be set to that value. Defaults to 6.5144 (appr. 0 abs. mag).
     """
     
@@ -173,7 +175,7 @@ def convert_POSSIS_outputs_to_h5(
         X_file[:,log_arguments] = np.log10(X_file[:,log_arguments]) # make mej_dyn and mej_wind to log10
         y_file = np.maximum(y_file, clip)
 
-        train_X, val_X, train_y, val_y = train_test_split(X_file, y_file, train_size=0.8)
+        train_X, val_X, train_y, val_y = train_test_split(X_file, y_file, train_size=train_size)
         val_X, test_X, val_y, test_y = train_test_split(val_X, val_y, train_size=0.5)
 
         append_training_data_file(outfile, train_X, train_y, val_X, val_y, test_X, test_y)
@@ -244,6 +246,7 @@ def convert_SEDONA_outputs_to_h5(
         outfile: str,
         parameter_names: list[str],
         log_arguments: list[int],
+        train_size: float = 0.8,
         clip: float = 6.5144,
     ) -> None:
 
@@ -256,6 +259,7 @@ def convert_SEDONA_outputs_to_h5(
         parameter_names (list[str]): Parameter names in the order they appear in the file names. 
                                      These will be the parameters of the trained surrogate in the end.
         log_arguments (list[int]): Parameters, which are not log10 when read from the filenames, but should be converted to log10 for the training.
+        train_size (float): Relative proportion of the training data. Defaults to 0.8.
         clip (float): Lower floor value for the minimum log10(mJy) at 10 pc. Every flux density below that will be set to that value. Defaults to 6.5144 (appr. 0 abs. mag).
     """
     
@@ -285,7 +289,7 @@ def convert_SEDONA_outputs_to_h5(
     y = np.maximum(y, clip)
     X[:,log_arguments] = np.log10(X[:,log_arguments]) # make mej_dyn and mej_wind to log10
 
-    train_X, val_X, train_y, val_y = train_test_split(X, y, train_size=0.8)
+    train_X, val_X, train_y, val_y = train_test_split(X, y, train_size=train_size)
     val_X, test_X, val_y, test_y = train_test_split(val_X, val_y, train_size=0.5)
     
     parameter_distributions = {p: (np.min(train_X[:,j]).item(), np.max(train_X[:,j]).item(), "uniform") for j, p in enumerate(parameter_names)}

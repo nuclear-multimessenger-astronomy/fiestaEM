@@ -25,18 +25,16 @@ The other array has to be named ``y`` and is of shape ``(n_samples, n_nus, n_tim
 The entries are the corresponding flux densities at 10 pc (but zero redshift, i.e. source frame) in units of $log_{10}(\\mathrm{mJys}) = log_{10}(\\mathrm{1e-26 erg / (s Hz cm^2)})$.
 The ``special_train`` group is further divided into subgroups (with arbitrary names) that then store the ``X`` and ``y`` data sets.
 
-Data manager
-^^^^^^^^^^^^
+``DataLoader``
+^^^^^^^^^^^^^^
 
-The ``DataManager`` class provides an interface to the .hdf5 file.
-It can load the raw data directly, but it can also take care of preprocessing the data before placing them into the training loop of the NN.
+The ``DataLoader`` class provides an interface to the ``.hdf5`` file.
+It can load the raw data directly, but it can also take care of preprocessing the data before placing them into the training loop of the neural networks.
 Which data points will be used is determined upon initialization through the ``n_training``, ``n_val``, and ``special_training`` arguments.
 It can also cut the data to a custom time and frequency domain through the ``tmin``, ``tmax``, ``numin``, ``numax`` arguments.
 The data is not actually loaded during initialization, but only when one of the following methods is called: 
 
-    - ``DataManager.load_raw_data_from_file``: returns four arrays ``train_X, train_y, val_X, val_y`` in raw format.
-    - ``DataManager.preprocess_pca``: returns ``train_X, train_y, val_X, val_y, Xscaler, yscaler`` in rescaled format, where the last to entries are the scalers to rescale the values back. The ``yscaler`` is a ``PCAScaler``.
-    - ``DataManager.preprocess_cVAE``: returns ``train_X, train_y, val_X, val_y, Xscaler, yscaler`` in rescaled format, where the last to entries are the scalers to rescale the values back. The ``yscaler`` is a ``ImageScaler`` concatenated with a ``StandardScaler``.
-
+    - ``DataLoader.load_from_file``: returns two arrays ``X`` and ``y`` depending on which data set is called. Possible data sets are ``'train'``, ``'val'``, and ``'test'``.
+    - ``DataManager.preprocess_data``: returns ``train_X, train_y, val_X, val_y, X_scaler, y_scaler``, where the last to entries are ``fiesta.scaler`` objects that can be used to transform and back-transform data. The returned arrays here are already transformed.
 
 

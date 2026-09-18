@@ -15,8 +15,10 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array
 
+from ..base import FiestaModel
 
-class SALT3Model:
+
+class SALT3Model(FiestaModel):
     """SALT3 spectral-template model for Type Ia supernova light curves.
 
     Parameters
@@ -37,8 +39,6 @@ class SALT3Model:
     """
 
     parameter_names: list[str]
-    filters: list[str]
-    times: Array
 
     def __init__(self, filters: list[str], times: Array = None,
                  redshift: float = 0.0):
@@ -57,17 +57,16 @@ class SALT3Model:
 
         register_all_bandpasses()
 
-        if isinstance(filters, str):
-            filters = [filters]
-        if not filters:
+        super().__init__("SALT3", filters, times)
+        
+        if not self.filters:
             raise ValueError("At least one filter must be provided")
-        self.filters = list(filters)
 
-        if times is None:
+        if self.times is None:
             raise ValueError(
                 "times must be provided (observer-frame days array)"
             )
-        self.times = jnp.asarray(times)
+        
         self.redshift = redshift
         self.parameter_names = ["log10_x0", "x1", "c", "t0"]
 

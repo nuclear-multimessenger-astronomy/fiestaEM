@@ -39,5 +39,6 @@ Subpackages
 .. toctree::
    :maxdepth: 1
 
+   fiesta.models
    fiesta.inference
    fiesta.train

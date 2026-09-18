@@ -8,8 +8,7 @@ import jax
 from jaxtyping import Float, Array
 import jax.numpy as jnp
 
-from fiesta.inference.lightcurve_model import LightcurveModel
-from fiesta.inference.analytical_models import AnalyticalModel
+from fiesta.models.base import FiestaModel
 from fiesta.utils import truncated_gaussian
 from fiesta.logging import logger
 
@@ -19,7 +18,7 @@ class LikelihoodBase:
     Base class for likelihoods.
     """
     
-    model: LightcurveModel | AnalyticalModel
+    model: FiestaModel
     filters: list[str]
     trigger_time: Float
     data_tmin: Float
@@ -36,17 +35,19 @@ class LikelihoodBase:
     datapoints_err: dict[str, Array]
 
     
-    def __init__(self, 
-                 model: LightcurveModel | AnalyticalModel,
-                 data: dict[str, Float[Array, "ntimes 3"]],
-                 trigger_time: Float,
-                 data_tmin: Float = 0.0,
-                 data_tmax: Float = 999.0,
-                 filters: list[str] | None =  None,
-                 error_budget: Float = 0.3,
-                 conversion_function: Callable = lambda x: x,
-                 fixed_params: dict[str, Float] = {},
-                 detection_limit: Float = None):
+    def __init__(
+            self, 
+            model: FiestaModel,
+            data: dict[str, Float[Array, "ntimes 3"]],
+            trigger_time: Float,
+            data_tmin: Float = 0.0,
+            data_tmax: Float = 999.0,
+            filters: list[str] | None =  None,
+            error_budget: Float = 0.3,
+            conversion_function: Callable = lambda x: x,
+            fixed_params: dict[str, Float] = {},
+            detection_limit: Float = None
+        ):
 
         # Process the given data
         logger.info("Loading and preprocessing observations in likelihood . . .")
@@ -343,7 +344,7 @@ class EMLikelihood(LikelihoodBase):
 
     Parameters
     ----------
-    model: LightcurveModel | AnalyticalModel
+    model: FiestaModel
         Light curve model that generates the estimated light curve from the parameters passed to ``evaluate``.
     data: dict[str, Float[Array, "ntimes 3"]]
         Dictionary with photometric filters as keys and arrays as values. 
@@ -383,7 +384,7 @@ class EMLikelihood(LikelihoodBase):
     """
 
     def __init__(self,
-                 model: LightcurveModel | AnalyticalModel,
+                 model: FiestaModel,
                  data: dict[str, Float[Array, "ntimes 3"]],
                  trigger_time: Float,
                  data_tmin: Float = 0.0,
@@ -512,7 +513,7 @@ class FluxLikelihood(LikelihoodBase):
     """
 
     def __init__(self,
-                 model: LightcurveModel | AnalyticalModel,
+                 model: FiestaModel,
                  data: dict[str, Float[Array, "ntimes 3"]],
                  trigger_time: Float,
                  data_tmin: Float = 0.0,

@@ -11,7 +11,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array
 
-from fiesta.inference.analytical_models.base import (
+from fiesta.models.analytical_models.base import (
     AnalyticalModel,
     _LOG10_4PI,
     _LOG10_SIGMASB,
@@ -35,23 +35,17 @@ class PhenomenologicalModel(AnalyticalModel):
     shape_parameter_names: list[str]
     has_baseline: bool = False
 
-    def __init__(self, filters: list[str], times: Array = None):
+    def __init__(self, filters: list[str], times: Array = None, name: str | None = None):
         # Build filter list via parent (sets self.filters, self.Filters)
-        super().__init__(filters, times)
-        # Build parameter_names dynamically from shape params + per-band params
-        self._build_parameter_names()
+        super().__init__(name or type(self).__name__, filters, times)
 
-    def _build_parameter_names(self):
+    def _on_filters_changed(self):
         names = list(self.shape_parameter_names)
         for fname in self.filters:
             names.append(f"amp_mag_{fname}")
             if self.has_baseline:
                 names.append(f"base_mag_{fname}")
         self.parameter_names = names
-
-    def add_filter(self, filters):
-        super().add_filter(filters)
-        self._build_parameter_names()
 
     def compute_shape(self, x: dict[str, Array], t_days: Array) -> Array:
         """Return the temporal shape function S(t) >= 0."""
@@ -110,11 +104,11 @@ class EvolvingBlackbodyModel(AnalyticalModel):
         "radius_peak_time",
     ]
 
-    def __init__(self, filters, times=None, reference_time=1.0):
+    def __init__(self, filters, times=None, reference_time=1.0, name: str | None = None):
         self.reference_time = reference_time
         if times is None:
             times = jnp.geomspace(0.1, 30.0, 100)
-        super().__init__(filters, times)
+        super().__init__(name or type(self).__name__, filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):
         T0 = jnp.power(10.0, x["log10_temperature_0"])
@@ -170,10 +164,10 @@ class BazinModel(PhenomenologicalModel):
     shape_parameter_names = ["t0", "log10_tau_rise", "log10_tau_fall"]
     has_baseline = True
 
-    def __init__(self, filters, times=None):
+    def __init__(self, filters, times=None, name: str | None = None):
         if times is None:
             times = jnp.linspace(0.01, 100.0, 200)
-        super().__init__(filters, times)
+        super().__init__(filters, times, name=name)
 
     def compute_shape(self, x, t_days):
         t0 = x["t0"]
@@ -204,10 +198,10 @@ class VillarModel(PhenomenologicalModel):
     ]
     has_baseline = False
 
-    def __init__(self, filters, times=None):
+    def __init__(self, filters, times=None, name: str | None = None):
         if times is None:
             times = jnp.linspace(0.01, 150.0, 200)
-        super().__init__(filters, times)
+        super().__init__(filters, times, name=name)
 
     def compute_shape(self, x, t_days):
         t0 = x["t0"]
@@ -261,10 +255,10 @@ class PhenomenologicalTDEModel(PhenomenologicalModel):
     shape_parameter_names = ["t0", "log10_tau_rise", "log10_tau_fall", "alpha_decay"]
     has_baseline = True
 
-    def __init__(self, filters, times=None):
+    def __init__(self, filters, times=None, name: str | None = None):
         if times is None:
             times = jnp.linspace(0.01, 200.0, 200)
-        super().__init__(filters, times)
+        super().__init__(filters, times, name=name)
 
     def compute_shape(self, x, t_days):
         t0 = x["t0"]
@@ -293,10 +287,10 @@ class AfterglowModel(PhenomenologicalModel):
     shape_parameter_names = ["t0", "log10_t_break", "alpha_1", "alpha_2"]
     has_baseline = False
 
-    def __init__(self, filters, times=None):
+    def __init__(self, filters, times=None, name: str | None = None):
         if times is None:
             times = jnp.linspace(0.01, 300.0, 200)
-        super().__init__(filters, times)
+        super().__init__(filters, times, name=name)
 
     def compute_shape(self, x, t_days):
         t0 = x["t0"]

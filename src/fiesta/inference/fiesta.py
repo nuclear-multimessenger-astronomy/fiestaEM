@@ -11,7 +11,6 @@ import jax.numpy as jnp
 from jaxtyping import Float, Array, PRNGKeyArray
 
 from fiesta.conversions import mag_app_from_mag_abs
-from fiesta.inference.lightcurve_model import LightcurveModel
 from fiesta.inference.prior import Prior
 from fiesta.inference.likelihood import EMLikelihood
 from fiesta.logging import logger
