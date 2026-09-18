@@ -50,6 +50,8 @@ class CVAE(NN):
         self.image_size = np.array(image_size)
         self.input_size = int(np.prod(image_size))
         self.output_size = self.input_size
+        config.input_size = self.input_size
+        config.output_size = self.output_size
         key, subkey = jax.random.split(key)
 
         
@@ -61,7 +63,7 @@ class CVAE(NN):
         )
         params = net.init(
             key, 
-            jnp.ones(config.input_size), 
+            jnp.ones(self.input_size),
             jnp.ones(config.conditional_dim),
             subkey
         )['params']
