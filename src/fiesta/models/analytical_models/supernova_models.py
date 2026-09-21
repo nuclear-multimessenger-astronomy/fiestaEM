@@ -10,7 +10,7 @@ import jax.numpy as jnp
 
 from fiesta.constants import days_to_seconds
 
-from fiesta.inference.analytical_models.base import (
+from fiesta.models.analytical_models.base import (
     AnalyticalModel,
     _gauss_legendre_nodes_weights,
     _magnetar_luminosity,
@@ -47,7 +47,7 @@ class ArnettModel(AnalyticalModel):
     _log10_eps_ni = jnp.log10(3.90e10)
     _log10_eps_co = jnp.log10(6.78e9)
 
-    def __init__(self, filters, times=None, modified=False):
+    def __init__(self, filters, times=None, modified=False, name: str | None = None):
         self.modified = modified
         if modified:
             self.parameter_names = ["tau_m", "log10_mni", "v_phot", "t_0"]
@@ -56,7 +56,7 @@ class ArnettModel(AnalyticalModel):
         if times is None:
             times = jnp.geomspace(0.1, 60.0, 100)
         self._gl_nodes, self._gl_weights = _gauss_legendre_nodes_weights()
-        super().__init__(filters, times)
+        super().__init__(name or type(self).__name__, filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):
         tau_m = x["tau_m"]                          # days
@@ -138,10 +138,10 @@ class NickelCobaltModel(AnalyticalModel):
     _log10_ni56_lum = 43.0 + jnp.log10(6.45)   # 43.8096
     _log10_co56_lum = 43.0 + jnp.log10(1.45)   # 43.1614
 
-    def __init__(self, filters, times=None, temperature_floor=None):
+    def __init__(self, filters, times=None, temperature_floor=None, name: str | None = None):
         if times is None:
             times = jnp.geomspace(0.1, 150.0, 100)
-        super().__init__(filters, times, temperature_floor=temperature_floor)
+        super().__init__(name or type(self).__name__, filters, times, temperature_floor=temperature_floor)
 
     def compute_log10_lbol_rphot(self, x, t_days):
         f_nickel = x["f_nickel"]
@@ -217,10 +217,10 @@ class MagnetarPoweredSNModel(AnalyticalModel):
 
     _n_internal = 500
 
-    def __init__(self, filters, times=None, temperature_floor=None):
+    def __init__(self, filters, times=None, temperature_floor=None, name: str | None = None):
         if times is None:
             times = jnp.geomspace(0.1, 200.0, 100)
-        super().__init__(filters, times, temperature_floor=temperature_floor)
+        super().__init__(name or type(self).__name__, filters, times, temperature_floor=temperature_floor)
 
     def compute_log10_lbol_rphot(self, x, t_days):
         log10_mej_g = x["log10_mej"] + _LOG10_MSUN
@@ -293,7 +293,7 @@ class CSMInteractionModel(AnalyticalModel):
     _n_internal = 500
 
     def __init__(self, filters, times=None, nn=12, delta=1, efficiency=0.5,
-                 temperature_floor=None):
+                 temperature_floor=None, name: str | None = None):
         self.nn = nn
         self.delta = delta
         self.efficiency = efficiency
@@ -303,15 +303,17 @@ class CSMInteractionModel(AnalyticalModel):
 
         if times is None:
             times = jnp.geomspace(0.1, 300.0, 100)
-        super().__init__(filters, times, temperature_floor=temperature_floor)
+        super().__init__(name or type(self).__name__, filters, times, temperature_floor=temperature_floor)
 
     def _load_csm_table(self, nn_val):
         """Load CSM coefficient table and pre-interpolate for fixed nn."""
         import numpy as np
         import os
 
-        table_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                                  "tables", "csm_table.txt")
+        import fiesta.inference.tables
+
+        table_path = os.path.join(list(fiesta.inference.tables.__path__)[0],
+                                  "csm_table.txt")
         data = np.loadtxt(table_path, delimiter=',')
         # Columns: eta_col(10 unique), nn_col(30 unique), Bf, Br, AA
         # (matches Redback's column order in utils.get_csm_properties)

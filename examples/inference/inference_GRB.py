@@ -4,7 +4,7 @@ import jax
 from fiesta.inference.prior import Uniform, Constraint, ConstrainedPrior, Sine
 from fiesta.inference.fiesta import Fiesta
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.inference.lightcurve_model import AfterglowFlux
+from fiesta.models import FluxSurrogate
 from fiesta.utils import load_event_data
 
 
@@ -20,7 +20,7 @@ FILTERS = data.keys()
 # MODEL #
 #########
 
-model = AfterglowFlux(name="afgpy_gaussian_CVAE",
+model = FluxSurrogate(name="afgpy_gaussian_CVAE",
                       filters = FILTERS)
 
 

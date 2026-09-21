@@ -1,5 +1,5 @@
 from fiesta.train.Benchmarker import Benchmarker
-from fiesta.inference.lightcurve_model import AfterglowFlux
+from fiesta.models.surrogate_models import AfterglowFlux
 
 
 name = "afgpy_gaussian"

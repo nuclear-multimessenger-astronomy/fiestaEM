@@ -10,7 +10,7 @@ import jax.numpy as jnp
 
 from fiesta.constants import c_cgs, msun_cgs, Rsun_cgs, days_to_seconds
 
-from fiesta.inference.analytical_models.base import (
+from fiesta.models.analytical_models.base import (
     AnalyticalModel,
     _LOG10E, _LOG10_MSUN, _LOG10_RSUN, _LOG10_CCGS, _LOG10_4PI,
     _LOG10_DAYS2SEC,
@@ -34,10 +34,10 @@ class ShockCoolingModel(AnalyticalModel):
 
     _kappa = 0.2  # cm^2/g (electron scattering)
 
-    def __init__(self, filters, times=None):
+    def __init__(self, filters, times=None, name: str | None = None):
         if times is None:
             times = jnp.geomspace(1.0 / 24.0, 3.5, 100)
-        super().__init__(filters, times)
+        super().__init__(name or type(self).__name__, filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):
         """Full Piro (2021) shock cooling with n=10, delta=1.1.
@@ -131,10 +131,10 @@ class ShockedCocoonModel(AnalyticalModel):
     parameter_names = ["log10_mej", "log10_vej", "eta", "log10_tshock",
                        "shocked_fraction", "cos_theta_cocoon", "log10_kappa"]
 
-    def __init__(self, filters, times=None):
+    def __init__(self, filters, times=None, name: str | None = None):
         if times is None:
             times = jnp.geomspace(0.01, 30.0, 100)
-        super().__init__(filters, times)
+        super().__init__(name or type(self).__name__, filters, times)
 
     def compute_log10_lbol_rphot(self, x, t_days):
         log10_mej = x["log10_mej"]                     # solar masses

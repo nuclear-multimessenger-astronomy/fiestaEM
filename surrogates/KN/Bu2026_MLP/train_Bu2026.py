@@ -2,8 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import h5py
 
-from fiesta.train.FluxTrainer import PCATrainer
-from fiesta.inference.lightcurve_model import FluxModel
+from fiesta.train import FluxSurrogateTrainer, DataLoader, MLP
+from fiesta.models.surrogate_models import FluxSurrogate
 from fiesta.train.neuralnets import NeuralnetConfig
 from fiesta.train.Benchmarker import Benchmarker
 
@@ -20,42 +20,45 @@ numax = 2e15
 
 n_pca = 100
 
-name = "Bu2026_MLP"
+surrogate_name = "Bu2026_MLP"
 outdir = f"./model/"
 file = "../_training_data/Bu2026_raw_data.h5"
-
-config = NeuralnetConfig(output_size=n_pca,
-                         nb_epochs=300_000,
-                         hidden_layer_sizes = [256, 512, 256],
-                         learning_rate =2e-3)
-
 
 ###############
 ### TRAINER ###
 ###############
 
 
-data_manager_args = dict(file = file,
-                         tmin= tmin,
-                         tmax= tmax,
-                         numin = numin,
-                         numax = numax, 
-                         )
+data = DataLoader(
+    file = file,
+    tmin= tmin,
+    tmax= tmax,
+    numin = numin,
+    numax = numax,
+)
 
-trainer = PCATrainer(name,
-                     outdir,
-                     data_manager_args = data_manager_args,
-                     plots_dir=f"./benchmarks/",
-                     n_pca=n_pca,
-                     save_preprocessed_data=False
-                     )
+config = NeuralnetConfig(output_size=n_pca,
+                         input_size=len(data.parameter_names),
+                         nb_epochs=300_000,
+                         hidden_layer_sizes = [256, 512, 256],
+                         learning_rate =2e-3)
+
+network = MLP(config=config)
+
+trainer = FluxSurrogateTrainer(
+    surrogate_name,
+    data,
+    outdir,
+    network,
+    plots_dir=f"./benchmarks/",
+    save_preprocessed_data=False
+)
 
 ###############
 ### FITTING ###
 ###############
 
-
-trainer.fit(config=config)
+trainer.fit()
 trainer.save()
 
 #############
@@ -65,17 +68,19 @@ trainer.save()
 print("Producing example lightcurve . . .")
 
 FILTERS = ["ps1::y", "besselli", "bessellv", "bessellux"]
-lc_model = FluxModel(name,
-                     directory=outdir, 
-                     filters=FILTERS)
+trainer.plot_example_lc(FILTERS)
 
-trainer.plot_example_lc(lc_model)
 
-for metric_name in ["L2", "Linf"]:
-    benchmarker = Benchmarker(
-                    model = lc_model,
-                    data_file = "../_training_data/Bu2026_raw_data.h5",
-                    metric_name = metric_name
-                    )
-    benchmarker.benchmark()
-    benchmarker.plot_lightcurves_mismatch()
+####################
+### BENCHMARKING ###
+####################
+
+
+lc_model = FluxSurrogate(surrogate_name, directory=outdir, filters=FILTERS)
+
+benchmarker = Benchmarker(
+    model=lc_model,
+    data_file=file
+)
+benchmarker.benchmark()
+benchmarker.plot_lightcurves_mismatch()

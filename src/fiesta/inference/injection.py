@@ -6,7 +6,7 @@ import h5py
 from jaxtyping import Float, Array
 import numpy as np
 
-from fiesta.inference.lightcurve_model import LightcurveModel
+from fiesta.models.base import FiestaModel
 from fiesta.conversions import mag_app_from_mag_abs, apply_redshift
 from fiesta.filters import Filter
 from fiesta.utils import write_event_data
@@ -169,7 +169,7 @@ class InjectionBase:
         self.randomize_nondetections()
     
     def _get_injection_lc_from_file(self, injection_dict, file):
-        """Create a synthetic lightcurve from training data file given the parameters in injection_dict."""
+        """Create a synthetic light curve from training data file given the parameters in injection_dict."""
         with h5py.File(file) as f:
             times = f["times"][:]
             nus = f["nus"][:]
@@ -222,7 +222,7 @@ class InjectionSurrogate(InjectionBase):
     """
     
     def __init__(self, 
-                 model: LightcurveModel,
+                 model: FiestaModel,
                  *args,
                  **kwargs):
         """

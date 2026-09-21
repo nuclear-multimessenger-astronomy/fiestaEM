@@ -13,7 +13,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from fiesta.inference.analytical_models.phenomenological_models import VillarModel
+from fiesta.models.analytical_models.phenomenological_models import VillarModel
 from fiesta.inference.likelihood import EMLikelihood
 from fiesta.inference.prior import TruncatedNormal, Uniform, CompositePrior
 from fiesta.inference.fiesta import Fiesta

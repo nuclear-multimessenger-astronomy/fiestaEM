@@ -10,9 +10,9 @@ Surrogates can be loaded within a Python script as
 
 .. code:: python
 
-    from fiesta.inference.lightcurve_model import FluxModel
+    from fiesta.models import FluxSurrogate
 
-    model = FluxModel(name=name, filters=filters, directory=directory)
+    model = FluxSurrogate(name=name, filters=filters, directory=directory)
 
 The ``name`` argument is the name of the surrogate.
 The  `directory` argument points to the `.pkl` files storing the neural network and surrogate metadata.
@@ -50,9 +50,9 @@ This means
 
 .. code-block:: python
 
-    from fiesta.inference.lightcurve_model import FluxModel
+    from fiesta.models import FluxSurrogate
 
-    model_flux = FluxModel(name="afgpy_gaussian_CVAE",
+    model_flux = FluxSurrogate(name="afgpy_gaussian_CVAE",
                            filters = ["radio-3GHz", "bessellv", "X-ray-1keV"])
 
 
@@ -71,9 +71,9 @@ The main purpose of the surrogates is to predict light curves for a given set of
 
 .. code:: python
 
-    from fiesta.inference.lightcurve_model import FluxModel
+    from fiesta.models import FluxSurrogate
 
-    model_flux = FluxModel(name="Bu2026_MLP",
+    model_flux = FluxSurrogate(name="Bu2026_MLP",
                            filters = ["radio-3GHz", "bessellv", "X-ray-1keV"])
 
     params = dict(inclination_EM=0.2,
@@ -104,7 +104,7 @@ If you want to simply get the absolute magnitudes use
 
 where ``luminosity_distance`` and ``redshift`` don't have to be passed in params (if they are still in params, they will be ignored).
 
-From each ``FluxModel`` surrogate, you can also get the flux density array in :math:`\log_{10}` mJy by using
+From each ``FluxSurrogate`` surrogate, you can also get the flux density array in :math:`\log_{10}` mJy by using
 
 .. code-block:: python
 
@@ -117,15 +117,15 @@ To perform light curve analyses where the emission might arise from multiple pro
 
 .. code:: python
 
-    from fiesta.inference.lightcurve_model import LightcurveModel, FluxModel, CombinedSurrogate
+    from fiesta.models import FluxSurrogate, CombinedModel
     
-    model1 = AfterglowFlux(name="afgpy_gaussian_CVAE",
+    model1 = FluxSurrogate(name="afgpy_gaussian_CVAE",
                            filters = FILTERS)
     
-    model2 = BullaFlux(name="Bu2026_MLP",
+    model2 = FluxSurrogate(name="Bu2026_MLP",
                                   filters = FILTERS)
     
-    model = CombinedSurrogate(models=[model1, model2],
+    model = CombinedModel(models=[model1, model2],
                               sample_times=jnp.geomspace(0.3, 1000, 200))
 
 The fluxes of ``model1`` and ``model2`` are simply added in the respective photometric bands. If ``model1`` or ``model2`` fall outside the time range of the ``sample_times`` argument, they are simply set to ``jnp.inf`` mag there.

@@ -23,7 +23,7 @@ import jax
 # ── fiesta imports ────────────────────────────────────────────────────────────
 from fiesta.inference.prior import Uniform, ConstrainedPrior
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.inference.lightcurve_model import BullaFlux
+from fiesta.models import FluxSurrogate
 from fiesta.inference.wrappers import FiestaJesterPrior, FiestaJesterLikelihood
 from fiesta.utils import load_event_data
 
@@ -61,7 +61,7 @@ FILTERS = list(data.keys())
 # MODEL                                                                 #
 ########################################################################
 
-model = BullaFlux(name="Bu2025_MLP", filters=FILTERS)
+model = FluxSurrogate(name="Bu2025_MLP", filters=FILTERS)
 
 ########################################################################
 # PRIOR                                                                 #

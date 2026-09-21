@@ -1,8 +1,11 @@
 __pycache__
 .coverage
 *egg-info
+/output/
 docs/_build/
 docs/api/_autosummary/
+docs/**/output/
+**/.ipynb_checkpoints/
 
 **/model/*
 /surrogates/*/_training_data/*.h5

@@ -1,2 +1,4 @@
-./GRB/*
-./KN/*
+GRB/*
+KN/*
+!GRB/.gitkeep
+!KN/.gitkeep

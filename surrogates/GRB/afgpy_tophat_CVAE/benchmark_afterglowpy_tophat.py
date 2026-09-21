@@ -1,5 +1,5 @@
 from fiesta.train.Benchmarker import Benchmarker
-from fiesta.inference.lightcurve_model import AfterglowFlux
+from fiesta.models import FluxSurrogate
 
 
 
@@ -7,7 +7,7 @@ name = "afgpy_tophat"
 model_dir = f"./model/"
 FILTERS = ["radio-3GHz", "radio-6GHz", "bessellv", "X-ray-1keV"]
 
-lc_model = AfterglowFlux(name,
+lc_model = FluxSurrogate(name,
                          directory = model_dir, 
                          filters = FILTERS)
  

@@ -28,6 +28,8 @@ from fiesta.constants import (
 )
 from fiesta.logging import logger
 
+from ..base import FiestaModel
+
 # ---------------------------------------------------------------------------
 # Pre-computed log10 constants (avoids recomputation inside JIT)
 # ---------------------------------------------------------------------------
@@ -380,7 +382,7 @@ def _csm_diffusion_integral(log10_L_input, t_days_grid,
 # Base class
 # ---------------------------------------------------------------------------
 
-class AnalyticalModel:
+class AnalyticalModel(FiestaModel):
     """Base class for analytical (non-surrogate) light-curve models.
 
     Subclasses must implement ``compute_log10_lbol_rphot(self, x, t_days)``
@@ -388,47 +390,24 @@ class AnalyticalModel:
     luminosity in erg/s and photospheric radius in cm.
     """
 
-    parameter_names: list[str]
-    filters: list[str]
-    times: Array               # source-frame days
-
     _nus: Array
 
-    def __init__(self, filters: list[str], times: Array = None,
-                 temperature_floor: float | None = None):
-        self.filters = []
-        self.Filters = []
-        self._nus = None
-        self.times = None
-        self.temperature_floor = temperature_floor
-        self.add_filters(filters)
+    def __init__(
+            self,
+            name: str,
+            filters: list[str], 
+            times: Array = None,
+            temperature_floor: float | None = None
+        ) -> None:
 
-        if times is not None:
-            self.times = jnp.asarray(times)
+        self._nus = None
+        self.temperature_floor = temperature_floor
+
+        super().__init__(name, filters, times)
 
     # -- filter management ---------------------------------------------------
 
-    def add_filters(self, filters):
-        if isinstance(filters, (str, fiesta_filters.Filter)):
-            filters = [filters]
-        
-        for filt in filters:
-            if isinstance(filt, str):
-                F = fiesta_filters.Filter(filt)
-            elif isinstance(filt, fiesta_filters.Filter):
-                F = filt
-            else:
-                raise TypeError("Filter must be a name string or Filter object.")
-            
-            if F.name not in self.filters:
-                self.filters.append(F.name)
-                self.Filters.append(F)
-
-        jax.clear_caches()
-        
-        self._build_nu_grid()
-
-    def _build_nu_grid(self):
+    def _on_filters_changed(self):
         """Build a log-spaced frequency grid spanning all loaded filters."""
         if len(self.Filters) == 0:
             return
@@ -439,8 +418,10 @@ class AnalyticalModel:
 
     # -- physics (to be overridden) ------------------------------------------
 
-    def compute_log10_lbol_rphot(self, x: dict[str, Array],
-                                 t_days: Array) -> tuple[Array, Array]:
+    def compute_log10_lbol_rphot(
+            self, x: dict[str, Array],
+            t_days: Array
+        ) -> tuple[Array, Array]:
         """Return (log10_L_bol, log10_R_phot) arrays at each time in *t_days*.
 
         L_bol in erg/s, R_phot in cm.

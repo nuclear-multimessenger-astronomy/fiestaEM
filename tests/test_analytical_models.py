@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from fiesta.inference.analytical_models import (
+from fiesta.models.analytical_models import (
     ShockCoolingModel,
     ArnettModel,
     MetzgerModel,
@@ -26,7 +26,7 @@ from fiesta.inference.analytical_models import (
     AfterglowModel,
     SALT3Model,
 )
-from fiesta.inference.lightcurve_model import CombinedSurrogate
+from fiesta.models import CombinedModel
 from fiesta.inference.likelihood import EMLikelihood
 
 
@@ -240,7 +240,7 @@ class TestCombinedWithAnalytical:
         m1 = ShockCoolingModel(filters=["bessellb"])
         m2 = ArnettModel(filters=["bessellr"])
         sample_times = jnp.geomspace(0.5, 3.0, 50)
-        combined = CombinedSurrogate(models=[m1, m2], sample_times=sample_times)
+        combined = CombinedModel(models=[m1, m2], sample_times=sample_times)
 
         assert "bessellb" in combined.filters
         assert "bessellr" in combined.filters

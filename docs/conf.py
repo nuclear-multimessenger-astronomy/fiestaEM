@@ -30,10 +30,21 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.githubpages",
     "myst_parser",
+    "nbsphinx",
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
     "sphinx_design",
 ]
+
+# -- nbsphinx (Jupyter notebook rendering) ------------------------------------
+
+# Notebooks under docs/ are checked in with their outputs already populated
+# (see docs/user_guide/training/training_demo.ipynb, which downloads a large
+# training-data set and trains a surrogate). Re-executing them on every docs
+# build (every push/PR) would be slow and network-flaky, so we render the
+# saved outputs as-is here; a scheduled CI job (.github/workflows/nightly.yml)
+# re-executes them fresh to catch regressions.
+nbsphinx_execute = "never"
 
 # MyST extensions for Markdown files
 myst_enable_extensions = [
@@ -70,7 +81,7 @@ napoleon_google_docstring = True
 napoleon_numpy_docstring = True
 
 templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "README.md"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "README.md", "**.ipynb_checkpoints"]
 
 # -- Intersphinx -------------------------------------------------------------
 

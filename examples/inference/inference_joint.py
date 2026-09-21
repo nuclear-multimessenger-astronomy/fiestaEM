@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from fiesta.inference.prior import Uniform, Constraint, ConstrainedPrior, Sine
 from fiesta.inference.fiesta import Fiesta
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.inference.lightcurve_model import AfterglowFlux, BullaFlux, CombinedSurrogate
+from fiesta.models import FluxSurrogate, CombinedModel
 from fiesta.utils import load_event_data
 
 
@@ -24,13 +24,13 @@ FILTERS = list(data.keys())
 # MODEL #
 #########
 
-model1 = AfterglowFlux(name="afgpy_gaussian_CVAE",
+model1 = FluxSurrogate(name="afgpy_gaussian_CVAE",
                        filters = FILTERS)
 
-model2 = BullaFlux(name="Bu2026_MLP",
+model2 = FluxSurrogate(name="Bu2026_MLP",
                               filters = FILTERS)
 
-model = CombinedSurrogate(models=[model1, model2],
+model = CombinedModel(models=[model1, model2],
                           sample_times=jnp.geomspace(0.3, 1000, 200))
 
 

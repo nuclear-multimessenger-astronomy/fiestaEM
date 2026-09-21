@@ -38,7 +38,7 @@ source-frame times (days):
 .. code:: python
 
     import jax.numpy as jnp
-    from fiesta.inference.analytical_models import OneComponentKilonovaModel
+    from fiesta.models.analytical_models import OneComponentKilonovaModel
 
     model = OneComponentKilonovaModel(
         filters=["bessellb", "bessellv", "bessellr"],
@@ -72,10 +72,10 @@ where the afterglow is a trained surrogate:
 
 .. code:: python
 
-    from fiesta.inference.lightcurve_model import AfterglowFlux, CombinedSurrogate
-    from fiesta.inference.analytical_models import OneComponentKilonovaModel
+    from fiesta.models import FluxSurroate, CombinedModel
+    from fiesta.models.analytical_models import OneComponentKilonovaModel
 
-    afterglow = AfterglowFlux(
+    afterglow = FluxSurrogate(
         name="afgpy_gaussian_CVAE",
         filters=["bessellb", "bessellv", "bessellr"],
     )
@@ -85,7 +85,7 @@ where the afterglow is a trained surrogate:
         times=jnp.geomspace(0.1, 30.0, 100),
     )
 
-    combined = CombinedSurrogate(
+    combined = CombinedModel(
         models=[afterglow, kilonova],
         sample_times=jnp.geomspace(0.1, 300.0, 200),
     )
@@ -644,7 +644,7 @@ To add a new analytical model, subclass ``AnalyticalModel`` and implement
 .. code:: python
 
     import jax.numpy as jnp
-    from fiesta.inference.analytical_models import AnalyticalModel
+    from fiesta.models.analytical_models import AnalyticalModel
 
     class MyModel(AnalyticalModel):
         parameter_names = ["log10_luminosity", "log10_radius"]

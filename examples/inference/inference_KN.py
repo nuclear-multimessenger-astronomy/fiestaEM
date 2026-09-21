@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from fiesta.inference.prior import Uniform, ConstrainedPrior, Sine
 from fiesta.inference.fiesta import Fiesta
 from fiesta.inference.likelihood import EMLikelihood
-from fiesta.inference.lightcurve_model import FluxModel
+from fiesta.models import FluxSurrogate
 from fiesta.utils import load_event_data
 
 
@@ -25,7 +25,7 @@ FILTERS = list(data.keys())
 # MODEL #
 #########
 
-model = FluxModel(
+model = FluxSurrogate(
     name="Bu2026_MLP",
     filters = FILTERS
 )

@@ -1,5 +1,5 @@
 from fiesta.train.Benchmarker import Benchmarker
-from fiesta.inference.lightcurve_model import BullaLightcurveModel
+from fiesta.models.surrogate_models import BullaLightcurveModel
 
 
 
