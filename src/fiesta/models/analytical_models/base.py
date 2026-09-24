@@ -480,4 +480,7 @@ class AnalyticalModel(FiestaModel):
         dL = x["luminosity_distance"]
         mag_app = {k: mag_app_from_mag_abs(v, dL) for k, v in mag_abs.items()}
 
+        if "timeshift" in x.keys(): # apply timeshift if present in the input dictionary    
+            t_days = t_days + x["timeshift"]
+
         return t_days, mag_app
